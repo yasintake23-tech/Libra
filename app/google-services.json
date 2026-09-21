@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "705929327966",
+    "project_id": "libra-3bfb9",
+    "storage_bucket": "libra-3bfb9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705929327966:android:7653c53dc586caed3ccbcf",
+        "android_client_info": {
+          "package_name": "com.libra.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyc6tC8UyP0QXHFqs4c0-TSWNdglWJiYg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
