@@ -48,6 +48,8 @@ class LibraryViewModel(
         }
     }
 
+    fun loadShelfDefault() = loadShelf(ShelfType.READING)
+
     fun updateSearchQuery(query: String) {
         currentSearch = query
         val currentState = (_uiState.value as? UiState.Success)?.data ?: return
