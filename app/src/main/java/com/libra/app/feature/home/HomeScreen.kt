@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -78,7 +77,7 @@ fun HomeScreen(
         is UiState.Empty -> LoadingView(message = "Hazırlanıyor…")
         is UiState.Success -> {
             val data = uiState.data
-            var selectedCategory by remember { mutableStateOf<BookCategory?>(null) }
+            var selectedCategory by remember { mutableStateOf<BookCategory?>(null)}
 
             LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                 item { HomeHeader(data.currentUser, onNavigateToProfile) }
@@ -93,32 +92,20 @@ fun HomeScreen(
 
                 item { SectionHeader("Senin İçin", actionLabel = "Tümünü Gör", onActionClick = onNavigateToDiscover) }
                 item {
-                    if (data.featuredBooks.isEmpty()) {
-                        EmptyStrip("Yeni kitaplar burada görünecek.")
-                    } else {
-                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(data.featuredBooks.take(10), key = { it.id }) { book ->
-                                VerticalBookCard(book, { onBookClick(book) })
-                            }
-                        }
+                    if (data.featuredBooks.isEmpty()) EmptyStrip("Yeni kitaplar burada görünecek.")
+                    else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(data.featuredBooks.take(10), key = { it.id }) { book -> VerticalBookCard(book, { onBookClick(book) }) }
                     }
                 }
 
                 item { SectionHeader("Popüler Kategoriler", actionLabel = "Tümü", onActionClick = onNavigateToDiscover) }
-                item {
-                    CategoryRow(selectedCategory) { category ->
-                        selectedCategory = if (selectedCategory == category) null else category
-                    }
-                }
+                item { CategoryRow(selectedCategory) { selectedCategory = if (selectedCategory == it) null else it } }
 
                 item { SectionHeader("Yeni Eklenenler", subtitle = "Libra'daki son yayınlar") }
                 val recent = if (selectedCategory == null) data.recentBooks else data.recentBooks.filter { it.category == selectedCategory }
-                if (recent.isEmpty()) {
-                    item { EmptyStrip("Henüz yayınlanmış bir kitap yok.") }
-                } else {
-                    items(recent.take(8), key = { it.id }) { book ->
-                        HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                    }
+                if (recent.isEmpty()) item { EmptyStrip("Henüz yayınlanmış bir kitap yok.") }
+                else items(recent.take(8), key = { it.id }) { book ->
+                    HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
             }
         }
@@ -133,7 +120,10 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onBackground), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onBackground),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Default.MenuBook, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(19.dp))
             }
             Spacer(Modifier.width(10.dp))
@@ -150,10 +140,8 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit) {
 private fun SearchBar(onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
@@ -179,7 +167,10 @@ private fun HeroCard() {
 
 @Composable
 private fun QuickActions(onDiscover: () -> Unit, onWrite: () -> Unit, onLibrary: () -> Unit, onFriends: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         ActionTile(Icons.Default.Search, "Keşfet", onDiscover)
         ActionTile(Icons.Default.Edit, "Yaz", onWrite)
         ActionTile(Icons.Default.BookmarkBorder, "Kütüphane", onLibrary)
@@ -189,11 +180,15 @@ private fun QuickActions(onDiscover: () -> Unit, onWrite: () -> Unit, onLibrary:
 
 @Composable
 private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Card(modifier = Modifier.weight(1f).clickable(onClick = onClick), shape = RoundedCornerShape(13.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    Card(
+        modifier = Modifier.width(78.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(5.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
 }
