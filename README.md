@@ -81,6 +81,12 @@ Gerçek upload için bir backend/presigned URL endpoint'i bağlandığında `Clo
 
 `AiAssistantRepository`, yazma asistanı özelliklerinin UI'dan ayrık kalması için oluşturulmuştur. Henüz gerçek AI sağlayıcısı bağlı değildir; repository başarı numarası uydurmaz ve yapılandırma yoksa açık bir hata döndürür.
 
+## Build
+
+Android Studio ile projeyi açın ve Gradle sync tamamlandıktan sonra `app` modülünü çalıştırın.
+
+Google/Firebase yapılandırması olmadan proje derlenebilir, ancak Authentication ve Realtime Database çalışma zamanında yapılandırma hatası gösterecektir.
+
 ## Current scope
 
 İlk aşamada gerçek Authentication + kullanıcı profili altyapısı, Firebase tabanlı kitap/kütüphane/chapter repository'leri, temel ekranlar ve genişletilebilir navigation mevcut.

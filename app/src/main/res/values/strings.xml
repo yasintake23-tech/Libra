@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Libra</string>
+    <string name="tagline">Oku, yaz, keşfet, bağlan</string>
+    <!-- Replace with the Firebase project's OAuth 2.0 Web client ID. This is not a secret. -->
+    <string name="google_web_client_id">REPLACE_WITH_FIREBASE_WEB_CLIENT_ID</string>
+</resources>
