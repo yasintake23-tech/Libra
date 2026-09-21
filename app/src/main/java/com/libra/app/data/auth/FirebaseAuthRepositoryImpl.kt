@@ -23,13 +23,15 @@ class FirebaseAuthRepositoryImpl(private val userRepository: UserRepository) : A
     }
     private val _currentUser = MutableStateFlow<UserProfile?>(null)
     override val currentUser: StateFlow<UserProfile?> = _currentUser.asStateFlow()
-    private val _isAuthenticated = MutableStateFlow(firebaseAuth?.currentUser != null)
+    private val _isAuthenticated = MutableStateFlow(false)
     override val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
 
     init {
         firebaseAuth?.addAuthStateListener { auth ->
-            _isAuthenticated.value = auth.currentUser != null
-            if (auth.currentUser == null) _currentUser.value = null
+            if (auth.currentUser == null) {
+                _currentUser.value = null
+                _isAuthenticated.value = false
+            }
         }
     }
 
