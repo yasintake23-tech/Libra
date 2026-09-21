@@ -81,6 +81,43 @@ Gerçek upload için bir backend/presigned URL endpoint'i bağlandığında `Clo
 
 `AiAssistantRepository`, yazma asistanı özelliklerinin UI'dan ayrık kalması için oluşturulmuştur. Henüz gerçek AI sağlayıcısı bağlı değildir; repository başarı numarası uydurmaz ve yapılandırma yoksa açık bir hata döndürür.
 
+
+## GitHub Actions — APK
+
+Libra artık her `main` push'unda ve pull request'te Android build kontrolü yapar. Ayrıca GitHub Actions arayüzünden elle çalıştırılabilir.
+
+Workflow dosyası:
+
+`.github/workflows/build-apk.yml`
+
+Başarılı bir çalıştırmanın sonunda:
+
+- `Libra-APK-<run-number>` artifact'ı içinde kurulabilir debug APK bulunur.
+- `Libra-Build-Info-<run-number>` artifact'ı APK boyutunu ve SHA-256 değerini içerir.
+- Build/test başarısız olursa mevcut test raporları ayrı artifact olarak yüklenir.
+
+### APK alma
+
+GitHub → **Actions** → **Libra Android APK** → bir workflow run → **Artifacts** bölümünden `Libra-APK-...` dosyasını indirin. ZIP'i açtığınızda APK hazır olacaktır.
+
+### Firebase ile CI build
+
+Gerçek Firebase `google-services.json` dosyasını repository'ye koymak yerine GitHub Actions Secret olarak `GOOGLE_SERVICES_JSON_B64` tanımlayabilirsiniz.
+
+Yerelde Base64 üretmek için:
+
+```bash
+base64 -w 0 app/google-services.json
+```
+
+Windows/PowerShell'de:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("app/google-services.json"))
+```
+
+Secret tanımlı değilse workflow yine APK derlemeyi dener; Firebase runtime özellikleri için gerçek Firebase yapılandırması gerekir.
+
 ## Build
 
 Android Studio ile projeyi açın ve Gradle sync tamamlandıktan sonra `app` modülünü çalıştırın.
