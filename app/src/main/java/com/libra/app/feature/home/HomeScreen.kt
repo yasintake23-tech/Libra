@@ -72,9 +72,9 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
-        is UiState.Loading -> LoadingView("Kitaplığın hazırlanıyor…")
+        is UiState.Loading -> LoadingView(message = "Kitaplığın hazırlanıyor…")
         is UiState.Error -> HomeError(uiState.error.message, onRetry)
-        is UiState.Empty -> LoadingView("Hazırlanıyor…")
+        is UiState.Empty -> LoadingView(message = "Hazırlanıyor…")
         is UiState.Success -> {
             val data = uiState.data
             var selectedCategory by remember { mutableStateOf<BookCategory?>(null) }
