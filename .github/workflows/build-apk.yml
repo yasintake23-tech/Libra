@@ -44,12 +44,15 @@ jobs:
           cache-provider: basic
 
       - name: Inject Firebase config when available
-        if: ${{ secrets.GOOGLE_SERVICES_JSON_B64 != '' }}
         shell: bash
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
         run: |
           set -euo pipefail
+          if [[ -z "$GOOGLE_SERVICES_JSON_B64" ]]; then
+            echo "No Firebase secret configured. Continuing with compile-only Firebase configuration."
+            exit 0
+          fi
           printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
           test -s app/google-services.json
           echo "Firebase configuration injected for this build."
