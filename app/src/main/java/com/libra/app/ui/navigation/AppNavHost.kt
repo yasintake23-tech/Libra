@@ -55,7 +55,7 @@ fun AppNavHost(authViewModel: AuthViewModel = viewModel(), modifier: Modifier = 
 
     if (!authenticated) {
         when (authState) {
-            is UiState.Loading -> LoadingView("Libra hazırlanıyor…")
+            is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
             else -> LoginScreen(
                 authState = authState,
                 onGoogleSignInClick = {
@@ -74,7 +74,7 @@ fun AppNavHost(authViewModel: AuthViewModel = viewModel(), modifier: Modifier = 
     }
 
     Scaffold(
-        bottomBar = { LibraBottomBar(selectedTab) { selectedTab = it } },
+        bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize()
     ) { paddingValues ->
