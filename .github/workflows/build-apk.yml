@@ -1,0 +1,147 @@
+name: Libra Android APK
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: libra-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  GRADLE_VERSION: '9.3.1'
+
+jobs:
+  build-apk:
+    name: Build and Package APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Libra
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-provider: basic
+
+      - name: Inject Firebase config when available
+        if: ${{ secrets.GOOGLE_SERVICES_JSON_B64 != '' }}
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
+          test -s app/google-services.json
+          echo "Firebase configuration injected for this build."
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          java --version
+          gradle --version
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
+
+      - name: Verify APK
+        id: verify_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [[ ! -f "$APK_PATH" ]]; then
+            echo "::error::APK bulunamadı: $APK_PATH"
+            exit 1
+          fi
+
+          APK_SIZE=$(stat -c%s "$APK_PATH")
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          mkdir -p artifacts
+          cp "$APK_PATH" "artifacts/Libra-debug-$GITHUB_RUN_NUMBER.apk"
+
+          cat > artifacts/build-info.txt <<EOF
+          Libra Android Build
+          ===================
+          Run: $GITHUB_RUN_NUMBER
+          Commit: $GITHUB_SHA
+          Ref: $GITHUB_REF
+          Build date: $BUILD_DATE
+          APK size: $APK_SIZE bytes
+          SHA-256: $SHA256
+          Package: com.libra.app
+          Version: 1.0.0 (1)
+          EOF
+
+          echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-APK-${{ github.run_number }}
+          path: artifacts/Libra-debug-${{ github.run_number }}.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-Build-Info-${{ github.run_number }}
+          path: artifacts/build-info.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-Test-Reports-${{ github.run_number }}
+          path: |
+            app/build/reports/tests/**
+            app/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Build summary
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          {
+            echo "## Libra APK"
+            echo ""
+            echo "Debug APK başarıyla oluşturuldu."
+            echo ""
+            echo "- Artifact: Libra-APK-$GITHUB_RUN_NUMBER"
+            echo "- Package: com.libra.app"
+            echo "- APK size: ${{ steps.verify_apk.outputs.apk_size }} bytes"
+            echo "- SHA-256: ${{ steps.verify_apk.outputs.sha256 }}"
+          } >> "$GITHUB_STEP_SUMMARY"
