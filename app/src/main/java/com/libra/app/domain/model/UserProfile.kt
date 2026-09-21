@@ -11,13 +11,19 @@ data class UserProfile(
     val booksReadCount: Int = 0,
     val followersCount: Int = 0,
     val followingCount: Int = 0,
+    val profileCompleted: Boolean = false,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) {
     val handle: String
-        get() = if (username.isNotBlank()) "@$username" else "@user_${uid.take(6)}"
+        get() = if (username.isNotBlank()) "@" + username else "@user_" + uid.take(6)
 
     val initials: String
-        get() = displayName.trim().split(Regex("\\s+")).mapNotNull { it.firstOrNull()?.toString() }
-            .take(2).joinToString("").uppercase().ifEmpty { "U" }
+        get() = displayName.trim()
+            .split(Regex("\\s+"))
+            .mapNotNull { it.firstOrNull()?.toString() }
+            .take(2)
+            .joinToString("")
+            .uppercase()
+            .ifEmpty { "U" }
 }

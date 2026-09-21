@@ -65,6 +65,9 @@ dependencies {
 
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
+
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.googleid)
@@ -81,7 +84,6 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
 }
-
 
 googleServices {
     missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN

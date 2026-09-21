@@ -3,6 +3,7 @@ package com.libra.app.feature.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.libra.app.core.di.ServiceLocator
+import com.libra.app.core.result.AppResult
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.AuthRepository
@@ -28,11 +29,12 @@ class AuthViewModel(
     fun checkSession() {
         viewModelScope.launch {
             _authState.value = UiState.Loading
+
             when (val result = authRepository.checkCurrentSession()) {
-                is com.libra.app.core.result.AppResult.Success -> {
+                is AppResult.Success -> {
                     _authState.value = result.data?.let { UiState.Success(it) } ?: UiState.Empty
                 }
-                is com.libra.app.core.result.AppResult.Error -> {
+                is AppResult.Error -> {
                     _authState.value = UiState.Error(result.error)
                 }
             }
@@ -47,21 +49,49 @@ class AuthViewModel(
     ) {
         viewModelScope.launch {
             _authState.value = UiState.Loading
-            authRepository.signInWithGoogleIdToken(idToken, displayName, email, photoUrl).collect { result ->
-                _authState.value = when (result) {
-                    is com.libra.app.core.result.AppResult.Success -> UiState.Success(result.data)
-                    is com.libra.app.core.result.AppResult.Error -> UiState.Error(result.error)
+
+            authRepository
+                .signInWithGoogleIdToken(idToken, displayName, email, photoUrl)
+                .collect { result ->
+                    _authState.value = when (result) {
+                        is AppResult.Success -> UiState.Success(result.data)
+                        is AppResult.Error -> UiState.Error(result.error)
+                    }
                 }
+        }
+    }
+
+    fun signInWithEmail(email: String, password: String) {
+        viewModelScope.launch {
+            _authState.value = UiState.Loading
+
+            _authState.value = when (
+                val result = authRepository.signInWithEmailPassword(email, password)
+            ) {
+                is AppResult.Success -> UiState.Success(result.data)
+                is AppResult.Error -> UiState.Error(result.error)
+            }
+        }
+    }
+
+    fun createAccount(email: String, password: String) {
+        viewModelScope.launch {
+            _authState.value = UiState.Loading
+
+            _authState.value = when (
+                val result = authRepository.createAccountWithEmailPassword(email, password)
+            ) {
+                is AppResult.Success -> UiState.Success(result.data)
+                is AppResult.Error -> UiState.Error(result.error)
             }
         }
     }
 
     fun signOut() {
         viewModelScope.launch {
-            val result = authRepository.signOut()
-            _authState.value = when (result) {
-                is com.libra.app.core.result.AppResult.Success -> UiState.Empty
-                is com.libra.app.core.result.AppResult.Error -> UiState.Error(result.error)
+            _authState.value = when (val result = authRepository.signOut()) {
+                is AppResult.Success -> UiState.Empty
+                is AppResult.Error -> UiState.Error(result.error)
             }
         }
     }

@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.libra.app.R
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
@@ -38,6 +37,7 @@ import com.libra.app.feature.home.HomeViewModel
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.profile.ProfileScreen
+import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
@@ -45,11 +45,16 @@ import com.libra.app.ui.components.LoadingView
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppNavHost(authViewModel: AuthViewModel = viewModel(), modifier: Modifier = Modifier) {
+fun AppNavHost(
+    authViewModel: AuthViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val authState by authViewModel.authState.collectAsState()
     val authenticated by authViewModel.isAuthenticated.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
+
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
 
@@ -62,50 +67,134 @@ fun AppNavHost(authViewModel: AuthViewModel = viewModel(), modifier: Modifier = 
                     scope.launch {
                         GoogleAuthHelper.launchGoogleSignIn(
                             context = context,
-                            serverClientId = context.getString(R.string.google_web_client_id),
-                            onSuccess = { token, name, email, photo -> authViewModel.signInWithGoogle(token, name, email, photo) },
-                            onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                            onSuccess = { token, name, email, photo ->
+                                authViewModel.signInWithGoogle(
+                                    token,
+                                    name,
+                                    email,
+                                    photo
+                                )
+                            },
+                            onError = {
+                                Toast.makeText(
+                                    context,
+                                    it,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         )
                     }
-                }
+                },
+                onEmailSignIn = authViewModel::signInWithEmail,
+                onEmailRegister = authViewModel::createAccount
             )
         }
         return
     }
 
+    val profile = currentUser
+
+    if (profile == null) {
+        LoadingView(message = "Profil hazırlanıyor…")
+        return
+    }
+
+    if (!profile.profileCompleted) {
+        ProfileSetupScreen(
+            profile = profile,
+            onCompleted = authViewModel::checkSession,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
     Scaffold(
-        bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
+        bottomBar = {
+            LibraBottomBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it }
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize()
     ) { paddingValues ->
-        Box(Modifier.fillMaxSize().padding(paddingValues)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
             when (selectedTab) {
                 BottomNavTab.HOME -> {
                     val vm: HomeViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    HomeScreen(state, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { selectedTab = BottomNavTab.LIBRARY }, { selectedTab = BottomNavTab.PROFILE }, { selectedTab = BottomNavTab.DISCOVER }, vm::loadHomeData)
+
+                    HomeScreen(
+                        state,
+                        { selectedBook = it },
+                        { selectedTab = BottomNavTab.WRITE },
+                        { selectedTab = BottomNavTab.LIBRARY },
+                        { selectedTab = BottomNavTab.PROFILE },
+                        { selectedTab = BottomNavTab.DISCOVER },
+                        vm::loadHomeData
+                    )
                 }
+
                 BottomNavTab.DISCOVER -> {
                     val vm: FriendsViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    FriendsScreen(state, vm::updateSearchQuery, { user ->
-                        Toast.makeText(context, user.displayName + " için sosyal bağlantı yakında.", Toast.LENGTH_SHORT).show()
-                    }, vm::loadSocialData)
+
+                    FriendsScreen(
+                        state,
+                        vm::updateSearchQuery,
+                        { user ->
+                            Toast.makeText(
+                                context,
+                                user.displayName + " için sosyal bağlantı yakında.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        vm::loadSocialData
+                    )
                 }
+
                 BottomNavTab.WRITE -> {
                     val vm: WriteViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    WriteScreen(state, vm::createNewBook, { selectedBook = it }, vm::loadMyBooks)
+
+                    WriteScreen(
+                        state,
+                        vm::createNewBook,
+                        { selectedBook = it },
+                        vm::loadMyBooks
+                    )
                 }
+
                 BottomNavTab.LIBRARY -> {
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
+
+                    LibraryScreen(
+                        state,
+                        vm::loadShelf,
+                        vm::updateSearchQuery,
+                        { selectedBook = it },
+                        { selectedTab = BottomNavTab.WRITE },
+                        { vm.loadShelf(ShelfType.READING) }
+                    )
                 }
+
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    ProfileScreen(state, { authViewModel.signOut(); selectedTab = BottomNavTab.HOME }, vm::loadProfile)
+
+                    ProfileScreen(
+                        state,
+                        {
+                            authViewModel.signOut()
+                            selectedTab = BottomNavTab.HOME
+                        },
+                        vm::loadProfile
+                    )
                 }
             }
         }
@@ -114,17 +203,39 @@ fun AppNavHost(authViewModel: AuthViewModel = viewModel(), modifier: Modifier = 
     selectedBook?.let { book ->
         AlertDialog(
             onDismissRequest = { selectedBook = null },
-            title = { Text(book.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
+            title = {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            },
             text = {
                 Column {
-                    Text("Yazar: " + book.authorName, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Yazar: " + book.authorName,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Spacer(Modifier.height(6.dp))
-                    Text(book.category.displayName, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        book.category.displayName,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                     Spacer(Modifier.height(10.dp))
-                    Text(book.description.ifBlank { "Bu kitap için henüz açıklama eklenmedi." })
+                    Text(
+                        book.description.ifBlank {
+                            "Bu kitap için henüz açıklama eklenmedi."
+                        }
+                    )
                 }
             },
-            confirmButton = { TextButton(onClick = { selectedBook = null }) { Text("Kapat") } }
+            confirmButton = {
+                TextButton(onClick = { selectedBook = null }) {
+                    Text("Kapat")
+                }
+            }
         )
     }
 }

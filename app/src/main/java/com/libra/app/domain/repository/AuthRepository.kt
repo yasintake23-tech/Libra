@@ -18,5 +18,9 @@ interface AuthRepository {
         photoUrl: String?
     ): Flow<AppResult<UserProfile>>
 
+    suspend fun signInWithEmailPassword(email: String, password: String): AppResult<UserProfile>
+
+    suspend fun createAccountWithEmailPassword(email: String, password: String): AppResult<UserProfile>
+
     suspend fun signOut(): AppResult<Unit>
 }
