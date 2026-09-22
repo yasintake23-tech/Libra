@@ -170,7 +170,15 @@ fun DirectMessagesScreen(
                     } else {
                         items(conversations, key = { it.id }) { conversation ->
                             Card(
-                                modifier = Modifier.fillMaxWidth().clickable { viewModel.openConversation(conversation) },
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selectedUser = UserProfile(
+                                        uid = conversation.otherUserId,
+                                        displayName = conversation.otherUserName,
+                                        username = conversation.otherUserUsername,
+                                        profileImageUrl = conversation.otherUserPhotoUrl
+                                    )
+                                    viewModel.openConversation(conversation)
+                                },
                                 shape = RoundedCornerShape(14.dp)
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
