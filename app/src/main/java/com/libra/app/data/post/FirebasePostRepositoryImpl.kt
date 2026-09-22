@@ -9,6 +9,7 @@ import com.libra.app.domain.model.Post
 import com.libra.app.domain.repository.PostRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
@@ -29,7 +30,7 @@ class FirebasePostRepositoryImpl(
             }
 
             val documents = snapshot?.documents.orEmpty()
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            launch {
                 try {
                     val posts = documents.mapNotNull { document ->
                         val data = document.data ?: return@mapNotNull null
