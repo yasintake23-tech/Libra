@@ -48,8 +48,7 @@ class CloudflareR2StorageRepositoryImpl(
             return@flow
         }
 
-        try {
-            val user = FirebaseAuth.getInstance().currentUser
+        val user = FirebaseAuth.getInstance().currentUser
                 ?: run {
                     emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
                     return@flow
