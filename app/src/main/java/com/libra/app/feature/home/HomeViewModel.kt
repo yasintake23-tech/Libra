@@ -11,6 +11,7 @@ import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
+import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.PostRepository
@@ -34,7 +35,8 @@ data class HomeData(
 class HomeViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
     private val bookRepository: BookRepository = ServiceLocator.bookRepository,
-    private val postRepository: PostRepository = ServiceLocator.postRepository
+    private val postRepository: PostRepository = ServiceLocator.postRepository,
+    private val storageRepository: com.libra.app.domain.repository.StorageRepository = ServiceLocator.storageRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState<HomeData>>(UiState.Loading)
@@ -123,15 +125,68 @@ class HomeViewModel(
     }
 
     fun createPost(text: String) {
+        createRichPost(
+            title = "",
+            text = text,
+            tags = emptyList(),
+            imageBytes = null,
+            imageFileName = "",
+            imageContentType = ""
+        )
+    }
+
+    fun createRichPost(
+        title: String,
+        text: String,
+        tags: List<String>,
+        imageBytes: ByteArray?,
+        imageFileName: String,
+        imageContentType: String
+    ) {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
             _isPosting.value = true
             _postError.value = null
-            when (val result = postRepository.createPost(userId, text)) {
-                is AppResult.Success -> Unit
-                is AppResult.Error -> _postError.value = result.error.message
+            try {
+                var mediaUrl = ""
+                var mediaType = ""
+                if (imageBytes != null && imageBytes.isNotEmpty()) {
+                    val upload = storageRepository.uploadMedia(
+                        StorageUploadRequest(
+                            fileName = imageFileName.ifBlank { "post.jpg" },
+                            bytes = imageBytes,
+                            contentType = imageContentType.ifBlank { "image/jpeg" },
+                            targetDirectory = "users/$userId"
+                        )
+                    ).first()
+                    when (upload) {
+                        is AppResult.Success -> {
+                            mediaUrl = upload.data
+                            mediaType = "image"
+                        }
+                        is AppResult.Error -> {
+                            _postError.value = upload.error.message
+                            return@launch
+                        }
+                    }
+                }
+
+                when (
+                    val result = postRepository.createPost(
+                        authorId = userId,
+                        text = text,
+                        title = title,
+                        mediaUrl = mediaUrl,
+                        mediaType = mediaType,
+                        tags = tags
+                    )
+                ) {
+                    is AppResult.Success -> Unit
+                    is AppResult.Error -> _postError.value = result.error.message
+                }
+            } finally {
+                _isPosting.value = false
             }
-            _isPosting.value = false
         }
     }
 
