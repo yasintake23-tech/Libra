@@ -9,3 +9,6 @@ bucket_name = "libra-media"
 [vars]
 CORS_ORIGIN = "*"
 FIREBASE_PROJECT_ID = "libra-3bfb9"
+
+[secrets]
+required = ["FIREBASE_WEB_API_KEY"]
