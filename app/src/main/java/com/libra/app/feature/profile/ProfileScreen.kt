@@ -80,7 +80,7 @@ private fun ProfileContent(
     onSettingsClick: () -> Unit,
     modifier: Modifier
 ) {
-    var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
+    var socialDialog by remember { mutableStateOf<OwnOwnSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
@@ -172,8 +172,8 @@ private fun ProfileContent(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             Stat(profile.booksWrittenCount.toString(), "Kitap")
-            Stat(following.size.toString(), "Takip", Modifier.clickable { socialDialog = SocialListType.FOLLOWING })
-            Stat(followers.size.toString(), "Takipçi", Modifier.clickable { socialDialog = SocialListType.FOLLOWERS })
+            Stat(following.size.toString(), "Takip", Modifier.clickable { socialDialog = OwnSocialListType.FOLLOWING })
+            Stat(followers.size.toString(), "Takipçi", Modifier.clickable { socialDialog = OwnSocialListType.FOLLOWERS })
         }
 
         Spacer(Modifier.height(24.dp))
@@ -189,7 +189,7 @@ private fun ProfileContent(
                 ProfileAction(
                     Icons.Default.People,
                     "Takip ettiklerim",
-                    onClick = { socialDialog = SocialListType.FOLLOWING }
+                    onClick = { socialDialog = OwnSocialListType.FOLLOWING }
                 )
                 ProfileAction(Icons.Default.Settings, "Ayarlar", onSettingsClick)
             }
@@ -225,7 +225,7 @@ private fun ProfileAction(
     }
 }
 
-private enum class SocialListType { FOLLOWERS, FOLLOWING }
+private enum class OwnSocialListType { FOLLOWERS, FOLLOWING }
 
 @Composable
 private fun Stat(
@@ -251,19 +251,19 @@ private fun Stat(
 
 @Composable
 private fun SocialListDialog(
-    type: SocialListType,
+    type: OwnSocialListType,
     users: List<UserProfile>,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (type == SocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
+            Text(if (type == OwnSocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
         },
         text = {
             if (users.isEmpty()) {
                 Text(
-                    if (type == SocialListType.FOLLOWERS)
+                    if (type == OwnSocialListType.FOLLOWERS)
                         "Henüz takipçin yok."
                     else
                         "Henüz kimseyi takip etmiyorsun."
