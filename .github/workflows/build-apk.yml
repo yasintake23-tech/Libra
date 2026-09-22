@@ -44,40 +44,33 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-provider: basic
 
-      - name: Require stable signing password
+      - name: Prepare fixed signing key
         shell: bash
         env:
-          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
-          LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
+          LIBRA_SIGNING_VALUE: ${{ vars.LIBRA_SIGNING_VALUE }}
         run: |
           set -euo pipefail
-          [[ -n "$LIBRA_KEYSTORE_PASSWORD" ]] || { echo "::error::LIBRA_KEYSTORE_PASSWORD secret eksik."; exit 1; }
-          [[ -n "$LIBRA_KEY_PASSWORD" ]] || { echo "::error::LIBRA_KEY_PASSWORD secret eksik."; exit 1; }
-          echo "Sabit Libra signing parolaları mevcut."
+          [[ -n "$LIBRA_SIGNING_VALUE" ]] || {
+            echo "::error::LIBRA_SIGNING_VALUE repository variable eksik."
+            exit 1
+          }
 
-      - name: Prepare stable signing key
-        shell: bash
-        env:
-          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
-        run: |
-          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/libra-signing"
           base64 --decode signing/libra-signing.jks.b64 > "$RUNNER_TEMP/libra-signing/libra.jks"
           test -s "$RUNNER_TEMP/libra-signing/libra.jks"
-          keytool -list             -keystore "$RUNNER_TEMP/libra-signing/libra.jks"             -storepass "$LIBRA_KEYSTORE_PASSWORD"             -alias "libra" >/dev/null
 
-      - name: Export stable signing configuration
-        shell: bash
-        env:
-          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
-          LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
-        run: |
+          keytool -list \
+            -keystore "$RUNNER_TEMP/libra-signing/libra.jks" \
+            -storepass "$LIBRA_SIGNING_VALUE" \
+            -alias "libra" >/dev/null
+
           {
-            echo "LIBRA_KEYSTORE_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
-            echo "LIBRA_KEYSTORE_PASSWORD=$LIBRA_KEYSTORE_PASSWORD"
-            echo "LIBRA_KEY_ALIAS=libra"
-            echo "LIBRA_KEY_PASSWORD=$LIBRA_KEY_PASSWORD"
+            echo "LIBRA_SIGNING_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
+            echo "LIBRA_SIGNING_VALUE=$LIBRA_SIGNING_VALUE"
+            echo "LIBRA_SIGNING_ALIAS=libra"
           } >> "$GITHUB_ENV"
+
+          echo "Sabit Libra signing key doğrulandı."
 
       - name: Verify committed Firebase config
         shell: bash
@@ -90,11 +83,11 @@ jobs:
       - name: Inject R2 Worker endpoint when configured
         shell: bash
         env:
-          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT }}
+          LIBRA_R2_ENDPOINT: ${{ vars.LIBRA_R2_ENDPOINT }}
         run: |
           set -euo pipefail
-          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
-            echo "R2 Worker endpoint secret yok; uygulama R2'siz derleniyor."
+          if [[ -z "$LIBRA_R2_ENDPOINT" ]]; then
+            echo "R2 endpoint variable yok; mevcut uygulama yapılandırması korunuyor."
             exit 0
           fi
 
@@ -104,7 +97,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           path = Path("app/src/main/res/values/strings.xml")
-          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
+          endpoint = os.environ["LIBRA_R2_ENDPOINT"].strip().rstrip("/")
           root = ET.parse(path).getroot()
 
           for node in root.findall("string"):
@@ -114,30 +107,12 @@ jobs:
           else:
               raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
 
-          ET.indent(root, space="    ")
-          path.write_text(ET.tostring(root, encoding="unicode"))
+          path.write_text(
+              ET.tostring(root, encoding="unicode")
+          )
           PY
 
-      - name: Prepare stable signing key
-        shell: bash
-        env:
-          LIBRA_KEYSTORE_B64: ${{ secrets.LIBRA_KEYSTORE_B64 }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/libra-signing"
-          printf '%s' "$LIBRA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/libra-signing/libra.jks"
-          test -s "$RUNNER_TEMP/libra-signing/libra.jks"
-          keytool -list             -keystore "$RUNNER_TEMP/libra-signing/libra.jks"             -storepass "${{ secrets.LIBRA_KEYSTORE_PASSWORD }}"             -alias "${{ secrets.LIBRA_KEY_ALIAS }}" >/dev/null
-
-      - name: Export stable signing configuration
-        shell: bash
-        run: |
-          {
-            echo "LIBRA_KEYSTORE_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
-            echo "LIBRA_KEYSTORE_PASSWORD=${{ secrets.LIBRA_KEYSTORE_PASSWORD }}"
-            echo "LIBRA_KEY_ALIAS=${{ secrets.LIBRA_KEY_ALIAS }}"
-            echo "LIBRA_KEY_PASSWORD=${{ secrets.LIBRA_KEY_PASSWORD }}"
-          } >> "$GITHUB_ENV"
+          echo "R2 Worker endpoint inject edildi."
 
       - name: Show toolchain
         shell: bash
@@ -165,12 +140,22 @@ jobs:
             exit 1
           fi
 
-          ACTUAL_SHA1="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | awk -F': ' '/certificate SHA-1 digest/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-          ACTUAL_SHA256="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          set +x
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1)"
+          set -x
+
+          ACTUAL_SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-1 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_SHA256="$(printf '%s\n' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-256 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
 
           echo "Expected SHA-1: $EXPECTED_LIBRA_SHA1"
           echo "Actual SHA-1:   $ACTUAL_SHA1"
           echo "APK SHA-256:    $ACTUAL_SHA256"
+
+          if [[ -z "$ACTUAL_SHA1" ]]; then
+            echo "::error::APK sertifika SHA-1 değeri okunamadı."
+            printf '%s\n' "$CERT_OUTPUT"
+            exit 1
+          fi
 
           if [[ "$ACTUAL_SHA1" != "$EXPECTED_LIBRA_SHA1" ]]; then
             echo "::error::APK Firebase'de kayıtlı Libra SHA-1 ile eşleşmiyor."
