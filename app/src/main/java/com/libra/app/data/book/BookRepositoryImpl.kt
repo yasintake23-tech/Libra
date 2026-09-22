@@ -31,7 +31,7 @@ import kotlinx.coroutines.tasks.await
 class BookRepositoryImpl : BookRepository {
 
     private val database: FirebaseDatabase? by lazy {
-        runCatching { FirebaseDatabase.getInstance() }.getOrNull()
+        runCatching { FirebaseDatabase.getInstance("https://libra-3bfb9-default-rtdb.firebaseio.com") }.getOrNull()
     }
 
     private val booksRef: DatabaseReference? by lazy {
