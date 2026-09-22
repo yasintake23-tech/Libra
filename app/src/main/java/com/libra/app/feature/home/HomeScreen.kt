@@ -94,6 +94,8 @@ fun HomeScreen(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     onCreatePost: (String) -> Unit = {},
+    onOpenCreatePost: () -> Unit = {},
+    onOpenCreateStory: () -> Unit = {},
     onToggleLike: (Post) -> Unit = {},
     onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
@@ -115,7 +117,6 @@ fun HomeScreen(
         is UiState.Empty -> LoadingView(message = "Hazırlanıyor…")
         is UiState.Success -> {
             val data = uiState.data
-            var composerText by remember { mutableStateOf("") }
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
             var showCreateMenu by remember { mutableStateOf(false) }
@@ -176,8 +177,8 @@ fun HomeScreen(
                     exit = scaleOut() + fadeOut()
                 ) {
                     CreateSphereMenu(
-                        onStory = { showCreateMenu = false; onNavigateToWrite() },
-                        onPost = { showCreateMenu = false; onNavigateToWrite() },
+                        onStory = { showCreateMenu = false; onOpenCreateStory() },
+                        onPost = { showCreateMenu = false; onOpenCreatePost() },
                         onDismiss = { showCreateMenu = false }
                     )
                 }
