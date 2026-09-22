@@ -1,18 +1,15 @@
 package com.libra.app.data.user
 
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.UserRepository
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.channels.awaitClose
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -20,13 +17,12 @@ class FirebaseUserRepositoryImpl : UserRepository {
 
     private val cache = ConcurrentHashMap<String, UserProfile>()
 
-    private val usersRef: DatabaseReference by lazy {
-        FirebaseDatabase.getInstance().getReference("users")
-    }
-
     private val firestore: FirebaseFirestore by lazy {
         FirebaseFirestore.getInstance()
     }
+
+    private val usersRef
+        get() = firestore.collection("users")
 
     private val usernamesRef
         get() = firestore.collection("usernames")
@@ -34,41 +30,41 @@ class FirebaseUserRepositoryImpl : UserRepository {
     override fun getUserProfile(uid: String): Flow<AppResult<UserProfile?>> = callbackFlow {
         cache[uid]?.let { trySend(AppResult.Success(it)) }
 
-        val ref = usersRef.child(uid)
-        val listener = object : com.google.firebase.database.ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (!snapshot.exists()) {
-                    trySend(AppResult.Success(null))
-                    return
-                }
+        var registration: ListenerRegistration? = null
 
-                try {
-                    val profile = snapshot.getValue(UserProfile::class.java)
-                    if (profile == null) {
-                        trySend(AppResult.Error(AppError.Database("Kullanıcı profili okunamadı.")))
-                    } else {
-                        cache[uid] = profile
-                        trySend(AppResult.Success(profile))
-                    }
-                } catch (e: Exception) {
-                    trySend(AppResult.Error(AppError.Database("Kullanıcı profili çözümlenemedi.", e)))
-                }
+        registration = usersRef.document(uid).addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                trySend(AppResult.Error(AppError.Database(error.message ?: "Kullanıcı profili okunamadı.", error)))
+                return@addSnapshotListener
             }
 
-            override fun onCancelled(error: DatabaseError) {
-                trySend(AppResult.Error(AppError.Database(error.message, error.toException())))
+            if (snapshot == null || !snapshot.exists()) {
+                trySend(AppResult.Success(null))
+                return@addSnapshotListener
+            }
+
+            val profile = runCatching {
+                snapshot.toObject(UserProfile::class.java)
+            }.getOrNull()
+
+            if (profile == null) {
+                trySend(AppResult.Error(AppError.Database("Kullanıcı profili çözümlenemedi.")))
+            } else {
+                cache[uid] = profile
+                trySend(AppResult.Success(profile))
             }
         }
 
-        ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
+        awaitClose {
+            registration?.remove()
+        }
     }
 
     override suspend fun createOrUpdateProfile(profile: UserProfile): AppResult<UserProfile> {
         val updated = profile.copy(updatedAt = System.currentTimeMillis())
 
         return try {
-            usersRef.child(profile.uid).setValue(updated).await()
+            usersRef.document(profile.uid).set(updated).await()
             cache[profile.uid] = updated
             AppResult.Success(updated)
         } catch (e: Exception) {
@@ -81,12 +77,16 @@ class FirebaseUserRepositoryImpl : UserRepository {
 
         if (!isValidUsername(normalizedUsername)) {
             return AppResult.Error(
-                AppError.Validation("Kullanıcı adı 3-20 karakter olmalı; sadece harf, rakam, nokta ve alt çizgi kullanabilirsin.")
+                AppError.Validation(
+                    "Kullanıcı adı 3-20 karakter olmalı; sadece harf, rakam, nokta ve alt çizgi kullanabilirsin."
+                )
             )
         }
 
         if (profile.displayName.trim().length < 2) {
-            return AppResult.Error(AppError.Validation("Takma isim en az 2 karakter olmalı."))
+            return AppResult.Error(
+                AppError.Validation("Takma isim en az 2 karakter olmalı.")
+            )
         }
 
         return try {
@@ -106,14 +106,15 @@ class FirebaseUserRepositoryImpl : UserRepository {
                     System.currentTimeMillis()
                 }
 
-                val data = mapOf(
-                    "uid" to profile.uid,
-                    "username" to normalizedUsername,
-                    "createdAt" to createdAt,
-                    "updatedAt" to System.currentTimeMillis()
+                transaction.set(
+                    usernameDoc,
+                    mapOf(
+                        "uid" to profile.uid,
+                        "username" to normalizedUsername,
+                        "createdAt" to createdAt,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
                 )
-
-                transaction.set(usernameDoc, data)
                 null
             }.await()
 
@@ -161,6 +162,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
 
         return try {
             val snapshot = usernamesRef.document(normalized).get().await()
+
             if (!snapshot.exists()) {
                 AppResult.Success(true)
             } else {
@@ -171,23 +173,25 @@ class FirebaseUserRepositoryImpl : UserRepository {
         }
     }
 
-    override suspend fun updateBio(uid: String, bio: String): AppResult<Unit> =
-        updateFields(
+    override suspend fun updateBio(uid: String, bio: String): AppResult<Unit> {
+        return updateFields(
             uid,
             mapOf(
                 "bio" to bio.trim(),
                 "updatedAt" to System.currentTimeMillis()
             )
         )
+    }
 
-    override suspend fun updateProfilePhoto(uid: String, photoUrl: String): AppResult<Unit> =
-        updateFields(
+    override suspend fun updateProfilePhoto(uid: String, photoUrl: String): AppResult<Unit> {
+        return updateFields(
             uid,
             mapOf(
                 "profileImageUrl" to photoUrl,
                 "updatedAt" to System.currentTimeMillis()
             )
         )
+    }
 
     override fun searchUsers(query: String): Flow<AppResult<List<UserProfile>>> = callbackFlow {
         val normalized = query.trim().lowercase(Locale.ROOT)
@@ -198,31 +202,43 @@ class FirebaseUserRepositoryImpl : UserRepository {
             return@callbackFlow
         }
 
-        val listener = object : com.google.firebase.database.ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val results = snapshot.children
-                    .mapNotNull { child ->
-                        runCatching { child.getValue(UserProfile::class.java) }.getOrNull()
-                    }
-                    .filter { it.profileCompleted }
-                    .filter {
-                        it.displayName.lowercase(Locale.ROOT).contains(normalized) ||
-                            it.username.lowercase(Locale.ROOT).contains(normalized)
-                    }
-                    .take(50)
+        try {
+            val end = normalized + '\uf8ff'
 
-                results.forEach { cache[it.uid] = it }
-                trySend(AppResult.Success(results))
-                close()
-            }
+            val usernameTask = usersRef
+                .whereGreaterThanOrEqualTo("username", normalized)
+                .whereLessThan("username", end)
+                .limit(25)
+                .get()
 
-            override fun onCancelled(error: DatabaseError) {
-                trySend(AppResult.Error(AppError.Database(error.message, error.toException())))
-                close()
-            }
+            val displayNameTask = usersRef
+                .whereGreaterThanOrEqualTo("displayName", normalized)
+                .whereLessThan("displayName", end)
+                .limit(25)
+                .get()
+
+            val usernameSnapshot = usernameTask.await()
+            val displayNameSnapshot = displayNameTask.await()
+
+            val results = (usernameSnapshot.documents + displayNameSnapshot.documents)
+                .mapNotNull { document ->
+                    runCatching {
+                        document.toObject(UserProfile::class.java)
+                    }.getOrNull()
+                }
+                .filter { it.profileCompleted }
+                .distinctBy { it.uid }
+                .filter { it.username.startsWith(normalized) || it.displayName.lowercase(Locale.ROOT).startsWith(normalized) }
+                .take(50)
+
+            results.forEach { cache[it.uid] = it }
+            trySend(AppResult.Success(results))
+            close()
+        } catch (e: Exception) {
+            trySend(AppResult.Error(AppError.Database("Kullanıcılar aranamadı.", e)))
+            close()
         }
 
-        usersRef.addListenerForSingleValueEvent(listener)
         awaitClose { }
     }
 
@@ -230,9 +246,9 @@ class FirebaseUserRepositoryImpl : UserRepository {
         uid: String,
         values: Map<String, Any?>
     ): AppResult<Unit> = try {
-        usersRef.child(uid).updateChildren(values).await()
-        val cached = cache[uid]
+        usersRef.document(uid).update(values).await()
 
+        val cached = cache[uid]
         if (cached != null) {
             cache[uid] = cached.copy(
                 bio = values["bio"] as? String ?: cached.bio,

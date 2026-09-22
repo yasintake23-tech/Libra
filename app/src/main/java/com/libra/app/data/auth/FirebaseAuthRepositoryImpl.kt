@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.tasks.await
 
 class FirebaseAuthRepositoryImpl(
@@ -54,7 +55,8 @@ class FirebaseAuthRepositoryImpl(
                 return AppResult.Success(null)
             }
 
-        return loadOrCreateProfile(firebaseUser)
+        return runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
+            .getOrElse { AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.", cause = it)) }
     }
 
     override fun signInWithGoogleIdToken(
@@ -136,7 +138,8 @@ class FirebaseAuthRepositoryImpl(
             val result = auth.signInWithEmailAndPassword(email.trim(), password).await()
             val firebaseUser = result.user
                 ?: return AppResult.Error(AppError.Auth("Kullanıcı hesabı alınamadı."))
-            loadOrCreateProfile(firebaseUser)
+            runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
+                .getOrElse { AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.", cause = it)) }
         } catch (e: Exception) {
             AppResult.Error(
                 AppError.Auth(
@@ -167,7 +170,8 @@ class FirebaseAuthRepositoryImpl(
             val firebaseUser = result.user
                 ?: return AppResult.Error(AppError.Auth("Yeni kullanıcı hesabı oluşturulamadı."))
 
-            loadOrCreateProfile(firebaseUser)
+            runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
+                .getOrElse { AppResult.Error(AppError.Auth("Hesap hazırlanırken zaman aşımı oldu.", cause = it)) }
         } catch (e: Exception) {
             AppResult.Error(
                 AppError.Auth(
