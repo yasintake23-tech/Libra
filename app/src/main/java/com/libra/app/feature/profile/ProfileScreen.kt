@@ -38,6 +38,7 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.core.di.ServiceLocator
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
@@ -79,7 +80,7 @@ private fun ProfileContent(
     onSettingsClick: () -> Unit,
     modifier: Modifier
 ) {
-    var socialDialog by remember { mutableStateOf<SocialListType?>(null) }
+    var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
