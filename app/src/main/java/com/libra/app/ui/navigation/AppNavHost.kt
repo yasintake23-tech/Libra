@@ -2,6 +2,10 @@ package com.libra.app.ui.navigation
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +40,7 @@ import com.libra.app.feature.home.HomeScreen
 import com.libra.app.feature.home.HomeViewModel
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
+import com.libra.app.feature.messages.DirectMessagesScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileViewModel
@@ -109,6 +114,7 @@ fun AppNavHost(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
         bottomBar = {
             LibraBottomBar(
                 selectedTab = selectedTab,
@@ -166,6 +172,26 @@ fun AppNavHost(
                         vm::createNewBook,
                         { selectedBook = it },
                         vm::loadMyBooks
+                    )
+                }
+
+                BottomNavTab.DM -> {
+                    DirectMessagesScreen(
+                        onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                        onGlobalChatClick = {
+                            Toast.makeText(
+                                context,
+                                "Genel Chat bir sonraki aşamada aktif edilecek.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onServersClick = {
+                            Toast.makeText(
+                                context,
+                                "Sunucular bir sonraki aşamada aktif edilecek.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     )
                 }
 
