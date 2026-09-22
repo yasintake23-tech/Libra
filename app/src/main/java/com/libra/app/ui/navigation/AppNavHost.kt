@@ -219,6 +219,7 @@ fun AppNavHost(
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
                         onToggleLike = vm::toggleLike,
+                        onToggleSave = vm::toggleSave,
                         onDeletePost = vm::deletePost,
                         onOpenComments = vm::openComments,
                         comments = vm.comments.collectAsState().value,
