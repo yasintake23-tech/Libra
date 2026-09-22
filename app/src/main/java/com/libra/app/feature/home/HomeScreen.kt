@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
@@ -71,7 +75,13 @@ fun HomeScreen(
     onNavigateToDiscover: () -> Unit,
     onNotifications: () -> Unit,
     onRetry: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCreatePost: (String) -> Unit = {},
+    onToggleLike: (Post) -> Unit = {},
+    onDeletePost: (Post) -> Unit = {},
+    isPosting: Boolean = false,
+    postError: String? = null,
+    onClearPostError: () -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Kitaplığın hazırlanıyor…")
@@ -80,10 +90,36 @@ fun HomeScreen(
         is UiState.Success -> {
             val data = uiState.data
             var selectedCategory by remember { mutableStateOf<BookCategory?>(null)}
+            var composerText by remember { mutableStateOf("") }
 
             LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                 item { HomeHeader(data.currentUser, onNavigateToProfile, onNotifications) }
-                item { SearchBar(onNavigateToDiscover) }
+                item {
+                    PostComposer(
+                        user = data.currentUser,
+                        text = composerText,
+                        onTextChanged = { if (it.length <= 1000) composerText = it },
+                        onPost = { onCreatePost(composerText.trim()); composerText = "" },
+                        isPosting = isPosting,
+                        error = postError,
+                        onClearError = onClearPostError
+                    )
+                }
+                item {
+                    Text(
+                        "Ana Akış",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+                if (data.posts.isEmpty()) {
+                    item { EmptyFeed(onNavigateToDiscover, onNavigateToWrite) }
+                } else {
+                    items(data.posts, key = { it.id }) { post ->
+                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) })
+                    }
+                }
+                item { SectionHeader("Kitap Dünyası", subtitle = "Libra'nın Wattpad tarafı") }
                 item { HeroCard() }
                 item { QuickActions(onNavigateToDiscover, onNavigateToWrite, onNavigateToLibrary, onNavigateToDiscover) }
 
@@ -109,6 +145,100 @@ fun HomeScreen(
                 else items(recent.take(8), key = { it.id }) { book ->
                     HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PostComposer(
+    user: UserProfile?,
+    text: String,
+    onTextChanged: (String) -> Unit,
+    onPost: () -> Unit,
+    isPosting: Boolean,
+    error: String?,
+    onClearError: () -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp)
+                Spacer(Modifier.width(10.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChanged,
+                    placeholder = { Text("Aklından ne geçiyor?") },
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    maxLines = 2
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Metin gönderisi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(enabled = text.trim().isNotEmpty() && !isPosting, onClick = onPost) {
+                    Text(if (isPosting) "Paylaşılıyor…" else "Paylaş")
+                }
+            }
+            if (error != null) {
+                TextButton(onClick = onClearError) { Text(error, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UserAvatar(post.authorPhotoUrl, post.authorName.take(1).uppercase().ifBlank { "L" }, size = 42.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(post.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                    Text("@${post.authorUsername.ifBlank { "kullanici" }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (post.authorId == currentUserId) {
+                    IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, "Gönderiyi sil") }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(post.text, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onLike) {
+                    Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
+                }
+                Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyFeed(onDiscover: () -> Unit, onWrite: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Akışın daha yeni başlıyor.", fontWeight = FontWeight.SemiBold)
+            Text("Keşfet'ten insanları bulabilir veya ilk hikâyeni yazabilirsin.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row {
+                TextButton(onClick = onDiscover) { Text("Keşfet") }
+                TextButton(onClick = onWrite) { Text("Kitap yaz") }
             }
         }
     }
