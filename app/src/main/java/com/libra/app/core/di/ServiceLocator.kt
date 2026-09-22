@@ -18,13 +18,13 @@ object ServiceLocator {
     val authRepository: AuthRepository by lazy { FirebaseAuthRepositoryImpl(userRepository) }
     val bookRepository: BookRepository by lazy { BookRepositoryImpl() }
 
-    val r2StorageRepository: StorageRepository by lazy {
+    val r2StorageRepository: CloudflareR2StorageRepositoryImpl by lazy {
         CloudflareR2StorageRepositoryImpl()
     }
 
     val storageRepository: StorageRepository by lazy {
         HybridStorageRepositoryImpl(
-            r2 = r2StorageRepository as CloudflareR2StorageRepositoryImpl,
+            r2 = r2StorageRepository,
             fallback = FirebaseStorageRepositoryImpl()
         )
     }
