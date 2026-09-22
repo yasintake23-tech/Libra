@@ -63,7 +63,7 @@ async function verifyFirebaseToken(request: Request, env: Env): Promise<Verified
 }
 
 function normalizeKey(key: string) {
-  return key.replace(/^/+/, "").replace(//+/g, "/")
+  return key.replace(/^\/+/, "").replace(/\/+/g, "/")
 }
 
 function isSafeKey(key: string) {
