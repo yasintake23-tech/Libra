@@ -91,6 +91,7 @@ class FirebaseAuthRepositoryImpl(
                     val existing = stored.data
                     val base = buildProfile(firebaseUser, displayName, email, photoUrl)
                     val profile = existing?.copy(
+                        uid = firebaseUser.uid,
                         email = if (email.isNullOrBlank()) existing.email else email,
                         profileImageUrl = if (existing.profileImageUrl.isBlank()) {
                             photoUrl.orEmpty().ifBlank { existing.profileImageUrl }
