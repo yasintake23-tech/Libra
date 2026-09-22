@@ -34,8 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.libra.app.domain.model.UserProfile
@@ -52,15 +54,42 @@ fun ProfileSetupScreen(
     val state by viewModel.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Profil oluşturma ekranını ana uygulamanın koyu temasından bağımsız
+    // olarak açık bir yüzeyde tut. Böylece açık arka planda metinlerin
+    // yanlışlıkla koyu tema "onSurface" rengine ters düşmesi engellenir.
+    val profileLightColors = androidx.compose.material3.lightColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFF27272A),
+        onPrimary = androidx.compose.ui.graphics.Color.White,
+        background = androidx.compose.ui.graphics.Color.White,
+        onBackground = androidx.compose.ui.graphics.Color(0xFF171717),
+        surface = androidx.compose.ui.graphics.Color.White,
+        onSurface = androidx.compose.ui.graphics.Color(0xFF171717),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF4F4F5),
+        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF71717A),
+        outline = androidx.compose.ui.graphics.Color(0xFFB0B0B5),
+        error = androidx.compose.ui.graphics.Color(0xFFBA1A1A),
+        onError = androidx.compose.ui.graphics.Color.White
+    )
+
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        focusedBorderColor = MaterialTheme.colorScheme.primary,
-        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-        focusedLabelColor = MaterialTheme.colorScheme.primary,
-        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        cursorColor = MaterialTheme.colorScheme.primary
+        focusedTextColor = androidx.compose.ui.graphics.Color(0xFF171717),
+        unfocusedTextColor = androidx.compose.ui.graphics.Color(0xFF171717),
+        disabledTextColor = androidx.compose.ui.graphics.Color(0xFF71717A),
+        focusedBorderColor = androidx.compose.ui.graphics.Color(0xFF27272A),
+        unfocusedBorderColor = androidx.compose.ui.graphics.Color(0xFFB0B0B5),
+        focusedLabelColor = androidx.compose.ui.graphics.Color(0xFF27272A),
+        unfocusedLabelColor = androidx.compose.ui.graphics.Color(0xFF71717A),
+        focusedPlaceholderColor = androidx.compose.ui.graphics.Color(0xFF71717A),
+        unfocusedPlaceholderColor = androidx.compose.ui.graphics.Color(0xFF71717A),
+        focusedPrefixColor = androidx.compose.ui.graphics.Color(0xFF171717),
+        unfocusedPrefixColor = androidx.compose.ui.graphics.Color(0xFF171717),
+        cursorColor = androidx.compose.ui.graphics.Color(0xFF27272A)
+    )
+
+    val inputTextStyle = MaterialTheme.typography.bodyLarge.copy(
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 16.sp,
+        color = androidx.compose.ui.graphics.Color(0xFF171717)
     )
 
     LaunchedEffect(profile.uid) {
@@ -75,9 +104,12 @@ fun ProfileSetupScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
+    MaterialTheme(
+        colorScheme = profileLightColors
+    ) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -157,6 +189,7 @@ fun ProfileSetupScreen(
             label = { Text("Takma isim") },
             placeholder = { Text("Mesela Yasin") },
             singleLine = true,
+            textStyle = inputTextStyle,
             colors = fieldColors
         )
 
@@ -167,9 +200,16 @@ fun ProfileSetupScreen(
             onValueChange = viewModel::setUsername,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Kullanıcı adı") },
-            prefix = { Text("@") },
-            placeholder = { Text("kullaniciadi") },
+            prefix = {
+                Text(
+                    "@",
+                    fontFamily = FontFamily.SansSerif,
+                    color = androidx.compose.ui.graphics.Color(0xFF171717)
+                )
+            },
+            placeholder = { Text("kullaniciadi", fontFamily = FontFamily.SansSerif) },
             singleLine = true,
+            textStyle = inputTextStyle,
             colors = fieldColors
         )
 
@@ -235,9 +275,10 @@ fun ProfileSetupScreen(
             onValueChange = viewModel::setBio,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Hakkında") },
-            placeholder = { Text("Kendinden biraz bahset…") },
+            placeholder = { Text("Kendinden biraz bahset…", fontFamily = FontFamily.SansSerif) },
             minLines = 4,
             maxLines = 5,
+            textStyle = inputTextStyle,
             colors = fieldColors
         )
 
@@ -282,5 +323,6 @@ fun ProfileSetupScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall
         )
+    }
     }
 }
