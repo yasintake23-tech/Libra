@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.libra.app.data.storage.CloudflareR2StorageConfig
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.AppButton
 import com.libra.app.ui.components.UserAvatar
@@ -110,7 +112,8 @@ fun ProfileSetupScreen(
         Column(
             modifier = modifier
                 .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+                .background(profileLightColors.background)
+                .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -133,7 +136,21 @@ fun ProfileSetupScreen(
             val selectedUri = state.photoUri
 
             if (selectedUri != null || state.profile.profileImageUrl.isNotBlank()) {
-                val imageModel: Any = selectedUri ?: state.profile.profileImageUrl
+                val imageModel: Any = if (selectedUri != null) {
+                    selectedUri
+                } else {
+                    ImageRequest.Builder(context)
+                        .data(state.profile.profileImageUrl)
+                        .apply {
+                            if (CloudflareR2StorageConfig.isObjectApiUrl(state.profile.profileImageUrl)) {
+                                val token = CloudflareR2StorageConfig.apiToken(context)
+                                if (token.isNotBlank()) {
+                                    addHeader("Authorization", "Bearer " + token)
+                                }
+                            }
+                        }
+                        .build()
+                }
                 AsyncImage(
                     model = imageModel,
                     contentDescription = "Profil fotoğrafı",
