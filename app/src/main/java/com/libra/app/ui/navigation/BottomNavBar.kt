@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,21 +33,25 @@ fun LibraBottomBar(selectedTab: BottomNavTab, onTabSelected: (BottomNavTab) -> U
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            BottomItem(BottomNavTab.HOME, selectedTab, onTabSelected)
-            BottomItem(BottomNavTab.DISCOVER, selectedTab, onTabSelected)
-            BottomItem(BottomNavTab.DM, selectedTab, onTabSelected)
-            BottomItem(BottomNavTab.LIBRARY, selectedTab, onTabSelected)
-            BottomItem(BottomNavTab.PROFILE, selectedTab, onTabSelected)
+            BottomItem(BottomNavTab.HOME, selectedTab, onTabSelected, Modifier.weight(1f))
+            BottomItem(BottomNavTab.DISCOVER, selectedTab, onTabSelected, Modifier.weight(1f))
+            BottomItem(BottomNavTab.DM, selectedTab, onTabSelected, Modifier.weight(1f))
+            BottomItem(BottomNavTab.LIBRARY, selectedTab, onTabSelected, Modifier.weight(1f))
+            BottomItem(BottomNavTab.PROFILE, selectedTab, onTabSelected, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun BottomItem(tab: BottomNavTab, selectedTab: BottomNavTab, onTabSelected: (BottomNavTab) -> Unit) {
+private fun BottomItem(
+    tab: BottomNavTab,
+    selectedTab: BottomNavTab,
+    onTabSelected: (BottomNavTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val selected = selectedTab == tab
     androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .weight(1f)
+        modifier = modifier
             .clickable { onTabSelected(tab) }
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally
