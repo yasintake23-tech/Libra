@@ -8,7 +8,8 @@ data class DirectConversation(
     val otherUserUsername: String = "",
     val otherUserPhotoUrl: String = "",
     val lastMessage: String = "",
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val unreadCount: Int = 0
 )
 
 data class DirectMessage(
