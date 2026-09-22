@@ -5,6 +5,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.DirectConversation
+import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.UserRepository
@@ -21,6 +23,9 @@ class FirebaseChatRepositoryImpl(
 
     private val messagesRef
         get() = firestore.collection("globalChatMessages")
+
+    private val conversationsRef
+        get() = firestore.collection("directConversations")
 
     override fun observeGlobalMessages(limit: Long): Flow<AppResult<List<GlobalChatMessage>>> = callbackFlow {
         val registration = messagesRef
@@ -70,7 +75,7 @@ class FirebaseChatRepositoryImpl(
             AppResult.Error(AppError.Database("Mesaj gönderilemedi.", e))
         }
     }
-    override fun observeDirectConversations(uid: String): Flow<AppResult<List<com.libra.app.domain.model.DirectConversation>>> = callbackFlow {
+    override fun observeDirectConversations(uid: String): Flow<AppResult<List<DirectConversation>>> = callbackFlow {
         val registration = conversationsRef.whereArrayContains("participants", uid).addSnapshotListener { snapshot, error ->
             if (error != null) {
                 trySend(AppResult.Error(AppError.Database("Mesajlar yüklenemedi.", error)))
@@ -93,7 +98,7 @@ class FirebaseChatRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override fun observeDirectMessages(conversationId: String, limit: Long): Flow<AppResult<List<com.libra.app.domain.model.DirectMessage>>> = callbackFlow {
+    override fun observeDirectMessages(conversationId: String, limit: Long): Flow<AppResult<List<DirectMessage>>> = callbackFlow {
         val registration = conversationsRef.document(conversationId).collection("messages")
             .orderBy("createdAt", Query.Direction.ASCENDING).limitToLast(limit)
             .addSnapshotListener { snapshot, error ->
@@ -102,7 +107,7 @@ class FirebaseChatRepositoryImpl(
                     return@addSnapshotListener
                 }
                 val messages = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    runCatching { doc.toObject(com.libra.app.domain.model.DirectMessage::class.java)?.copy(id = doc.id) }.getOrNull()
+                    runCatching { doc.toObject(DirectMessage::class.java)?.copy(id = doc.id) }.getOrNull()
                 }
                 trySend(AppResult.Success(messages))
             }
