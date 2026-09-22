@@ -47,14 +47,22 @@ jobs:
 
       - name: Prepare fixed signing key
         shell: bash
-        env:
-          LIBRA_SIGNING_VALUE: ${{ vars.LIBRA_SIGNING_VALUE }}
         run: |
           set -euo pipefail
+
+          LIBRA_SIGNING_VALUE="${{ secrets.LIBRA_SIGNING_VALUE }}"
+          if [[ -z "$LIBRA_SIGNING_VALUE" ]]; then
+            LIBRA_SIGNING_VALUE="${{ vars.LIBRA_SIGNING_VALUE }}"
+          fi
+
           [[ -n "$LIBRA_SIGNING_VALUE" ]] || {
-            echo "::error::LIBRA_SIGNING_VALUE repository variable eksik."
+            echo "::error::LIBRA_SIGNING_VALUE secret veya repository variable eksik."
             exit 1
           }
+
+          # Repository variables are not automatically masked in Actions logs.
+          # Mask the signing value before exporting it for Gradle.
+          echo "::add-mask::$LIBRA_SIGNING_VALUE"
 
           mkdir -p "$RUNNER_TEMP/libra-signing"
           base64 --decode signing/libra-signing.jks.b64 > "$RUNNER_TEMP/libra-signing/libra.jks"
