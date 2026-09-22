@@ -73,7 +73,18 @@ class FirebaseUserRepositoryImpl : UserRepository {
     }
 
     override suspend fun completeProfile(profile: UserProfile): AppResult<UserProfile> {
-        val normalizedUsername = normalizeUsername(profile.username)
+        val normalizedProfile = profile.copy(
+            uid = profile.uid.trim(),
+            displayName = profile.displayName.trim(),
+            username = normalizeUsername(profile.username),
+            bio = profile.bio.trim()
+        )
+
+        if (normalizedProfile.uid.isBlank()) {
+            return AppResult.Error(AppError.Auth("Profil sahibi belirlenemedi."))
+        }
+
+        val normalizedUsername = normalizedProfile.username
 
         if (!isValidUsername(normalizedUsername)) {
             return AppResult.Error(
@@ -83,7 +94,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
             )
         }
 
-        if (profile.displayName.trim().length < 2) {
+        if (normalizedProfile.displayName.length < 2) {
             return AppResult.Error(
                 AppError.Validation("Takma isim en az 2 karakter olmalı.")
             )
@@ -96,7 +107,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 val snapshot = transaction.get(usernameDoc)
                 val existingUid = snapshot.getString("uid")
 
-                if (snapshot.exists() && existingUid != profile.uid) {
+                if (snapshot.exists() && existingUid != normalizedProfile.uid) {
                     throw UsernameTakenException()
                 }
 
@@ -109,7 +120,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 transaction.set(
                     usernameDoc,
                     mapOf(
-                        "uid" to profile.uid,
+                        "uid" to normalizedProfile.uid,
                         "username" to normalizedUsername,
                         "createdAt" to createdAt,
                         "updatedAt" to System.currentTimeMillis()
@@ -118,10 +129,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 null
             }.await()
 
-            val finalProfile = profile.copy(
-                username = normalizedUsername,
-                displayName = profile.displayName.trim(),
-                bio = profile.bio.trim(),
+            val finalProfile = normalizedProfile.copy(
                 profileCompleted = true,
                 updatedAt = System.currentTimeMillis()
             )
@@ -131,7 +139,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 is AppResult.Error -> {
                     runCatching {
                         val current = usernameDoc.get().await()
-                        if (current.getString("uid") == profile.uid) {
+                        if (current.getString("uid") == normalizedProfile.uid) {
                             usernameDoc.delete().await()
                         }
                     }
