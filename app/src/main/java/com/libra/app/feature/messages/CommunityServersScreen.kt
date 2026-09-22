@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,7 +103,7 @@ fun CommunityServersScreen(
                                 contentAlignment = Alignment.Center
                             ) { Icon(Icons.Default.Groups, null) }
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(server.name, fontWeight = FontWeight.Bold)
+                                Text(serverName, fontWeight = FontWeight.Bold)
                                 if (server.description.isNotBlank()) {
                                     Text(server.description, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -183,6 +184,10 @@ private fun ServerChatScreen(
     var error by remember(server.id) { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
     var showMembers by remember { mutableStateOf(false) }
+    var showManage by remember { mutableStateOf(false) }
+    var actionError by remember(server.id) { mutableStateOf<String?>(null) }
+    var serverName by remember(server.id) { mutableStateOf(server.name) }
+    var serverDescription by remember(server.id) { mutableStateOf(server.description) }
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
@@ -216,12 +221,18 @@ private fun ServerChatScreen(
                 Text(server.name, fontWeight = FontWeight.Bold)
                 Text("${members.size} üye • Topluluk sohbeti", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (server.ownerId == currentUid) {
+                IconButton(onClick = { showManage = true }) {
+                    Icon(Icons.Default.Settings, "Sunucu yönetimi")
+                }
+            }
             IconButton(onClick = { showMembers = true }) {
                 Icon(Icons.Default.People, "Üyeler")
             }
         }
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
+        actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
 
         LazyColumn(
             state = listState,
@@ -276,6 +287,57 @@ private fun ServerChatScreen(
             ) { Icon(Icons.Default.Send, "Gönder") }
         }
     }
+    if (showManage && server.ownerId == currentUid) {
+        AlertDialog(
+            onDismissRequest = { showManage = false },
+            title = { Text("Sunucu yönetimi") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = serverName,
+                        onValueChange = { if (it.length <= 40) serverName = it },
+                        label = { Text("Sunucu adı") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = serverDescription,
+                        onValueChange = { if (it.length <= 160) serverDescription = it },
+                        label = { Text("Açıklama") },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                    Text(
+                        "Üyeler ekranından Admin rolü verebilir, üyeleri çıkarabilir veya rollerini değiştirebilirsin.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    actionError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = serverName.trim().length >= 2,
+                    onClick = {
+                        scope.launch {
+                            when (val result = repository.updateCommunityServer(server.id, serverName, serverDescription)) {
+                                is AppResult.Success -> {
+                                    actionError = null
+                                    showManage = false
+                                }
+                                is AppResult.Error -> actionError = result.error.message
+                            }
+                        }
+                    }
+                ) { Text("Kaydet") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManage = false }) { Text("İptal") }
+            }
+        )
+    }
+
     if (showMembers) {
         AlertDialog(
             onDismissRequest = { showMembers = false },
