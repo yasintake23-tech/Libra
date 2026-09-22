@@ -178,7 +178,7 @@ fun BookEditorScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Bölümler", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("@@@CHAPTERCOUNT@@ bölüm", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${chapters.size} bölüm", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(
                         enabled = !isSaving,
