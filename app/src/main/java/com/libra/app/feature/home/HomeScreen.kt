@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -275,7 +276,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
-                IconButton(onClick = onSave) { Icon(Icons.Default.BookmarkBorder, "Kaydet") }
+                IconButton(onClick = onSave) { Icon(if (post.savedByCurrentUser) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Kaydet") }
             }
         }
     }
