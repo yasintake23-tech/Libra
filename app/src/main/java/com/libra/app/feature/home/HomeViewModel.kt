@@ -239,7 +239,7 @@ class HomeViewModel(
                     mapOf(
                         "authorId" to user.uid,
                         "authorName" to (user.displayName ?: "Libra kullanıcısı"),
-                        "authorPhotoUrl" to (user.photoUrl?.toString() ?: ""),
+                        "authorPhotoUrl" to userProfilePhoto(user.uid),
                         "text" to text.trim(),
                         "mediaUrl" to mediaUrl,
                         "mediaType" to if (mediaUrl.isBlank()) "" else "image",
@@ -256,6 +256,9 @@ class HomeViewModel(
             }
         }
     }
+    private fun userProfilePhoto(uid: String): String =
+        (_uiState.value as? UiState.Success)?.data?.currentUser?.profileImageUrl.orEmpty()
+
     fun toggleLike(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
