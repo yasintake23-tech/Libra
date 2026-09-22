@@ -94,6 +94,7 @@ jobs:
             R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT_VARIABLE:-}"
           fi
           R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT%/}"
+          export R2_WORKER_ENDPOINT
 
           [[ -n "$R2_WORKER_ENDPOINT" ]] || {
             echo "::error::R2 Worker endpoint eksik. Repository secret 'R2_WORKER_ENDPOINT' veya variable 'LIBRA_R2_ENDPOINT' tanımlanmalı."
