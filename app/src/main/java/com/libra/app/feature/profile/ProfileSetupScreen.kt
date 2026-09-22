@@ -271,7 +271,7 @@ fun ProfileSetupScreen(
                 )
             },
             isLoading = state.isSaving,
-            enabled = state.usernameAvailability == UsernameAvailability.AVAILABLE,
+            enabled = state.username.matches(Regex("[a-z0-9._]{3,20}")) && state.displayName.trim().length >= 2 && !state.isSaving,
             modifier = Modifier.fillMaxWidth()
         )
 
