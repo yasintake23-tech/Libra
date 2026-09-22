@@ -257,7 +257,7 @@ private fun DirectConversationScreen(
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }.orEmpty()
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
                 if (bytes.isEmpty() || bytes.size > 8 * 1024 * 1024) return@runCatching
                 val type = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
                 val upload = StorageUploadRequest(
