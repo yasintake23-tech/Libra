@@ -17,5 +17,7 @@ data class DirectMessage(
     val senderId: String = "",
     val recipientId: String = "",
     val text: String = "",
+    val mediaUrl: String = "",
+    val mediaType: String = "",
     val createdAt: Long = 0L
 )
