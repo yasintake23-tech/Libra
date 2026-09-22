@@ -30,14 +30,13 @@ android {
         libraSigningAlias
     ).all { !it.isNullOrBlank() && !it.contains("REPLACE", ignoreCase = true) }
 
-
     signingConfigs {
         if (hasLibraSigningKey) {
             create("libra") {
-                storeFile = file(requireNotNull(libraKeystorePath))
-                storePassword = requireNotNull(libraKeystorePassword)
-                keyAlias = requireNotNull(libraKeyAlias)
-                keyPassword = requireNotNull(libraKeyPassword)
+                storeFile = file(requireNotNull(libraSigningPath))
+                storePassword = requireNotNull(libraSigningValue)
+                keyAlias = requireNotNull(libraSigningAlias)
+                keyPassword = requireNotNull(libraSigningValue)
             }
         }
     }
