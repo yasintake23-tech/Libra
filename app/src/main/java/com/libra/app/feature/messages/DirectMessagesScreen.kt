@@ -334,11 +334,32 @@ private fun DirectConversationScreen(
                     ) {
                         Column(Modifier.padding(6.dp)) {
                             if (message.mediaUrl.isNotBlank()) {
-                                AsyncImage(
-                                    model = message.mediaUrl,
-                                    contentDescription = "Gönderilen fotoğraf",
-                                    modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp))
-                                )
+                                var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
+                                if (mediaFailed) {
+                                    Surface(
+                                        modifier = Modifier.width(220.dp).height(120.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                "Fotoğraf yüklenemedi",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    AsyncImage(
+                                        model = message.mediaUrl,
+                                        contentDescription = "Gönderilen fotoğraf",
+                                        modifier = Modifier
+                                            .width(220.dp)
+                                            .heightIn(max = 280.dp)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        onError = { mediaFailed = true }
+                                    )
+                                }
                             }
                             if (message.text.isNotBlank()) {
                                 Text(message.text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
