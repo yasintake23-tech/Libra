@@ -18,6 +18,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +52,17 @@ fun LoginScreen(
     var registerMode by rememberSaveable { mutableStateOf(false) }
 
     val errorMessage = (authState as? UiState.Error)?.error?.message
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        focusedLabelColor = MaterialTheme.colorScheme.primary,
+        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        cursorColor = MaterialTheme.colorScheme.primary
+    )
 
     Column(
         modifier = modifier
@@ -115,7 +127,8 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("E-posta") },
             placeholder = { Text("ornek@mail.com") },
-            singleLine = true
+            singleLine = true,
+            colors = fieldColors
         )
 
         Spacer(Modifier.height(10.dp))
@@ -126,7 +139,8 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Şifre") },
             visualTransformation = PasswordVisualTransformation(),
-            singleLine = true
+            singleLine = true,
+            colors = fieldColors
         )
 
         if (registerMode) {

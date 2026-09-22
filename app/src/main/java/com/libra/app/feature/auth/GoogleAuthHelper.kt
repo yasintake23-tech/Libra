@@ -4,11 +4,12 @@ import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.libra.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 object GoogleAuthHelper {
 
@@ -24,7 +25,7 @@ object GoogleAuthHelper {
             resolvedServerClientId.contains("REPLACE", ignoreCase = true)
         ) {
             onError(
-                "Google Sign-In yapılandırılmamış. Firebase'den güncel google-services.json dosyasını ekleyin."
+                "Google Sign-In yapılandırılmamış. Firebase'deki Web OAuth Client ID bulunamadı."
             )
             return
         }
@@ -33,14 +34,14 @@ object GoogleAuthHelper {
             try {
                 val credentialManager = CredentialManager.create(context)
 
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(resolvedServerClientId)
-                    .setAutoSelectEnabled(false)
-                    .build()
+                // Explicit Google button flow. It does not require a prior authorization.
+                val googleSignInOption =
+                    GetSignInWithGoogleOption.Builder(resolvedServerClientId)
+                        .setNonce(UUID.randomUUID().toString())
+                        .build()
 
                 val request = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
+                    .addCredentialOption(googleSignInOption)
                     .build()
 
                 val result = credentialManager.getCredential(
@@ -53,7 +54,8 @@ object GoogleAuthHelper {
                 if (credential is androidx.credentials.CustomCredential &&
                     credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
                 ) {
-                    val googleCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                    val googleCredential =
+                        GoogleIdTokenCredential.createFrom(credential.data)
 
                     onSuccess(
                         googleCredential.idToken,
@@ -65,7 +67,18 @@ object GoogleAuthHelper {
                     onError("Google hesabı doğrulanamadı.")
                 }
             } catch (e: GetCredentialException) {
-                onError("Google girişi: " + (e.localizedMessage ?: "İşlem iptal edildi."))
+                onError(
+                    when {
+                        e.message?.contains(
+                            "No credentials available",
+                            ignoreCase = true
+                        ) == true ->
+                            "Google hesabı seçilemedi. Telefonda Google hesabının açık olduğundan ve Google Play Hizmetleri'nin güncel olduğundan emin ol."
+                        else ->
+                            "Google girişi: " +
+                                (e.localizedMessage ?: "İşlem tamamlanamadı.")
+                    }
+                )
             } catch (e: Exception) {
                 onError(
                     "Google girişi başarısız: " +

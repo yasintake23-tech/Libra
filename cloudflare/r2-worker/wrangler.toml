@@ -1,0 +1,11 @@
+name = "libra-r2-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-22"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "libra-media"
+
+[vars]
+CORS_ORIGIN = "*"
+FIREBASE_PROJECT_ID = "libra-3bfb9"

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +51,17 @@ fun ProfileSetupScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        focusedLabelColor = MaterialTheme.colorScheme.primary,
+        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        cursorColor = MaterialTheme.colorScheme.primary
+    )
 
     LaunchedEffect(profile.uid) {
         viewModel.initialize(profile)
@@ -144,7 +156,8 @@ fun ProfileSetupScreen(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Takma isim") },
             placeholder = { Text("Mesela Yasin") },
-            singleLine = true
+            singleLine = true,
+            colors = fieldColors
         )
 
         Spacer(Modifier.height(12.dp))
@@ -156,7 +169,8 @@ fun ProfileSetupScreen(
             label = { Text("Kullanıcı adı") },
             prefix = { Text("@") },
             placeholder = { Text("kullaniciadi") },
-            singleLine = true
+            singleLine = true,
+            colors = fieldColors
         )
 
         when (state.usernameAvailability) {
@@ -223,7 +237,8 @@ fun ProfileSetupScreen(
             label = { Text("Hakkında") },
             placeholder = { Text("Kendinden biraz bahset…") },
             minLines = 4,
-            maxLines = 5
+            maxLines = 5,
+            colors = fieldColors
         )
 
         Spacer(Modifier.height(10.dp))
