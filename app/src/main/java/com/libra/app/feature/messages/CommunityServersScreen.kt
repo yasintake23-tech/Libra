@@ -218,7 +218,7 @@ private fun ServerChatScreen(
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column(Modifier.weight(1f)) {
-                Text(server.name, fontWeight = FontWeight.Bold)
+                Text(serverName, fontWeight = FontWeight.Bold)
                 Text("${members.size} üye • Topluluk sohbeti", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (server.ownerId == currentUid) {
