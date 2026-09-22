@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -42,6 +40,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -122,138 +121,231 @@ fun HomeScreen(
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
             var showCreateMenu by remember { mutableStateOf(false) }
+            var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
 
-            LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
-                item { HomeHeader(data.currentUser, onNavigateToProfile, onNotifications) }
-                item { SectionHeader("Gönderiler", subtitle = "Takip ettiklerinin son paylaşımları") }
-                if (data.posts.isEmpty()) {
-                    item { EmptyFeed(onNavigateToDiscover, onNavigateToWrite) }
-                } else {
-                    items(data.posts, key = { it.id }) { post ->
-                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { onToggleSave(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
-                    }
-                }
-                item { SectionHeader("Kitaplar", subtitle = "Okumaya devam et ve yeni hikâyeler keşfet") }
-
-                data.currentlyReading?.let { reading ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 18.dp)
+                ) {
                     item {
-                        CurrentlyReadingCard(
-                            reading,
-                            { onBookClick(reading.book) },
-                            Modifier.padding(horizontal = 16.dp)
-                        )
+                        HomeHeader(data.currentUser, onNavigateToProfile, onNotifications)
                     }
-                }
 
-                item { SectionHeader("Önerilenler", actionLabel = "Keşfet", onActionClick = onNavigateToDiscover) }
-                if (data.featuredBooks.isEmpty()) {
-                    item { EmptyStrip("Şimdilik önerilecek kitap yok.") }
-                } else {
                     item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(data.featuredBooks.take(8), key = { it.id }) { book ->
-                                VerticalBookCard(book = book, onClick = { onBookClick(book) })
+                            HomeSectionButton(
+                                title = "Gönderiler",
+                                selected = selectedSection == HomeSection.POSTS,
+                                modifier = Modifier.weight(1f),
+                                onClick = { selectedSection = HomeSection.POSTS }
+                            )
+                            HomeSectionButton(
+                                title = "Kitaplar",
+                                selected = selectedSection == HomeSection.BOOKS,
+                                modifier = Modifier.weight(1f),
+                                onClick = { selectedSection = HomeSection.BOOKS }
+                            )
+                        }
+                    }
+
+                    when (selectedSection) {
+                        HomeSection.POSTS -> {
+                            if (data.posts.isEmpty()) {
+                                item { EmptySection("Henüz gösterilecek gönderi yok.") }
+                            } else {
+                                items(data.posts, key = { it.id }) { post ->
+                                    PostCard(
+                                        post,
+                                        data.currentUser?.uid.orEmpty(),
+                                        { onToggleLike(post) },
+                                        { onDeletePost(post) },
+                                        { onToggleSave(post) },
+                                        {
+                                            selectedPost = post
+                                            commentText = ""
+                                            onOpenComments(post)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        HomeSection.BOOKS -> {
+                            if (data.recentBooks.isEmpty()) {
+                                item { EmptySection("Henüz yayınlanmış kitap yok.") }
+                            } else {
+                                items(data.recentBooks.take(20), key = { it.id }) { book ->
+                                    HorizontalBookCard(
+                                        book,
+                                        { onBookClick(book) },
+                                        Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                item { SectionHeader("Yeni kitaplar", subtitle = "Son yayınlar") }
-                if (data.recentBooks.isEmpty()) {
-                    item { EmptyStrip("Henüz yayınlanmış kitap yok.") }
-                } else {
-                    items(data.recentBooks.take(5), key = { it.id }) { book ->
-                        HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 3.dp))
-                    }
-                }
-            }
-
-            Box(Modifier.fillMaxSize()) {
                 AnimatedVisibility(
                     visible = showCreateMenu,
-                    modifier = Modifier.align(Alignment.TopEnd),
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut()
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 76.dp, end = 18.dp),
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut()
                 ) {
-                    CreateSphereMenu(
-                        onStory = { showCreateMenu = false; onOpenCreateStory() },
-                        onPost = { showCreateMenu = false; onOpenCreatePost() },
-                        onDismiss = { showCreateMenu = false }
+                    CreateChoiceMenu(
+                        onStory = {
+                            showCreateMenu = false
+                            onOpenCreateStory()
+                        },
+                        onPost = {
+                            showCreateMenu = false
+                            onOpenCreatePost()
+                        }
                     )
                 }
+
                 androidx.compose.material3.FloatingActionButton(
                     onClick = { showCreateMenu = !showCreateMenu },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 18.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 12.dp, end = 18.dp),
                     containerColor = MaterialTheme.colorScheme.onBackground,
                     contentColor = MaterialTheme.colorScheme.background
                 ) {
-                    Icon(Icons.Default.Add, if (showCreateMenu) "Kapat" else "Oluştur")
+                    Icon(
+                        Icons.Default.Add,
+                        if (showCreateMenu) "Kapat" else "Oluştur"
+                    )
+                }
+
+                selectedPost?.let { post ->
+                    PostCommentsDialog(
+                        post = post,
+                        currentUserId = data.currentUser?.uid.orEmpty(),
+                        comments = comments,
+                        text = commentText,
+                        onTextChanged = { if (it.length <= 500) commentText = it },
+                        onSend = {
+                            onAddComment(post, commentText.trim())
+                            commentText = ""
+                        },
+                        onDeleteComment = { onDeleteComment(post, it) },
+                        isSending = isCommenting,
+                        error = commentError,
+                        onClearError = onClearCommentError,
+                        onDismiss = {
+                            selectedPost = null
+                            commentText = ""
+                            onCloseComments()
+                        }
+                    )
                 }
             }
-
-            selectedPost?.let { post ->
-                PostCommentsDialog(
-                    post = post,
-                    currentUserId = data.currentUser?.uid.orEmpty(),
-                    comments = comments,
-                    text = commentText,
-                    onTextChanged = { if (it.length <= 500) commentText = it },
-                    onSend = {
-                        onAddComment(post, commentText.trim())
-                        commentText = ""
-                    },
-                    onDeleteComment = { onDeleteComment(post, it) },
-                    isSending = isCommenting,
-                    error = commentError,
-                    onClearError = onClearCommentError,
-                    onDismiss = {
-                        selectedPost = null
-                        commentText = ""
-                        onCloseComments()
-                    }
-                )
-            }
-
         }
     }
 }
 
+private enum class HomeSection { POSTS, BOOKS }
 
 @Composable
-private fun CreateSphereMenu(
-    onStory: () -> Unit,
-    onPost: () -> Unit,
-    onDismiss: () -> Unit
+private fun HomeSectionButton(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
     Box(
-        Modifier
-            .size(220.dp)
-            .offset(x = 88.dp, y = (-42).dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onBackground)
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.onBackground
+                else MaterialTheme.colorScheme.surface
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Row(Modifier.fillMaxSize()) {
-            Box(
-                Modifier.weight(1f).fillMaxSize().clickable(onClick = onStory),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.AutoStories, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(30.dp))
-                    Text("Hikâye", color = MaterialTheme.colorScheme.background, fontWeight = FontWeight.Bold)
-                }
+        Text(
+            title,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) {
+                MaterialTheme.colorScheme.background
+            } else {
+                MaterialTheme.colorScheme.onSurface
             }
-            Box(Modifier.width(1.dp).fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = .22f)))
-            Box(
-                Modifier.weight(1f).fillMaxSize().clickable(onClick = onPost),
-                contentAlignment = Alignment.Center
+        )
+    }
+}
+
+@Composable
+private fun EmptySection(text: String) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateChoiceMenu(
+    onStory: () -> Unit,
+    onPost: () -> Unit
+) {
+    Card(
+        modifier = Modifier.width(190.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onStory)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(30.dp))
-                    Text("Gönderi", color = MaterialTheme.colorScheme.background, fontWeight = FontWeight.Bold)
-                }
+                Icon(Icons.Default.AutoStories, null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("Hikâye", fontWeight = FontWeight.SemiBold)
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onPost)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Edit, null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("Gönderi", fontWeight = FontWeight.SemiBold)
             }
         }
     }
