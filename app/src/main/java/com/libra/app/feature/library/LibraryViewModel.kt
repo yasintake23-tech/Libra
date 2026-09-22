@@ -47,8 +47,32 @@ class LibraryViewModel(
             }
 
             _uiState.value = UiState.Loading
-            val flow = bookRepository.getUserLibrary(userId, shelfType)
 
+            if (shelfType == ShelfType.MY_WRITINGS) {
+                bookRepository.getUserWrittenBooks(userId).collect { result ->
+                    when (result) {
+                        is AppResult.Success -> {
+                            val items = result.data.map { book ->
+                                UserShelfItem(
+                                    id = "${userId}_MY_WRITINGS_${book.id}",
+                                    userId = userId,
+                                    book = book,
+                                    shelfType = ShelfType.MY_WRITINGS,
+                                    progressPercent = 0,
+                                    addedAt = book.updatedAt
+                                )
+                            }
+                            _uiState.value = UiState.Success(
+                                LibraryState(shelfType, items, currentSearch)
+                            )
+                        }
+                        is AppResult.Error -> _uiState.value = UiState.Error(result.error)
+                    }
+                }
+                return@launch
+            }
+
+            val flow = bookRepository.getUserLibrary(userId, shelfType)
             val firstResult = withTimeoutOrNull(8_000L) {
                 flow.first { it is AppResult.Success || it is AppResult.Error }
             }
@@ -71,7 +95,7 @@ class LibraryViewModel(
                 }
                 is AppResult.Error -> _uiState.value = UiState.Error(firstResult.error)
                 null -> _uiState.value = UiState.Error(
-                    AppError.Database("Kütüphane yüklenemedi. İnternet bağlantısını kontrol edip tekrar dene.")
+                    AppError.Database("Kütüphane yüklenemedi. Firebase bağlantısı yanıt vermedi.")
                 )
             }
         }
