@@ -27,6 +27,9 @@ class FirebaseUserRepositoryImpl : UserRepository {
     private val usernamesRef
         get() = firestore.collection("usernames")
 
+    private val followsRef
+        get() = firestore.collection("follows")
+
     override fun getUserProfile(uid: String): Flow<AppResult<UserProfile?>> = callbackFlow {
         cache[uid]?.let { trySend(AppResult.Success(it)) }
 
@@ -199,6 +202,85 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 "updatedAt" to System.currentTimeMillis()
             )
         )
+    }
+
+    override suspend fun getFollowingIds(uid: String): AppResult<Set<String>> {
+        if (uid.isBlank()) return AppResult.Success(emptySet())
+
+        return try {
+            val snapshot = followsRef
+                .whereEqualTo("followerId", uid)
+                .limit(1000)
+                .get()
+                .await()
+
+            AppResult.Success(
+                snapshot.documents.mapNotNull { it.getString("followingId") }.toSet()
+            )
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Takip edilenler yüklenemedi.", e))
+        }
+    }
+
+    override suspend fun isFollowing(
+        followerId: String,
+        followingId: String
+    ): AppResult<Boolean> {
+        if (followerId.isBlank() || followingId.isBlank() || followerId == followingId) {
+            return AppResult.Success(false)
+        }
+
+        return try {
+            AppResult.Success(
+                followsRef.document(followerId + "_" + followingId).get().await().exists()
+            )
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Takip durumu okunamadı.", e))
+        }
+    }
+
+    override suspend fun followUser(
+        followerId: String,
+        followingId: String
+    ): AppResult<Unit> {
+        if (followerId.isBlank() || followingId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçerli bir kullanıcı seçilmedi."))
+        }
+        if (followerId == followingId) {
+            return AppResult.Error(AppError.Validation("Kendini takip edemezsin."))
+        }
+
+        return try {
+            val ref = followsRef.document(followerId + "_" + followingId)
+            if (!ref.get().await().exists()) {
+                ref.set(
+                    mapOf(
+                        "followerId" to followerId,
+                        "followingId" to followingId,
+                        "createdAt" to System.currentTimeMillis()
+                    )
+                ).await()
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Takip işlemi tamamlanamadı.", e))
+        }
+    }
+
+    override suspend fun unfollowUser(
+        followerId: String,
+        followingId: String
+    ): AppResult<Unit> {
+        if (followerId.isBlank() || followingId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçerli bir kullanıcı seçilmedi."))
+        }
+
+        return try {
+            followsRef.document(followerId + "_" + followingId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Takipten çıkılamadı.", e))
+        }
     }
 
     override fun searchUsers(query: String): Flow<AppResult<List<UserProfile>>> = callbackFlow {
