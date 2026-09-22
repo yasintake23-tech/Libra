@@ -13,4 +13,6 @@ interface PostRepository {
     fun observeComments(postId: String, limit: Long = 100): Flow<AppResult<List<PostComment>>>
     suspend fun addComment(postId: String, authorId: String, text: String): AppResult<PostComment>
     suspend fun deleteComment(postId: String, commentId: String, userId: String): AppResult<Unit>
+    suspend fun toggleSave(postId: String, userId: String): AppResult<Boolean>
+    fun observeSavedPosts(userId: String, limit: Long = 100): Flow<AppResult<List<Post>>>
 }
