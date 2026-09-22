@@ -1,8 +1,8 @@
 package com.libra.app.data.storage
 
-import com.google.firebase.FirebaseApp
+import android.content.Context
+import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
-import com.libra.app.R
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.StorageUploadRequest
@@ -15,34 +15,35 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.util.UUID
 
 class CloudflareR2StorageRepositoryImpl(
-    private val endpointOverride: String = ""
+    private val context: Context
 ) : StorageRepository {
 
-    private val endpoint: String by lazy {
-        endpointOverride.ifBlank {
-            runCatching {
-                FirebaseApp.getInstance()
-                    .applicationContext
-                    .getString(R.string.r2_upload_endpoint)
-            }.getOrDefault("")
-        }.trimEnd('/')
-    }
+    private val config: CloudflareR2StorageConfig
+        get() = CloudflareR2StorageConfig
 
     val isConfigured: Boolean
-        get() = endpoint.isNotBlank()
+        get() = runCatching {
+            config.accountId(context).isNotBlank() &&
+                config.bucketName(context).isNotBlank() &&
+                config.apiToken(context).isNotBlank()
+        }.getOrDefault(false)
 
     override fun uploadMedia(request: StorageUploadRequest): Flow<AppResult<String>> = flow {
         if (!isConfigured) {
-            emit(AppResult.Error(AppError.Storage("Cloudflare R2 upload endpointi henüz yapılandırılmadı.")))
+            emit(AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik.")))
             return@flow
         }
 
         if (request.bytes.isEmpty()) {
             emit(AppResult.Error(AppError.Storage("Yüklenecek dosya boş.")))
+            return@flow
+        }
+
+        if (request.bytes.size > 8 * 1024 * 1024) {
+            emit(AppResult.Error(AppError.Storage("Dosya 8 MB'dan büyük olamaz.")))
             return@flow
         }
 
@@ -53,41 +54,55 @@ class CloudflareR2StorageRepositoryImpl(
                     return@flow
                 }
 
-            val idToken = user.getIdToken(false).await().token
-                ?: run {
-                    emit(AppResult.Error(AppError.Auth("Kimlik doğrulama jetonu alınamadı.")))
-                    return@flow
-                }
+            val safeFileName = request.fileName
+                .substringAfterLast('/')
+                .trim()
+                .ifBlank { "file" }
 
-            val safeFileName = request.fileName.substringAfterLast('/').ifBlank { "file" }
-            val targetDirectory = request.targetDirectory.trim('/').ifBlank { "uploads" }
+            val targetDirectory = request.targetDirectory
+                .trim('/')
+                .ifBlank { "uploads" }
+
+            val ownerDirectory = "users/" + user.uid
+            if (targetDirectory != ownerDirectory) {
+                emit(
+                    AppResult.Error(
+                        AppError.Storage(
+                            "R2 hedef klasörü giriş yapan kullanıcıya ait olmalı."
+                        )
+                    )
+                )
+                return@flow
+            }
+
             val objectKey =
-                targetDirectory + "/" + UUID.randomUUID() + "-" + safeFileName
+                targetDirectory + "/" + UUID.randomUUID().toString() + "-" + safeFileName
 
             val response = withContext(Dispatchers.IO) {
                 putBytes(
-                    url = endpoint + "/upload?path=" +
-                        URLEncoder.encode(objectKey, "UTF-8"),
-                    idToken = idToken,
+                    url = config.objectUrl(context, objectKey),
+                    apiToken = config.apiToken(context),
                     bytes = request.bytes,
-                    contentType = request.contentType.ifBlank {
-                        "application/octet-stream"
-                    }
+                    contentType = request.contentType.ifBlank { "application/octet-stream" }
                 )
             }
 
             if (response.code !in 200..299) {
+                val message = runCatching {
+                    JSONObject(response.body)
+                        .optJSONArray("errors")
+                        ?.optJSONObject(0)
+                        ?.optString("message")
+                }.getOrNull().orEmpty()
+
                 throw IllegalStateException(
-                    response.body.ifBlank { "R2 upload başarısız." }
+                    message.ifBlank {
+                        response.body.ifBlank { "R2 yükleme başarısız." }
+                    }
                 )
             }
 
-            val json = JSONObject(response.body)
-            val url = json.optString("url").ifBlank {
-                getPublicCdnUrl(objectKey)
-            }
-
-            emit(AppResult.Success(url))
+            emit(AppResult.Success(config.objectUrl(context, objectKey)))
         } catch (e: Exception) {
             emit(
                 AppResult.Error(
@@ -103,23 +118,18 @@ class CloudflareR2StorageRepositoryImpl(
 
     override suspend fun deleteMedia(fileKey: String): AppResult<Unit> {
         if (!isConfigured) {
-            return AppResult.Error(AppError.Storage("Cloudflare R2 endpointi yapılandırılmadı."))
+            return AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik."))
         }
 
         return try {
-            val user = FirebaseAuth.getInstance().currentUser
-                ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+            val key = extractObjectKey(fileKey)
+                ?: return AppResult.Error(AppError.Storage("R2 nesne yolu çözümlenemedi."))
 
-            val idToken = user.getIdToken(false).await().token
-                ?: return AppResult.Error(AppError.Auth("Kimlik doğrulama jetonu alınamadı."))
-
-            val key = fileKey.substringAfter("/media/").trim('/')
             val response = withContext(Dispatchers.IO) {
                 request(
                     method = "DELETE",
-                    url = endpoint + "/delete?path=" +
-                        URLEncoder.encode(key, "UTF-8"),
-                    idToken = idToken
+                    url = config.objectUrl(context, key),
+                    apiToken = config.apiToken(context)
                 )
             }
 
@@ -144,14 +154,34 @@ class CloudflareR2StorageRepositoryImpl(
 
         if (!isConfigured) return fileKey
 
-        return endpoint + "/media/" + fileKey.trim('/')
-            .split('/')
-            .joinToString("/") { URLEncoder.encode(it, "UTF-8") }
+        return config.objectUrl(context, fileKey)
+    }
+
+    private fun extractObjectKey(fileKey: String): String? {
+        val value = fileKey.trim()
+        if (value.isBlank()) return null
+
+        return when {
+            CloudflareR2StorageConfig.isObjectApiUrl(value) -> {
+                value.substringAfter("/objects/", missingDelimiterValue = "")
+                    .takeIf { it.isNotBlank() }
+                    ?.let(Uri::decode)
+            }
+
+            "/media/" in value -> {
+                value.substringAfter("/media/")
+                    .trim('/')
+                    .takeIf { it.isNotBlank() }
+            }
+
+            else -> value.trim('/')
+                .takeIf { it.startsWith("users/") }
+        }
     }
 
     private fun putBytes(
         url: String,
-        idToken: String,
+        apiToken: String,
         bytes: ByteArray,
         contentType: String
     ): HttpResponse {
@@ -162,7 +192,7 @@ class CloudflareR2StorageRepositoryImpl(
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.connectTimeout = 20_000
             connection.readTimeout = 60_000
-            connection.setRequestProperty("Authorization", "Bearer $idToken")
+            connection.setRequestProperty("Authorization", "Bearer " + apiToken)
             connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept", "application/json")
             connection.outputStream.use { it.write(bytes) }
@@ -176,14 +206,15 @@ class CloudflareR2StorageRepositoryImpl(
     private fun request(
         method: String,
         url: String,
-        idToken: String
+        apiToken: String
     ): HttpResponse {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
             connection.connectTimeout = 20_000
             connection.readTimeout = 30_000
-            connection.setRequestProperty("Authorization", "Bearer $idToken")
+            connection.setRequestProperty("Authorization", "Bearer " + apiToken)
+            connection.setRequestProperty("Accept", "application/json")
             HttpResponse(connection.responseCode, readResponse(connection))
         } finally {
             connection.disconnect()

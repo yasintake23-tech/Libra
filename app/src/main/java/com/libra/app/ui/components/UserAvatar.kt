@@ -14,12 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.libra.app.data.storage.CloudflareR2StorageConfig
 
 @Composable
 fun UserAvatar(
@@ -30,6 +33,8 @@ fun UserAvatar(
     showOnlineBadge: Boolean = false,
     borderColor: Color = MaterialTheme.colorScheme.primary
 ) {
+    val context = LocalContext.current
+
     Box(
         modifier = modifier
             .size(size)
@@ -44,8 +49,22 @@ fun UserAvatar(
             contentAlignment = Alignment.Center
         ) {
             if (!photoUrl.isNullOrBlank()) {
+                val model: Any = if (CloudflareR2StorageConfig.isObjectApiUrl(photoUrl)) {
+                    ImageRequest.Builder(context)
+                        .data(photoUrl)
+                        .apply {
+                            val token = CloudflareR2StorageConfig.apiToken(context)
+                            if (token.isNotBlank()) {
+                                addHeader("Authorization", "Bearer " + token)
+                            }
+                        }
+                        .build()
+                } else {
+                    photoUrl
+                }
+
                 AsyncImage(
-                    model = photoUrl,
+                    model = model,
                     contentDescription = "User profile photo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

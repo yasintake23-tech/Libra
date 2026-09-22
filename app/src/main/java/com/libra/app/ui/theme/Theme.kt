@@ -1,9 +1,13 @@
 package com.libra.app.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
@@ -21,7 +25,9 @@ private val LightColorScheme = lightColorScheme(
     onSurface = LibraInk,
     surfaceVariant = Color(0xFFF4F4F5),
     onSurfaceVariant = LibraMuted,
-    outline = LibraLine
+    outline = LibraLine,
+    error = Color(0xFFBA1A1A),
+    onError = Color.White
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -39,17 +45,27 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = LibraDarkText,
     surfaceVariant = Color(0xFF222222),
     onSurfaceVariant = LibraDarkMuted,
-    outline = LibraDarkLine
+    outline = LibraDarkLine,
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
 )
 
 @Composable
 fun LibraTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    val colors = if (darkTheme) DarkColorScheme else LightColorScheme
+
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
-        typography = Typography,
-        content = content
-    )
+        colorScheme = colors,
+        typography = Typography
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = colors.background,
+            contentColor = colors.onBackground,
+            content = content
+        )
+    }
 }

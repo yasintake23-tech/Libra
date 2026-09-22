@@ -1,5 +1,5 @@
 name: Libra Android APK
-# Profile/storage reliability fixes build marker
+# Direct R2 client + profile/text reliability build
 
 on:
   push:
@@ -49,37 +49,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           LIBRA_SIGNING_VALUE="${{ secrets.LIBRA_SIGNING_VALUE }}"
           if [[ -z "$LIBRA_SIGNING_VALUE" ]]; then
             LIBRA_SIGNING_VALUE="${{ vars.LIBRA_SIGNING_VALUE }}"
           fi
-
           [[ -n "$LIBRA_SIGNING_VALUE" ]] || {
             echo "::error::LIBRA_SIGNING_VALUE secret veya repository variable eksik."
             exit 1
           }
-
-          # Repository variables are not automatically masked in Actions logs.
-          # Mask the signing value before exporting it for Gradle.
           echo "::add-mask::$LIBRA_SIGNING_VALUE"
-
           mkdir -p "$RUNNER_TEMP/libra-signing"
           base64 --decode signing/libra-signing.jks.b64 > "$RUNNER_TEMP/libra-signing/libra.jks"
           test -s "$RUNNER_TEMP/libra-signing/libra.jks"
-
-          keytool -list \
-            -keystore "$RUNNER_TEMP/libra-signing/libra.jks" \
-            -storepass "$LIBRA_SIGNING_VALUE" \
-            -alias "libra" >/dev/null
-
+          keytool -list -keystore "$RUNNER_TEMP/libra-signing/libra.jks" -storepass "$LIBRA_SIGNING_VALUE" -alias "libra" >/dev/null
           {
             echo "LIBRA_SIGNING_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
             echo "LIBRA_SIGNING_VALUE=$LIBRA_SIGNING_VALUE"
             echo "LIBRA_SIGNING_ALIAS=libra"
           } >> "$GITHUB_ENV"
-
-          echo "Sabit Libra signing key doğrulandı."
 
       - name: Verify committed Firebase config
         shell: bash
@@ -89,57 +76,66 @@ jobs:
           grep -q '"project_id": "libra-3bfb9"' app/google-services.json
           grep -q '"package_name": "com.libra.app"' app/google-services.json
 
-      - name: Inject and verify R2 Worker endpoint
+      - name: Verify direct Cloudflare R2 access
         shell: bash
-        env:
-          R2_WORKER_ENDPOINT_SECRET: ${{ secrets.R2_WORKER_ENDPOINT }}
-          R2_WORKER_ENDPOINT_VARIABLE: ${{ vars.LIBRA_R2_ENDPOINT }}
         run: |
           set -euo pipefail
 
-          R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT_SECRET:-}"
-          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
-            R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT_VARIABLE:-}"
-          fi
-          R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT%/}"
-          export R2_WORKER_ENDPOINT
-
-          [[ -n "$R2_WORKER_ENDPOINT" ]] || {
-            echo "::error::R2 Worker endpoint eksik. Repository secret 'R2_WORKER_ENDPOINT' veya variable 'LIBRA_R2_ENDPOINT' tanımlanmalı."
-            exit 1
-          }
-
-          python3 - <<'PY'
+          python3 - <<'PY' > "$RUNNER_TEMP/r2.env"
           from pathlib import Path
-          import os
           import xml.etree.ElementTree as ET
 
-          path = Path("app/src/main/res/values/strings.xml")
-          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
-          root = ET.parse(path).getroot()
+          root = ET.parse("app/src/main/res/values/strings.xml").getroot()
+          values = {
+              node.attrib["name"]: (node.text or "").strip()
+              for node in root.findall("string")
+          }
 
-          for node in root.findall("string"):
-              if node.attrib.get("name") == "r2_upload_endpoint":
-                  node.text = endpoint
-                  break
-          else:
-              raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
+          required = {
+              "account": values.get("cloudflare_r2_account_id", ""),
+              "bucket": values.get("cloudflare_r2_bucket_name", ""),
+              "token": values.get("cloudflare_r2_api_token", ""),
+          }
 
-          path.write_text(ET.tostring(root, encoding="unicode"))
+          for key, value in required.items():
+              if not value:
+                  raise SystemExit("Cloudflare R2 " + key + " yapılandırması eksik.")
+
+          for key, value in required.items():
+              print("R2_" + key.upper() + "=" + value)
           PY
 
-          health="$(curl --fail --silent --show-error --location --max-time 15 "$R2_WORKER_ENDPOINT/health")"
-          python3 - <<'PY' "$health"
-          import json
-          import sys
+          set -a
+          source "$RUNNER_TEMP/r2.env"
+          set +a
 
-          payload = json.loads(sys.argv[1])
-          if payload.get("ok") is not True or payload.get("storage") != "r2":
-              raise SystemExit(f"R2 Worker health check başarısız: {payload}")
-          print("R2 Worker health check başarılı.")
+          echo "::add-mask::$R2_TOKEN"
+
+          API_BASE="https://api.cloudflare.com/client/v4/accounts/$R2_ACCOUNT/r2/buckets/$R2_BUCKET/objects"
+          TEST_KEY="_ci/libra-$GITHUB_RUN_ID.txt"
+
+          printf 'libra-r2-ci
+' > "$RUNNER_TEMP/r2-test.txt"
+
+          curl --fail --silent --show-error             --request PUT             --header "Authorization: Bearer $R2_TOKEN"             --header "Content-Type: text/plain"             --data-binary @"$RUNNER_TEMP/r2-test.txt"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-put.json"
+
+          python3 - <<'PY' "$RUNNER_TEMP/r2-put.json"
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if payload.get("success") is not True:
+              raise SystemExit(f"R2 PUT başarısız: {payload}")
+          print("Direct R2 PUT başarılı.")
           PY
 
-          echo "R2 Worker endpoint build'e enjekte edildi."
+          curl --fail --silent --show-error             --request DELETE             --header "Authorization: Bearer $R2_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-delete.json"
+
+          python3 - <<'PY' "$RUNNER_TEMP/r2-delete.json"
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if payload.get("success") is not True:
+              raise SystemExit(f"R2 DELETE başarısız: {payload}")
+          print("Direct R2 DELETE başarılı.")
+          PY
 
       - name: Show toolchain
         shell: bash
@@ -161,18 +157,16 @@ jobs:
           set -euo pipefail
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
-
-          if [[ -z "$APKSIGNER" ]]; then
-            echo "::error::apksigner bulunamadı."
-            exit 1
-          fi
+          [[ -n "$APKSIGNER" ]] || { echo "::error::apksigner bulunamadı."; exit 1; }
 
           set +x
           CERT_OUTPUT="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1)"
           set -x
 
-          ACTUAL_SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-1 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-          ACTUAL_SHA256="$(printf '%s\n' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-256 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_SHA1="$(printf '%s
+' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-1 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_SHA256="$(printf '%s
+' "$CERT_OUTPUT" | sed -nE 's/.*certificate SHA-256 digest: ([0-9A-Fa-f:]+).*/\1/p' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
 
           echo "Expected SHA-1: $EXPECTED_LIBRA_SHA1"
           echo "Actual SHA-1:   $ACTUAL_SHA1"
@@ -180,7 +174,6 @@ jobs:
 
           if [[ -z "$ACTUAL_SHA1" ]]; then
             echo "::error::APK sertifika SHA-1 değeri okunamadı."
-            printf '%s\n' "$CERT_OUTPUT"
             exit 1
           fi
 
@@ -189,7 +182,6 @@ jobs:
             exit 1
           fi
 
-          echo "Firebase-matched signing certificate doğrulandı."
           echo "sha1=$ACTUAL_SHA1" >> "$GITHUB_OUTPUT"
           echo "sha256=$ACTUAL_SHA256" >> "$GITHUB_OUTPUT"
 
@@ -198,7 +190,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
           [[ -f "$APK_PATH" ]] || { echo "::error::APK bulunamadı."; exit 1; }
 
@@ -254,6 +245,7 @@ jobs:
             app/build/test-results/**
           if-no-files-found: ignore
           retention-days: 7
+          compression-level: 6
 
       - name: Build summary
         if: ${{ success() }}

@@ -27,15 +27,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.libra.app.data.storage.CloudflareR2StorageConfig
 import com.libra.app.domain.model.Book
 
 @Composable
 fun BookCover(book: Book, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -43,8 +48,22 @@ fun BookCover(book: Book, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         if (book.coverImageUrl.isNotBlank()) {
+            val model: Any = if (CloudflareR2StorageConfig.isObjectApiUrl(book.coverImageUrl)) {
+                ImageRequest.Builder(context)
+                    .data(book.coverImageUrl)
+                    .apply {
+                        val token = CloudflareR2StorageConfig.apiToken(context)
+                        if (token.isNotBlank()) {
+                            addHeader("Authorization", "Bearer " + token)
+                        }
+                    }
+                    .build()
+            } else {
+                book.coverImageUrl
+            }
+
             AsyncImage(
-                model = book.coverImageUrl,
+                model = model,
                 contentDescription = book.title + " kapak",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
