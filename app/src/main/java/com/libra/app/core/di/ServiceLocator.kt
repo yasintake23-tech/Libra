@@ -19,7 +19,7 @@ object ServiceLocator {
     val bookRepository: BookRepository by lazy { BookRepositoryImpl() }
 
     val r2StorageRepository: CloudflareR2StorageRepositoryImpl by lazy {
-        CloudflareR2StorageRepositoryImpl()
+        CloudflareR2StorageRepositoryImpl(com.google.firebase.FirebaseApp.getInstance().applicationContext)
     }
 
     val storageRepository: StorageRepository by lazy {
