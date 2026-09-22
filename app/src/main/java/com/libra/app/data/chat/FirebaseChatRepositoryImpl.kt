@@ -6,12 +6,14 @@ import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
+import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.UserRepository
+import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -157,6 +159,20 @@ class FirebaseChatRepositoryImpl(
                     senderId = sender.uid, recipientId = recipientId, text = clean, createdAt = now
                 )
             ).await()
+            ServiceLocator.notificationRepository.create(
+                AppNotification(
+                    recipientId = recipientId,
+                    actorId = sender.uid,
+                    actorName = senderProfile.displayName,
+                    actorUsername = senderProfile.username,
+                    actorPhotoUrl = senderProfile.profileImageUrl,
+                    type = "MESSAGE",
+                    title = "Yeni mesaj",
+                    body = senderProfile.displayName + " sana bir mesaj gönderdi.",
+                    referenceId = conversationId,
+                    createdAt = now
+                )
+            )
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Mesaj gönderilemedi.", e))
