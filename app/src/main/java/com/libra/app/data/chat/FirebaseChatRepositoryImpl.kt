@@ -10,6 +10,7 @@ import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.UserRepository
@@ -297,6 +298,9 @@ class FirebaseChatRepositoryImpl(
             batch.set(ref.collection("members").document(user.uid), mapOf(
                 "uid" to user.uid,
                 "displayName" to profile.displayName,
+                "username" to profile.username,
+                "photoUrl" to profile.profileImageUrl,
+                "role" to "OWNER",
                 "joinedAt" to System.currentTimeMillis()
             ))
             batch.commit().await()
@@ -312,11 +316,58 @@ class FirebaseChatRepositoryImpl(
         return try {
             serversRef.document(serverId).get().await()
             serversRef.document(serverId).collection("members").document(user.uid)
-                .set(mapOf("uid" to user.uid, "joinedAt" to System.currentTimeMillis()))
+                .set(mapOf("uid" to user.uid, "displayName" to (user.displayName ?: ""), "role" to "MEMBER", "joinedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
                 .await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucuya katılınamadı.", e))
+        }
+    }
+
+    override fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>> = callbackFlow {
+        val registration = serversRef.document(serverId).collection("members")
+            .orderBy("joinedAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Üyeler yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val members = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching { doc.toObject(ServerMember::class.java)?.copy(uid = doc.id) }.getOrNull()
+                }
+                trySend(AppResult.Success(members))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (role !in setOf("ADMIN", "MEMBER")) return AppResult.Error(AppError.Validation("Geçersiz rol."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol değiştirebilir."))
+            if (memberId == server.ownerId) return AppResult.Error(AppError.Validation("Sahibin rolü değiştirilemez."))
+            serverRef.collection("members").document(memberId).update("role", role).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Üye rolü değiştirilemedi.", e))
+        }
+    }
+
+    override suspend fun removeServerMember(serverId: String, memberId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi üye çıkarabilir."))
+            if (memberId == server.ownerId) return AppResult.Error(AppError.Validation("Sunucu sahibi çıkarılamaz."))
+            serverRef.collection("members").document(memberId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Üye çıkarılamadı.", e))
         }
     }
 
