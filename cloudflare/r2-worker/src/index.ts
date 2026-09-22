@@ -189,11 +189,23 @@ export default {
         return handleDelete(request, env)
       }
 
+      if (request.method === "GET" && url.pathname === "/health") {
+        return json(env, {
+          service: "Libra R2 Worker",
+          ok: true,
+          storage: "r2",
+        })
+      }
+
       if (request.method === "GET" && url.pathname.startsWith("/media/")) {
         return handleMedia(request, env)
       }
 
-      return json(env, { service: "Libra R2 Worker", ok: true })
+      return json(
+        env,
+        { error: "Not Found" },
+        404
+      )
     } catch (error) {
       return json(
         env,
