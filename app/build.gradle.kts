@@ -19,18 +19,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // CI can inject the exact signing key that matches the Firebase SHA-1.
-    // Without the private key, a SHA-1 value cannot be used as an APK signature.
-    val libraKeystorePath = System.getenv("LIBRA_KEYSTORE_PATH")
-    val libraKeystorePassword = System.getenv("LIBRA_KEYSTORE_PASSWORD")
-    val libraKeyAlias = System.getenv("LIBRA_KEY_ALIAS")
-    val libraKeyPassword = System.getenv("LIBRA_KEY_PASSWORD")
+    // CI uses one repository variable for the fixed signing key.
+    // The key itself is committed so every APK uses the same Firebase certificate.
+    val libraSigningPath = System.getenv("LIBRA_SIGNING_PATH")
+    val libraSigningValue = System.getenv("LIBRA_SIGNING_VALUE")
+    val libraSigningAlias = System.getenv("LIBRA_SIGNING_ALIAS")
     val hasLibraSigningKey = listOf(
-        libraKeystorePath,
-        libraKeystorePassword,
-        libraKeyAlias,
-        libraKeyPassword
+        libraSigningPath,
+        libraSigningValue,
+        libraSigningAlias
     ).all { !it.isNullOrBlank() && !it.contains("REPLACE", ignoreCase = true) }
+
 
     signingConfigs {
         if (hasLibraSigningKey) {
