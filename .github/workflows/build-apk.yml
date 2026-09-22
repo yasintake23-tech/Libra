@@ -91,6 +91,8 @@ jobs:
 
       - name: Verify direct Cloudflare R2 access
         shell: bash
+        env:
+          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -104,33 +106,29 @@ jobs:
               for node in root.findall("string")
           }
 
+          endpoint = values.get("r2_upload_endpoint", "")
           account = values.get("cloudflare_r2_account_id", "")
           bucket = values.get("cloudflare_r2_bucket_name", "")
-          token = values.get("cloudflare_r2_api_token", "")
-          if not account or not bucket or not token:
-              raise SystemExit("Cloudflare R2 yapılandırması eksik.")
-
+          print("R2_ENDPOINT=" + endpoint)
           print("R2_ACCOUNT=" + account)
           print("R2_BUCKET=" + bucket)
-          print("R2_TOKEN=" + token)
           PY
 
           set -a
           source "$RUNNER_TEMP/r2.env"
           set +a
 
-          echo "::add-mask::$R2_TOKEN"
+          if [[ -z "$R2_ENDPOINT" || -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
+            echo "Direct R2 doğrulaması atlandı: Worker endpoint veya Actions secret yapılandırılmamış. Uygulama Firebase Storage fallback kullanacak."
+            exit 0
+          fi
 
+          echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
           API_BASE="https://api.cloudflare.com/client/v4/accounts/$R2_ACCOUNT/r2/buckets/$R2_BUCKET/objects"
           TEST_KEY="_ci/libra-$GITHUB_RUN_ID.txt"
           printf '%s\n' 'libra-r2-ci' > "$RUNNER_TEMP/r2-test.txt"
 
-          curl --fail --silent --show-error \
-            --request PUT \
-            --header "Authorization: Bearer $R2_TOKEN" \
-            --header "Content-Type: text/plain" \
-            --data-binary @"$RUNNER_TEMP/r2-test.txt" \
-            "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-put.json"
+          curl --fail --silent --show-error             --request PUT             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             --header "Content-Type: text/plain"             --data-binary @"$RUNNER_TEMP/r2-test.txt"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-put.json"
 
           python3 - <<'PY' "$RUNNER_TEMP/r2-put.json"
           import json
@@ -141,7 +139,7 @@ jobs:
           print("Direct R2 PUT başarılı.")
           PY
 
-          curl --fail --silent --show-error             --request GET             --header "Authorization: Bearer $R2_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-get.txt"
+          curl --fail --silent --show-error             --request GET             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-get.txt"
 
           cmp "$RUNNER_TEMP/r2-test.txt" "$RUNNER_TEMP/r2-get.txt" || {
             echo "::error::R2 GET doğrulaması PUT edilen içerikle eşleşmiyor."
@@ -149,10 +147,7 @@ jobs:
           }
           echo "Direct R2 GET başarılı."
 
-          curl --fail --silent --show-error \
-            --request DELETE \
-            --header "Authorization: Bearer $R2_TOKEN" \
-            "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-delete.json"
+          curl --fail --silent --show-error             --request DELETE             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-delete.json"
 
           python3 - <<'PY' "$RUNNER_TEMP/r2-delete.json"
           import json
