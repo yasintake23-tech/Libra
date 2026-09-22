@@ -1,5 +1,10 @@
 package com.libra.app.feature.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +28,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -111,27 +118,11 @@ fun HomeScreen(
             var composerText by remember { mutableStateOf("") }
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
+            var showCreateMenu by remember { mutableStateOf(false) }
 
             LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                 item { HomeHeader(data.currentUser, onNavigateToProfile, onNotifications) }
-                item {
-                    PostComposer(
-                        user = data.currentUser,
-                        text = composerText,
-                        onTextChanged = { if (it.length <= 1000) composerText = it },
-                        onPost = { onCreatePost(composerText.trim()); composerText = "" },
-                        isPosting = isPosting,
-                        error = postError,
-                        onClearError = onClearPostError
-                    )
-                }
-                item {
-                    Text(
-                        "Ana Akış",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
+                item { SectionHeader("Gönderiler", subtitle = "Takip ettiklerinin son paylaşımları") }
                 if (data.posts.isEmpty()) {
                     item { EmptyFeed(onNavigateToDiscover, onNavigateToWrite) }
                 } else {
@@ -139,7 +130,7 @@ fun HomeScreen(
                         PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { onToggleSave(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
                     }
                 }
-                item { SectionHeader("Kitaplık", subtitle = "Okumaya devam et veya yeni bir kitap keşfet") }
+                item { SectionHeader("Kitaplar", subtitle = "Okumaya devam et ve yeni hikâyeler keşfet") }
 
                 data.currentlyReading?.let { reading ->
                     item {
@@ -177,6 +168,29 @@ fun HomeScreen(
                 }
             }
 
+            Box(Modifier.fillMaxSize()) {
+                AnimatedVisibility(
+                    visible = showCreateMenu,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut()
+                ) {
+                    CreateSphereMenu(
+                        onStory = { showCreateMenu = false; onNavigateToWrite() },
+                        onPost = { showCreateMenu = false; onNavigateToWrite() },
+                        onDismiss = { showCreateMenu = false }
+                    )
+                }
+                androidx.compose.material3.FloatingActionButton(
+                    onClick = { showCreateMenu = !showCreateMenu },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 18.dp),
+                    containerColor = MaterialTheme.colorScheme.onBackground,
+                    contentColor = MaterialTheme.colorScheme.background
+                ) {
+                    Icon(Icons.Default.Add, if (showCreateMenu) "Kapat" else "Oluştur")
+                }
+            }
+
             selectedPost?.let { post ->
                 PostCommentsDialog(
                     post = post,
@@ -206,44 +220,37 @@ fun HomeScreen(
 
 
 @Composable
-private fun PostComposer(
-    user: UserProfile?,
-    text: String,
-    onTextChanged: (String) -> Unit,
+private fun CreateSphereMenu(
+    onStory: () -> Unit,
     onPost: () -> Unit,
-    isPosting: Boolean,
-    error: String?,
-    onClearError: () -> Unit
+    onDismiss: () -> Unit
 ) {
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    Box(
+        Modifier
+            .size(220.dp)
+            .offset(x = 88.dp, y = (-42).dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onBackground)
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp)
-                Spacer(Modifier.width(10.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChanged,
-                    placeholder = { Text("Aklından ne geçiyor?") },
-                    modifier = Modifier.fillMaxWidth().height(58.dp),
-                    maxLines = 2
-                )
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.weight(1f).fillMaxSize().clickable(onClick = onStory),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Metin gönderisi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(enabled = text.trim().isNotEmpty() && !isPosting, onClick = onPost) {
-                    Text(if (isPosting) "Paylaşılıyor…" else "Paylaş")
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.AutoStories, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(30.dp))
+                    Text("Hikâye", color = MaterialTheme.colorScheme.background, fontWeight = FontWeight.Bold)
                 }
             }
-            if (error != null) {
-                TextButton(onClick = onClearError) { Text(error, color = MaterialTheme.colorScheme.error) }
+            Box(Modifier.width(1.dp).fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = .22f)))
+            Box(
+                Modifier.weight(1f).fillMaxSize().clickable(onClick = onPost),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(30.dp))
+                    Text("Gönderi", color = MaterialTheme.colorScheme.background, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -305,7 +312,7 @@ private fun PostCommentsDialog(
                 Text("\${comments.size} yorum", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             LazyColumn(
-                Modifier.fillMaxWidth().height(340.dp),
+                Modifier.fillMaxWidth().weight(1f).imePadding(),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -334,7 +341,7 @@ private fun PostCommentsDialog(
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).imePadding(), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChanged,
