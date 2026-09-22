@@ -44,6 +44,7 @@ import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.messages.DirectMessagesScreen
 import com.libra.app.feature.messages.GlobalChatScreen
+import com.libra.app.feature.messages.CommunityServersScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
@@ -70,6 +71,7 @@ fun AppNavHost(
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var showSettings by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
+    var showCommunityServers by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -128,6 +130,14 @@ fun AppNavHost(
                 selectedDirectUser = publicProfile
                 selectedTab = BottomNavTab.DM
             },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    if (showCommunityServers) {
+        CommunityServersScreen(
+            onBack = { showCommunityServers = false },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -263,11 +273,7 @@ fun AppNavHost(
                         initialUser = selectedDirectUser,
                         onInitialUserConsumed = { selectedDirectUser = null },
                         onServersClick = {
-                            Toast.makeText(
-                                context,
-                                "Sunucular bir sonraki aşamada aktif edilecek.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showCommunityServers = true
                         }
                     )
                 }
