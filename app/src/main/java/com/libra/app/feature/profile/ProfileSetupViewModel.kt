@@ -36,7 +36,7 @@ data class ProfileSetupState(
 class ProfileSetupViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
     private val userRepository: UserRepository = ServiceLocator.userRepository,
-    private val storageRepository: StorageRepository = ServiceLocator.storageRepository
+    private val r2StorageRepository: StorageRepository = ServiceLocator.r2StorageRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow(ProfileSetupState())
     val state: StateFlow<ProfileSetupState> = _state.asStateFlow()
@@ -163,7 +163,7 @@ class ProfileSetupViewModel(
                             targetDirectory = "users/$uid"
                         )
 
-                        when (val upload = storageRepository.uploadMedia(request).first()) {
+                        when (val upload = r2StorageRepository.uploadMedia(request).first()) {
                             is AppResult.Success -> {
                                 when (userRepository.updateProfilePhoto(uid, upload.data)) {
                                     is AppResult.Success -> savedProfile = savedProfile.copy(
