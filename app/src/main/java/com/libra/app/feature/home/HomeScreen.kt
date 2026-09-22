@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
@@ -75,6 +76,7 @@ fun HomeScreen(
     onNavigateToLibrary: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToDiscover: () -> Unit,
+    onNavigateToServers: () -> Unit,
     onNotifications: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -123,7 +125,7 @@ fun HomeScreen(
                 }
                 item { SectionHeader("Kitap Dünyası", subtitle = "Libra'nın Wattpad tarafı") }
                 item { HeroCard() }
-                item { QuickActions(onNavigateToDiscover, onNavigateToWrite, onNavigateToLibrary, onNavigateToDiscover) }
+                item { QuickActions(onNavigateToDiscover, onNavigateToWrite, onNavigateToLibrary, onNavigateToDiscover, onNavigateToServers) }
 
                 data.currentlyReading?.let { reading ->
                     item { SectionHeader("Devam Et", actionLabel = "Kütüphane", onActionClick = onNavigateToLibrary) }
@@ -305,15 +307,17 @@ private fun HeroCard() {
 }
 
 @Composable
-private fun QuickActions(onDiscover: () -> Unit, onWrite: () -> Unit, onLibrary: () -> Unit, onFriends: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+private fun QuickActions(onDiscover: () -> Unit, onWrite: () -> Unit, onLibrary: () -> Unit, onFriends: () -> Unit, onServers: () -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ActionTile(Icons.Default.Search, "Keşfet", onDiscover)
-        ActionTile(Icons.Default.Edit, "Yaz", onWrite)
-        ActionTile(Icons.Default.BookmarkBorder, "Kütüphane", onLibrary)
-        ActionTile(Icons.Default.PeopleOutline, "Arkadaşlar", onFriends)
+        item { ActionTile(Icons.Default.Search, "Keşfet", onDiscover) }
+        item { ActionTile(Icons.Default.Edit, "Yaz", onWrite) }
+        item { ActionTile(Icons.Default.BookmarkBorder, "Kütüphane", onLibrary) }
+        item { ActionTile(Icons.Default.PeopleOutline, "Arkadaşlar", onFriends) }
+        item { ActionTile(Icons.Default.Groups, "Sunucular", onServers) }
     }
 }
 
