@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.ServerMember
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -142,6 +144,36 @@ fun CommunityServersScreen(
             }
         )
     }
+
+    if (showMembers) {
+        AlertDialog(
+            onDismissRequest = { showMembers = false },
+            title = { Text("Üyeler (${members.size})") },
+            text = {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(members, key = { it.uid }) { member ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(member.displayName.ifBlank { member.uid }, fontWeight = FontWeight.Bold)
+                                Text(member.role, style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (server.ownerId == currentUid && member.uid != currentUid) {
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        repository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
+                                    }
+                                }) { Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap") }
+                                TextButton(onClick = {
+                                    scope.launch { repository.removeServerMember(server.id, member.uid) }
+                                }) { Text("Çıkar") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showMembers = false }) { Text("Kapat") } }
+        )
+    }
 }
 
 @Composable
@@ -179,8 +211,16 @@ private fun ServerChatScreen(
     var messages by remember(server.id) { mutableStateOf<List<ServerMessage>>(emptyList()) }
     var error by remember(server.id) { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
+    var showMembers by remember { mutableStateOf(false) }
+    var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+
+    LaunchedEffect(server.id) {
+        repository.observeServerMembers(server.id).collect { result ->
+            if (result is AppResult.Success) members = result.data
+        }
+    }
 
     LaunchedEffect(server.id) {
         repository.observeServerMessages(server.id).collect { result ->
@@ -203,7 +243,10 @@ private fun ServerChatScreen(
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column(Modifier.weight(1f)) {
                 Text(server.name, fontWeight = FontWeight.Bold)
-                Text("Topluluk sohbeti", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${members.size} üye • Topluluk sohbeti", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { showMembers = true }) {
+                Icon(Icons.Default.People, "Üyeler")
             }
         }
 
