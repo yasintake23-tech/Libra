@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +40,7 @@ fun FriendsScreen(
     uiState: UiState<FriendsState>,
     onSearchChanged: (String) -> Unit,
     onFollowUser: (UserProfile) -> Unit,
+    onUserClick: (UserProfile) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -81,7 +83,8 @@ fun FriendsScreen(
                                 user = user,
                                 isFollowing = state.followingIds.contains(user.uid),
                                 isActionLoading = state.actionUserIds.contains(user.uid),
-                                onFollow = onFollowUser
+                                onFollow = onFollowUser,
+                                onClick = onUserClick
                             )
                         }
                     }
@@ -96,10 +99,11 @@ private fun UserResult(
     user: UserProfile,
     isFollowing: Boolean,
     isActionLoading: Boolean,
-    onFollow: (UserProfile) -> Unit
+    onFollow: (UserProfile) -> Unit,
+    onClick: (UserProfile) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth().clickable { onClick(user) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             UserAvatar(user.profileImageUrl, user.initials, size = 48.dp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
