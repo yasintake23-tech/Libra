@@ -17,6 +17,7 @@ interface ChatRepository {
     suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit>
     fun observeCommunityServers(): Flow<AppResult<List<com.libra.app.domain.model.CommunityServer>>>
     suspend fun createCommunityServer(name: String, description: String): AppResult<com.libra.app.domain.model.CommunityServer>
+    suspend fun updateCommunityServer(serverId: String, name: String, description: String): AppResult<Unit>
     suspend fun joinCommunityServer(serverId: String): AppResult<Unit>
     fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>>
     suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit>
