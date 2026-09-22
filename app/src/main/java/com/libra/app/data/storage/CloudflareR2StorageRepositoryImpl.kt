@@ -71,7 +71,7 @@ class CloudflareR2StorageRepositoryImpl(
         val idToken = try {
             user.getIdToken(false).await().token
         } catch (e: Exception) {
-            emit(AppResult.Error(AppError.Auth("Medya yükleme oturumu doğrulanamadı.", e)))
+            emit(AppResult.Error(AppError.Auth("Medya yükleme oturumu doğrulanamadı.", cause = e)))
             return@flow
         }
 
