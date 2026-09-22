@@ -143,11 +143,23 @@ class BookRepositoryImpl : BookRepository {
     override suspend fun updateBook(book: Book): AppResult<Book> {
         val books = booksRef ?: return databaseError()
         if (book.id.isBlank()) return AppResult.Error(AppError.Validation("Kitap kimliği boş olamaz."))
+
+        val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (book.ownerId != authUid) {
+            return AppResult.Error(AppError.Auth("Bu kitabı güncelleme yetkin yok."))
+        }
+
         return try {
-            val updated = book.copy(updatedAt = System.currentTimeMillis())
+            val updated = book.copy(
+                ownerId = authUid,
+                updatedAt = System.currentTimeMillis()
+            )
             books.child(book.id).setValue(updated).await()
             AppResult.Success(updated)
-        } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap güncellenemedi: ${e.localizedMessage}", e)) }
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap güncellenemedi: ${e.localizedMessage}", e))
+        }
     }
 
     override suspend fun deleteBook(bookId: String): AppResult<Unit> {
