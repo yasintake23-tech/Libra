@@ -85,6 +85,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onCreatePost: (String) -> Unit = {},
     onToggleLike: (Post) -> Unit = {},
+    onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
     onOpenComments: (Post) -> Unit = {},
     comments: List<PostComment> = emptyList(),
@@ -133,7 +134,7 @@ fun HomeScreen(
                     item { EmptyFeed(onNavigateToDiscover, onNavigateToWrite) }
                 } else {
                     items(data.posts, key = { it.id }) { post ->
-                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
+                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { onToggleSave(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
                     }
                 }
                 item { SectionHeader("Kitap Dünyası", subtitle = "Libra'nın Wattpad tarafı") }
@@ -252,7 +253,7 @@ private fun PostComposer(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onComment: () -> Unit) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -278,6 +279,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
+                IconButton(onClick = onSave) { Icon(Icons.Default.BookmarkBorder, "Kaydet") }
             }
         }
     }
