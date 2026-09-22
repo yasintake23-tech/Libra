@@ -129,6 +129,16 @@ class HomeViewModel(
         }
     }
 
+    fun toggleSave(post: Post) {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            when (val result = postRepository.toggleSave(post.id, userId)) {
+                is AppResult.Error -> _postError.value = result.error.message
+                is AppResult.Success -> Unit
+            }
+        }
+    }
+
     fun deletePost(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
