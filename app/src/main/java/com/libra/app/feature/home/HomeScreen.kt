@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -68,6 +69,7 @@ fun HomeScreen(
     onNavigateToLibrary: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToDiscover: () -> Unit,
+    onNotifications: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -80,7 +82,7 @@ fun HomeScreen(
             var selectedCategory by remember { mutableStateOf<BookCategory?>(null)}
 
             LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
-                item { HomeHeader(data.currentUser, onNavigateToProfile) }
+                item { HomeHeader(data.currentUser, onNavigateToProfile, onNotifications) }
                 item { SearchBar(onNavigateToDiscover) }
                 item { HeroCard() }
                 item { QuickActions(onNavigateToDiscover, onNavigateToWrite, onNavigateToLibrary, onNavigateToDiscover) }
@@ -113,7 +115,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit) {
+private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotifications: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -132,7 +134,12 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit) {
                 Text("Her hikâyenin bir yeri var.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp, modifier = Modifier.clickable(onClick = onProfile))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.IconButton(onClick = onNotifications) {
+                Icon(Icons.Default.NotificationsNone, "Bildirimler")
+            }
+            UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp, modifier = Modifier.clickable(onClick = onProfile))
+        }
     }
 }
 
