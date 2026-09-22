@@ -141,7 +141,8 @@ class HomeViewModel(
         tags: List<String>,
         imageBytes: ByteArray?,
         imageFileName: String,
-        imageContentType: String
+        imageContentType: String,
+        onComplete: (Boolean) -> Unit = {}
     ) {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
@@ -166,6 +167,7 @@ class HomeViewModel(
                         }
                         is AppResult.Error -> {
                             _postError.value = upload.error.message
+                            onComplete(false)
                             return@launch
                         }
                     }
@@ -181,8 +183,11 @@ class HomeViewModel(
                         tags = tags
                     )
                 ) {
-                    is AppResult.Success -> Unit
-                    is AppResult.Error -> _postError.value = result.error.message
+                    is AppResult.Success -> onComplete(true)
+                    is AppResult.Error -> {
+                        _postError.value = result.error.message
+                        onComplete(false)
+                    }
                 }
             } finally {
                 _isPosting.value = false
