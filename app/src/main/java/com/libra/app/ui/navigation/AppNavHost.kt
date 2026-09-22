@@ -214,6 +214,7 @@ fun AppNavHost(
                         { selectedTab = BottomNavTab.LIBRARY },
                         { selectedTab = BottomNavTab.PROFILE },
                         { selectedTab = BottomNavTab.DISCOVER },
+                        { showCommunityServers = true },
                         { showNotifications = true },
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
