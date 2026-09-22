@@ -1,6 +1,10 @@
 package com.libra.app.feature.messages
 
 import androidx.compose.foundation.background
+import coil.compose.AsyncImage
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Forum
@@ -31,11 +36,13 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
+import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class DirectMessagesViewModel : ViewModel() {
     private val repository = ServiceLocator.chatRepository
@@ -95,6 +102,15 @@ class DirectMessagesViewModel : ViewModel() {
             }
         }
     }
+
+    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String) {
+        viewModelScope.launch {
+            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType)) {
+                is AppResult.Success -> _error.value = null
+                is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }
 }
 
 private fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
@@ -133,6 +149,7 @@ fun DirectMessagesScreen(
             error = error,
             onBack = { selectedUser = null },
             onSend = { viewModel.send(user.uid, it) },
+            onSendMedia = { url, type -> viewModel.sendMedia(user.uid, url, type) },
             modifier = modifier
         )
         return
@@ -229,10 +246,33 @@ private fun DirectConversationScreen(
     error: String?,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onSendMedia: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }.orEmpty()
+                if (bytes.isEmpty() || bytes.size > 8 * 1024 * 1024) return@runCatching
+                val type = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+                val upload = StorageUploadRequest(
+                    fileName = "dm-" + System.currentTimeMillis() + ".jpg",
+                    bytes = bytes,
+                    contentType = type,
+                    targetDirectory = "users/" + ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+                )
+                when (val result = ServiceLocator.storageRepository.uploadMedia(upload).first()) {
+                    is AppResult.Success -> onSendMedia(result.data, type)
+                    is AppResult.Error -> Unit
+                }
+            }
+        }
+    }
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
 
     LaunchedEffect(messages.size) {
@@ -263,11 +303,27 @@ private fun DirectConversationScreen(
                     Surface(
                         color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(16.dp)
-                    ) { Text(message.text, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) }
+                    ) {
+                        Column(Modifier.padding(6.dp)) {
+                            if (message.mediaUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = message.mediaUrl,
+                                    contentDescription = "Gönderilen fotoğraf",
+                                    modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp))
+                                )
+                            }
+                            if (message.text.isNotBlank()) {
+                                Text(message.text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { mediaLauncher.launch("image/*") }) {
+                Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
+            }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 1000) draft = it },
