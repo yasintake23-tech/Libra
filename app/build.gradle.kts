@@ -19,9 +19,41 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // CI can inject the exact signing key that matches the Firebase SHA-1.
+    // Without the private key, a SHA-1 value cannot be used as an APK signature.
+    val libraKeystorePath = System.getenv("LIBRA_KEYSTORE_PATH")
+    val libraKeystorePassword = System.getenv("LIBRA_KEYSTORE_PASSWORD")
+    val libraKeyAlias = System.getenv("LIBRA_KEY_ALIAS")
+    val libraKeyPassword = System.getenv("LIBRA_KEY_PASSWORD")
+    val hasLibraSigningKey = listOf(
+        libraKeystorePath,
+        libraKeystorePassword,
+        libraKeyAlias,
+        libraKeyPassword
+    ).all { !it.isNullOrBlank() && !it.contains("REPLACE", ignoreCase = true) }
+
+    signingConfigs {
+        if (hasLibraSigningKey) {
+            create("libra") {
+                storeFile = file(requireNotNull(libraKeystorePath))
+                storePassword = requireNotNull(libraKeystorePassword)
+                keyAlias = requireNotNull(libraKeyAlias)
+                keyPassword = requireNotNull(libraKeyPassword)
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (hasLibraSigningKey) {
+                signingConfig = signingConfigs.getByName("libra")
+            }
+        }
         release {
             isMinifyEnabled = false
+            if (hasLibraSigningKey) {
+                signingConfig = signingConfigs.getByName("libra")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
