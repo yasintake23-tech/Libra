@@ -54,7 +54,7 @@ fun PublicProfileScreen(
     onMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var socialDialog by remember { mutableStateOf<SocialListType?>(null) }
+    var socialDialog by remember { mutableStateOf<PublicSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
@@ -146,12 +146,12 @@ fun PublicProfileScreen(
                         ProfileStat(
                             following.size,
                             "Takip",
-                            Modifier.clickable { socialDialog = SocialListType.FOLLOWING }
+                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWING }
                         )
                         ProfileStat(
                             followers.size,
                             "Takipçi",
-                            Modifier.clickable { socialDialog = SocialListType.FOLLOWERS }
+                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWERS }
                         )
                     }
 
@@ -220,13 +220,13 @@ fun PublicProfileScreen(
     socialDialog?.let { type ->
         SocialListDialog(
             type = type,
-            users = if (type == SocialListType.FOLLOWERS) followers else following,
+            users = if (type == PublicSocialListType.FOLLOWERS) followers else following,
             onDismiss = { socialDialog = null }
         )
     }
 }
 
-private enum class SocialListType { FOLLOWERS, FOLLOWING }
+private enum class PublicSocialListType { FOLLOWERS, FOLLOWING }
 
 @Composable
 private fun ProfileStat(
@@ -253,19 +253,19 @@ private fun ProfileStat(
 
 @Composable
 private fun SocialListDialog(
-    type: SocialListType,
+    type: PublicSocialListType,
     users: List<UserProfile>,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (type == SocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
+            Text(if (type == PublicSocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
         },
         text = {
             if (users.isEmpty()) {
                 Text(
-                    if (type == SocialListType.FOLLOWERS)
+                    if (type == PublicSocialListType.FOLLOWERS)
                         "Henüz takipçisi yok."
                     else
                         "Henüz kimseyi takip etmiyor."
