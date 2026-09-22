@@ -320,18 +320,30 @@ class FirebaseChatRepositoryImpl(
             }
 
             val memberRef = serverRef.collection("members").document(user.uid)
-            if (!memberRef.get().await().exists()) {
+            val memberSnapshot = memberRef.get().await()
+            val serverOwnerId = serverRef.get().await().getString("ownerId").orEmpty()
+
+            if (!memberSnapshot.exists()) {
                 memberRef.set(
                     mapOf(
                         "uid" to user.uid,
                         "displayName" to (user.displayName ?: ""),
-                        "role" to "MEMBER",
+                        "role" to if (serverOwnerId == user.uid) "OWNER" else "MEMBER",
                         "joinedAt" to System.currentTimeMillis()
                     )
                 ).await()
+            } else if (serverOwnerId == user.uid && memberSnapshot.getString("role") != "OWNER") {
+                // Eski sürüm sahibi yanlışlıkla MEMBER olduysa güvenli şekilde düzelt.
+                memberRef.delete().await()
+                memberRef.set(
+                    mapOf(
+                        "uid" to user.uid,
+                        "displayName" to (user.displayName ?: ""),
+                        "role" to "OWNER",
+                        "joinedAt" to (memberSnapshot.getLong("joinedAt") ?: System.currentTimeMillis())
+                    )
+                ).await()
             }
-            // Zaten üyeyse rolünü ezme. Böylece OWNER hesabı tekrar açıldığında
-            // OWNER olarak kalır ve yönetim araçları görünür.
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucuya katılınamadı.", e))
