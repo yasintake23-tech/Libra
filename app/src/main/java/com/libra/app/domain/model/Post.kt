@@ -9,5 +9,6 @@ data class Post(
     val text: String = "",
     val likesCount: Int = 0,
     val likedByCurrentUser: Boolean = false,
+    val savedByCurrentUser: Boolean = false,
     val createdAt: Long = 0L
 )
