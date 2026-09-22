@@ -76,7 +76,12 @@ fun FriendsScreen(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(users, key = { it.uid }) { user ->
-                            UserResult(user, onFollowUser)
+                            UserResult(
+                                user = user,
+                                isFollowing = state.followingIds.contains(user.uid),
+                                isActionLoading = state.actionUserIds.contains(user.uid),
+                                onFollow = onFollowUser
+                            )
                         }
                     }
                 }
@@ -86,7 +91,12 @@ fun FriendsScreen(
 }
 
 @Composable
-private fun UserResult(user: UserProfile, onFollow: (UserProfile) -> Unit) {
+private fun UserResult(
+    user: UserProfile,
+    isFollowing: Boolean,
+    isActionLoading: Boolean,
+    onFollow: (UserProfile) -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             UserAvatar(user.profileImageUrl, user.initials, size = 48.dp)
@@ -95,9 +105,16 @@ private fun UserResult(user: UserProfile, onFollow: (UserProfile) -> Unit) {
                 Text(user.displayName, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                 Text(user.handle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick = { onFollow(user) }) {
-                Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(16.dp))
-                Text("  Takip")
+            TextButton(
+                onClick = { onFollow(user) },
+                enabled = !isActionLoading
+            ) {
+                Icon(
+                    if (isFollowing) Icons.Default.Person else Icons.Default.PersonAdd,
+                    null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(if (isActionLoading) "  ..." else if (isFollowing) "  Takipte" else "  Takip")
             }
         }
     }
