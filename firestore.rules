@@ -82,10 +82,16 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow create: if request.auth != null
           && uid == request.auth.uid
-          && request.resource.data.uid == request.auth.uid;
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.role == "MEMBER";
+        allow update: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+          && uid != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role"])
+          && request.resource.data.role in ["ADMIN", "MEMBER"];
         allow delete: if request.auth != null
-          && uid == request.auth.uid;
-        allow update: if false;
+          && (uid == request.auth.uid
+            || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
       }
 
       match /messages/{messageId} {
