@@ -429,55 +429,114 @@ private fun PostCommentsDialog(
     onClearError: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-            Column(Modifier.padding(horizontal = 18.dp)) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        modifier = Modifier.fillMaxHeight(),
+        contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .imePadding()
+                .navigationBarsPadding()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
+            ) {
                 Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("${comments.size} yorum", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "${comments.size} yorum",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+
+            androidx.compose.material3.HorizontalDivider()
+
             LazyColumn(
-                Modifier.fillMaxWidth().weight(1f).imePadding(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 if (comments.isEmpty()) {
                     item {
-                        Text("Henüz yorum yok. İlk yorumu sen bırak.", Modifier.padding(vertical = 35.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 50.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Henüz yorum yok. İlk yorumu sen bırak.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 } else {
                     items(comments, key = { it.id }) { comment ->
                         Row(verticalAlignment = Alignment.Top) {
-                            UserAvatar(comment.authorPhotoUrl, comment.authorName.take(1).uppercase().ifBlank { "L" }, size = 36.dp)
+                            UserAvatar(
+                                comment.authorPhotoUrl,
+                                comment.authorName.take(1).uppercase().ifBlank { "L" },
+                                size = 36.dp
+                            )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    comment.authorName.ifBlank { "Libra kullanıcısı" },
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 Text(comment.text, style = MaterialTheme.typography.bodyMedium)
                                 if (comment.authorId == currentUserId) {
-                                    TextButton(onClick = { onDeleteComment(comment) }, contentPadding = PaddingValues(0.dp)) { Text("Sil") }
+                                    TextButton(
+                                        onClick = { onDeleteComment(comment) },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) { Text("Sil") }
                                 }
                             }
                         }
                     }
                 }
             }
+
             if (error != null) {
-                TextButton(onClick = onClearError, modifier = Modifier.padding(horizontal = 14.dp)) {
+                TextButton(
+                    onClick = onClearError,
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                ) {
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).imePadding(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChanged,
-                    placeholder = { Text("Yorum ekle…") },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 3,
-                    shape = RoundedCornerShape(22.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
-                    Text(if (isSending) "…" else "Gönder")
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                tonalElevation = 3.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = onTextChanged,
+                        placeholder = { Text("Yorum yaz…") },
+                        modifier = Modifier.weight(1f),
+                        minLines = 1,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        enabled = text.trim().isNotEmpty() && !isSending,
+                        onClick = onSend
+                    ) {
+                        Text(if (isSending) "…" else "Gönder")
+                    }
                 }
             }
         }
