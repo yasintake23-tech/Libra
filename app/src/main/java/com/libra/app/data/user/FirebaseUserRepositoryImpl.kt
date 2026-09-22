@@ -331,6 +331,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 .whereEqualTo(directionField, uid)
                 .limit(1000)
                 .get(Source.SERVER)
+                .await()
 
             val otherField = if (directionField == "followingId") "followerId" else "followingId"
             val ids = snapshot.documents.mapNotNull { it.getString(otherField) }.distinct()
