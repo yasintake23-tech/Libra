@@ -131,8 +131,15 @@ fun AppNavHost(
             user = profile,
             isPosting = vm.isPosting.collectAsState().value,
             error = vm.postError.collectAsState().value,
-            onPublishPost = { text ->
-                vm.createPost(text)
+            onPublishPost = { title, text, tags, imageBytes, imageFileName, imageContentType ->
+                vm.createRichPost(
+                    title = title,
+                    text = text,
+                    tags = tags,
+                    imageBytes = imageBytes,
+                    imageFileName = imageFileName,
+                    imageContentType = imageContentType
+                )
                 if (mode == CreateContentMode.POST) {
                     createContentMode = null
                     selectedTab = BottomNavTab.HOME
