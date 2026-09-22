@@ -98,13 +98,21 @@ async function handleUpload(request: Request, env: Env) {
 
   const contentType =
     request.headers.get("Content-Type") || "application/octet-stream"
-  const length = Number(request.headers.get("Content-Length") || "0")
+  const contentLengthHeader = request.headers.get("Content-Length")
+  const length = contentLengthHeader ? Number(contentLengthHeader) : 0
 
-  if (length <= 0) return json(env, { error: "Empty upload" }, 400)
-  if (length > 50 * 1024 * 1024) {
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    return json(env, { error: "Only image uploads are allowed" }, 415)
+  }
+
+  if (contentLengthHeader && (!Number.isFinite(length) || length <= 0)) {
+    return json(env, { error: "Invalid Content-Length" }, 400)
+  }
+
+  if (contentLengthHeader && length > 8 * 1024 * 1024) {
     return json(
       env,
-      { error: "File is too large. Maximum is 50 MB." },
+      { error: "File is too large. Maximum is 8 MB." },
       413
     )
   }
