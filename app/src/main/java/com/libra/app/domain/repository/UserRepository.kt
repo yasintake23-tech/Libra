@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     fun getUserProfile(uid: String): Flow<AppResult<UserProfile?>>
+    suspend fun getUserProfileFresh(uid: String): AppResult<UserProfile?>
     suspend fun createOrUpdateProfile(profile: UserProfile): AppResult<UserProfile>
     suspend fun completeProfile(profile: UserProfile): AppResult<UserProfile>
     suspend fun isUsernameAvailable(username: String, currentUid: String? = null): AppResult<Boolean>
