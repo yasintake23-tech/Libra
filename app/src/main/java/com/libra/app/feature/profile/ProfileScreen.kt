@@ -1,5 +1,6 @@
 package com.libra.app.feature.profile
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ fun ProfileScreen(
     uiState: UiState<UserProfile>,
     onSignOutClick: () -> Unit,
     onRetry: () -> Unit,
+    onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
@@ -55,6 +57,7 @@ fun ProfileScreen(
         is UiState.Success -> ProfileContent(
             uiState.data,
             onSignOutClick,
+            onSettingsClick,
             modifier
         )
     }
@@ -64,6 +67,7 @@ fun ProfileScreen(
 private fun ProfileContent(
     profile: UserProfile,
     onSignOut: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier
 ) {
     Column(
@@ -82,11 +86,13 @@ private fun ProfileContent(
                     fontWeight = FontWeight.Bold
                 )
             )
-            Icon(
-                Icons.Default.Settings,
-                contentDescription = "Ayarlar",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            androidx.compose.material3.IconButton(onClick = onSettingsClick) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Ayarlar",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(Modifier.height(24.dp))
@@ -154,7 +160,7 @@ private fun ProfileContent(
             Column(modifier = Modifier.padding(4.dp)) {
                 ProfileAction(Icons.Default.Book, "Kitaplarım")
                 ProfileAction(Icons.Default.People, "Takip ettiklerim")
-                ProfileAction(Icons.Default.Settings, "Ayarlar")
+                ProfileAction(Icons.Default.Settings, "Ayarlar", onSettingsClick)
             }
         }
 
@@ -173,10 +179,14 @@ private fun ProfileContent(
 @Composable
 private fun ProfileAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String
+    label: String,
+    onClick: () -> Unit = {}
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, contentDescription = null)
