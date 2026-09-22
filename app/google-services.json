@@ -12,7 +12,20 @@
           "package_name": "com.libra.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "705929327966-2d0jbhee922sv8ip070ntcnsj09ikcpd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.libra.app",
+            "certificate_hash": "1adee3772ca397850d58969305a2943893e6460d"
+          }
+        },
+        {
+          "client_id": "705929327966-tgu51har6f4apcnvr36ov8isflvrpsc8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDyc6tC8UyP0QXHFqs4c0-TSWNdglWJiYg"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "705929327966-tgu51har6f4apcnvr36ov8isflvrpsc8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
