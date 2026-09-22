@@ -64,27 +64,24 @@ jobs:
           java --version
           gradle --version
 
-      - name: Show Firebase Android signing SHA-1
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:signingReport --no-daemon --console=plain
-          KEYSTORE="$HOME/.config/.android/debug.keystore"
-          if [[ -f "$KEYSTORE" ]]; then
-            keytool -list -v -keystore "$KEYSTORE" -alias AndroidDebugKey -storepass android -keypass android | grep -E "SHA1:|SHA-1:"
-          fi
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
 
-      - name: Show APK signing certificate SHA-1
+      - name: Show APK signing certificate fingerprint
         shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set +e
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-          keytool -printcert -jarfile "$APK_PATH" | grep -E "Owner:|SHA1:|SHA-256:"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [[ -n "$APKSIGNER" ]]; then
+            "$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | grep -E "Signer #1|certificate SHA-1|certificate SHA-256"
+          else
+            echo "apksigner bulunamadı."
+          fi
 
       - name: Verify APK
         id: verify_apk
