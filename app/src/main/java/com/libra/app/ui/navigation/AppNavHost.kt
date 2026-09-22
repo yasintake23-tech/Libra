@@ -42,6 +42,7 @@ import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.messages.DirectMessagesScreen
 import com.libra.app.feature.profile.ProfileScreen
+import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
@@ -66,6 +67,7 @@ fun AppNavHost(
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var showSettings by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
 
     if (!authenticated) {
         when (authState) {
@@ -105,6 +107,26 @@ fun AppNavHost(
 
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
+        return
+    }
+
+    selectedPublicProfile?.let { publicProfile ->
+        val socialVm: FriendsViewModel = viewModel()
+        val socialState by socialVm.uiState.collectAsState()
+        PublicProfileScreen(
+            profile = publicProfile,
+            isFollowing = socialState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+            onBack = { selectedPublicProfile = null },
+            onFollow = { socialVm.toggleFollowUser(publicProfile) },
+            onMessage = {
+                Toast.makeText(
+                    context,
+                    "DM altyapısını bağladığımızda buradan doğrudan sohbet açılacak.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
 
@@ -172,11 +194,8 @@ fun AppNavHost(
                         state,
                         vm::updateSearchQuery,
                         { user ->
-                            Toast.makeText(
-                                context,
-                                user.displayName + " için sosyal bağlantı yakında.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            selectedPublicProfile = user
+                            socialState // keep the social ViewModel alive for the selected profile
                         },
                         vm::loadSocialData
                     )
@@ -285,3 +304,6 @@ fun AppNavHost(
         )
     }
 }
+
+private val UiState<FriendsState>.dataOrNull: FriendsState?
+    get() = (this as? UiState.Success)?.data
