@@ -242,3 +242,58 @@ private fun ProfileStat(value: Int, label: String) {
         )
     }
 }
+
+
+@Composable
+private fun SocialListDialog(
+    type: SocialListType,
+    users: List<UserProfile>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (type == SocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
+        },
+        text = {
+            if (users.isEmpty()) {
+                Text(
+                    if (type == SocialListType.FOLLOWERS)
+                        "Henüz takipçisi yok."
+                    else
+                        "Henüz kimseyi takip etmiyor."
+                )
+            } else {
+                LazyColumn {
+                    items(users, key = { it.uid }) { user ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 10.dp)
+                            ) {
+                                Text(user.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    user.handle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Kapat")
+            }
+        }
+    )
+}
