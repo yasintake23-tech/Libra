@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.Post
+import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
@@ -83,6 +86,14 @@ fun HomeScreen(
     onCreatePost: (String) -> Unit = {},
     onToggleLike: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
+    onOpenComments: (Post) -> Unit = {},
+    comments: List<PostComment> = emptyList(),
+    onAddComment: (Post, String) -> Unit = { _, _ -> },
+    onDeleteComment: (Post, PostComment) -> Unit = { _, _ -> },
+    isCommenting: Boolean = false,
+    commentError: String? = null,
+    onClearCommentError: () -> Unit = {},
+    onCloseComments: () -> Unit = {},
     isPosting: Boolean = false,
     postError: String? = null,
     onClearPostError: () -> Unit = {}
@@ -95,6 +106,8 @@ fun HomeScreen(
             val data = uiState.data
             var selectedCategory by remember { mutableStateOf<BookCategory?>(null)}
             var composerText by remember { mutableStateOf("") }
+            var selectedPost by remember { mutableStateOf<Post?>(null) }
+            var commentText by remember { mutableStateOf("") }
 
             LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                 item { HomeHeader(data.currentUser, onNavigateToProfile, onNotifications) }
@@ -171,6 +184,22 @@ fun HomeScreen(
                         commentText = ""
                         onCloseComments()
                     }
+                )
+            }
+
+            selectedPost?.let { post ->
+                PostCommentsDialog(
+                    post = post,
+                    currentUserId = data.currentUser?.uid.orEmpty(),
+                    comments = comments,
+                    text = commentText,
+                    onTextChanged = { if (it.length <= 500) commentText = it },
+                    onSend = { onAddComment(post, commentText.trim()); commentText = "" },
+                    onDeleteComment = { onDeleteComment(post, it) },
+                    isSending = isCommenting,
+                    error = commentError,
+                    onClearError = onClearCommentError,
+                    onDismiss = { selectedPost = null; commentText = ""; onCloseComments() }
                 )
             }
         }
