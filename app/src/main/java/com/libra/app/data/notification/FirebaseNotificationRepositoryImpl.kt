@@ -35,14 +35,16 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         awaitClose { registration.remove() }
     }
 
-    override suspend fun create(notification: AppNotification): AppResult<Unit> = try {
+    override suspend fun create(notification: AppNotification): AppResult<Unit> {
         if (notification.recipientId.isBlank() || notification.actorId.isBlank()) {
             return AppResult.Error(AppError.Validation("Geçersiz bildirim."))
         }
-        ref.add(notification.copy(id = "")).await()
-        AppResult.Success(Unit)
-    } catch (e: Exception) {
-        AppResult.Error(AppError.Database("Bildirim oluşturulamadı.", e))
+        return try {
+            ref.add(notification.copy(id = "")).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bildirim oluşturulamadı.", e))
+        }
     }
 
     override suspend fun markRead(notificationId: String): AppResult<Unit> {
