@@ -7,6 +7,8 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.AppNotification
+import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -292,6 +294,23 @@ class FirebaseUserRepositoryImpl : UserRepository {
                         "createdAt" to System.currentTimeMillis()
                     )
                 ).await()
+
+                val actor = (getUserProfileFresh(followerId) as? AppResult.Success)?.data
+                if (actor != null) {
+                    ServiceLocator.notificationRepository.create(
+                        AppNotification(
+                            recipientId = followingId,
+                            actorId = followerId,
+                            actorName = actor.displayName,
+                            actorUsername = actor.username,
+                            actorPhotoUrl = actor.profileImageUrl,
+                            type = "FOLLOW",
+                            title = "Yeni takipçi",
+                            body = actor.displayName + " seni takip etmeye başladı.",
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
             }
             AppResult.Success(Unit)
         } catch (e: Exception) {
