@@ -34,14 +34,17 @@ class BookRepositoryImpl : BookRepository {
         runCatching { FirebaseDatabase.getInstance() }.getOrNull()
     }
 
-    private val booksRef: DatabaseReference?
-        get() = database?.getReference("books")
+    private val booksRef: DatabaseReference? by lazy {
+        database?.getReference("books")
+    }
 
-    private val chaptersRef: DatabaseReference?
-        get() = database?.getReference("chapters")
+    private val chaptersRef: DatabaseReference? by lazy {
+        database?.getReference("chapters")
+    }
 
-    private val librariesRef: DatabaseReference?
-        get() = database?.getReference("libraries")
+    private val librariesRef: DatabaseReference? by lazy {
+        database?.getReference("libraries")
+    }
 
     private fun databaseError(): AppResult.Error =
         AppResult.Error(
@@ -122,22 +125,22 @@ class BookRepositoryImpl : BookRepository {
     }
 
     override suspend fun createBook(book: Book): AppResult<Book> {
-        if (database == null || booksRef == null) return databaseError()
+        val books = booksRef ?: return databaseError()
         if (book.ownerId.isBlank()) return AppResult.Error(AppError.Validation("Kitap sahibi belirlenemedi."))
         if (book.title.isBlank()) return AppResult.Error(AppError.Validation("Kitap başlığı boş olamaz."))
         val now = System.currentTimeMillis()
-        val id = book.id.ifBlank { booksRef.push().key ?: return AppResult.Error(AppError.Database("Kitap kimliği oluşturulamadı.")) }
+        val id = book.id.ifBlank { books.push().key ?: return AppResult.Error(AppError.Database("Kitap kimliği oluşturulamadı.")) }
         val newBook = book.copy(id = id, createdAt = now, updatedAt = now, status = BookStatus.DRAFT)
-        return try { booksRef!!.child(id).setValue(newBook).await(); AppResult.Success(newBook) }
+        return try { books.child(id).setValue(newBook).await(); AppResult.Success(newBook) }
         catch (e: Exception) { AppResult.Error(AppError.Database("Kitap oluşturulamadı: ${e.localizedMessage}", e)) }
     }
 
     override suspend fun updateBook(book: Book): AppResult<Book> {
-        if (database == null || booksRef == null) return databaseError()
+        val books = booksRef ?: return databaseError()
         if (book.id.isBlank()) return AppResult.Error(AppError.Validation("Kitap kimliği boş olamaz."))
         return try {
             val updated = book.copy(updatedAt = System.currentTimeMillis())
-            booksRef!!.child(book.id).setValue(updated).await()
+            books.child(book.id).setValue(updated).await()
             AppResult.Success(updated)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap güncellenemedi: ${e.localizedMessage}", e)) }
     }
@@ -145,21 +148,28 @@ class BookRepositoryImpl : BookRepository {
     override suspend fun deleteBook(bookId: String): AppResult<Unit> {
         val db = database ?: return databaseError()
         return try {
-        db.reference.updateChildren(mapOf("/books/$bookId" to null, "/chapters/$bookId" to null)).await()
-        AppResult.Success(Unit)
-    } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap silinemedi: ${e.localizedMessage}", e)) }
+            db.reference.updateChildren(
+                mapOf("/books/$bookId" to null, "/chapters/$bookId" to null)
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap silinemedi: " + e.localizedMessage, e))
+        }
+    }
 
     override suspend fun addBookToShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit> {
-        if (database == null || booksRef == null || librariesRef == null) return databaseError()
+        val db = database ?: return databaseError()
+        val books = booksRef ?: return databaseError()
+        val libraries = librariesRef ?: return databaseError()
         if (userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
-            if (!booksRef!!.child(bookId).get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            if (!books.child(bookId).get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
             val now = System.currentTimeMillis()
             val updates = mutableMapOf<String, Any?>()
             ShelfType.values().forEach { shelf ->
                 updates["/libraries/$userId/${shelf.name}/$bookId"] = if (shelf == shelfType) mapOf("progressPercent" to 0, "addedAt" to now) else null
             }
-            database.reference.updateChildren(updates).await()
+            db.reference.updateChildren(updates).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap kütüphaneye eklenemedi: ${e.localizedMessage}", e)) }
     }
@@ -180,14 +190,14 @@ class BookRepositoryImpl : BookRepository {
     }
 
     override suspend fun saveChapter(chapter: Chapter): AppResult<Chapter> {
-        if (database == null || chaptersRef == null) return databaseError()
+        val chapters = chaptersRef ?: return databaseError()
         if (chapter.bookId.isBlank()) return AppResult.Error(AppError.Validation("Bölüm bir kitaba bağlı olmalı."))
         if (chapter.title.isBlank()) return AppResult.Error(AppError.Validation("Bölüm başlığı boş olamaz."))
         val now = System.currentTimeMillis()
-        val id = chapter.id.ifBlank { chaptersRef.child(chapter.bookId).push().key ?: return AppResult.Error(AppError.Database("Bölüm kimliği oluşturulamadı.")) }
+        val id = chapter.id.ifBlank { chapters.child(chapter.bookId).push().key ?: return AppResult.Error(AppError.Database("Bölüm kimliği oluşturulamadı.")) }
         val wordCount = chapter.content.trim().split(Regex("\\s+")).count { it.isNotBlank() }
         val saved = chapter.copy(id = id, wordCount = wordCount, updatedAt = now, createdAt = if (chapter.createdAt == 0L) now else chapter.createdAt)
-        return try { chaptersRef!!.child(saved.bookId).child(saved.id).setValue(saved).await(); AppResult.Success(saved) }
+        return try { chapters.child(saved.bookId).child(saved.id).setValue(saved).await(); AppResult.Success(saved) }
         catch (e: Exception) { AppResult.Error(AppError.Database("Bölüm kaydedilemedi: ${e.localizedMessage}", e)) }
     }
 
