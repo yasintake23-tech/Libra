@@ -53,22 +53,16 @@ class BookRepositoryImpl : BookRepository {
             )
         )
 
-    override fun getFeaturedBooks(): Flow<AppResult<List<Book>>> = observeBooks { books ->
-        books.filter { it.status == BookStatus.PUBLISHED }
-            .sortedWith(compareByDescending<Book> { it.rating }.thenByDescending { it.readCount })
-            .take(20)
+    override fun getFeaturedBooks(): Flow<AppResult<List<Book>>> = observePublishedBooks { books ->
+        books.sortedWith(compareByDescending<Book> { it.rating }.thenByDescending { it.readCount }).take(20)
     }
 
-    override fun getRecentBooks(): Flow<AppResult<List<Book>>> = observeBooks { books ->
-        books.filter { it.status == BookStatus.PUBLISHED }
-            .sortedByDescending { it.createdAt }
-            .take(50)
+    override fun getRecentBooks(): Flow<AppResult<List<Book>>> = observePublishedBooks { books ->
+        books.sortedByDescending { it.createdAt }.take(50)
     }
 
-    override fun getBooksByCategory(category: BookCategory): Flow<AppResult<List<Book>>> = observeBooks { books ->
-        books.filter { it.status == BookStatus.PUBLISHED && it.category == category }
-            .sortedByDescending { it.createdAt }
-            .take(50)
+    override fun getBooksByCategory(category: BookCategory): Flow<AppResult<List<Book>>> = observePublishedBooks { books ->
+        books.filter { it.category == category }.sortedByDescending { it.createdAt }.take(50)
     }
 
     override fun getBookById(bookId: String): Flow<AppResult<Book?>> = callbackFlow {
@@ -120,8 +114,19 @@ class BookRepositoryImpl : BookRepository {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    override fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>> = observeBooks { books ->
-        books.filter { it.ownerId == userId }.sortedByDescending { it.updatedAt }
+    override fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>> = callbackFlow {
+        val ref = booksRef ?: run { trySend(databaseError()); close(); return@callbackFlow }
+        val query = ref.orderByChild("ownerId").equalTo(userId)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                trySend(AppResult.Success(snapshot.children.mapNotNull(::parseBook).sortedByDescending { it.updatedAt }))
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(AppResult.Error(AppError.Database(error.message, error.toException())))
+            }
+        }
+        query.addValueEventListener(listener)
+        awaitClose { query.removeEventListener(listener) }
     }
 
     override suspend fun createBook(book: Book): AppResult<Book> {
@@ -199,6 +204,22 @@ class BookRepositoryImpl : BookRepository {
         val saved = chapter.copy(id = id, wordCount = wordCount, updatedAt = now, createdAt = if (chapter.createdAt == 0L) now else chapter.createdAt)
         return try { chapters.child(saved.bookId).child(saved.id).setValue(saved).await(); AppResult.Success(saved) }
         catch (e: Exception) { AppResult.Error(AppError.Database("Bölüm kaydedilemedi: ${e.localizedMessage}", e)) }
+    }
+
+    private fun observePublishedBooks(transform: (List<Book>) -> List<Book>): Flow<AppResult<List<Book>>> = callbackFlow {
+        val ref = booksRef ?: run { trySend(databaseError()); close(); return@callbackFlow }
+        val query = ref.orderByChild("status").equalTo(BookStatus.PUBLISHED.name)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                try { trySend(AppResult.Success(transform(snapshot.children.mapNotNull(::parseBook)))) }
+                catch (e: Exception) { trySend(AppResult.Error(AppError.Database("Kitap verisi çözümlenemedi.", e))) }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(AppResult.Error(AppError.Database(error.message, error.toException())))
+            }
+        }
+        query.addValueEventListener(listener)
+        awaitClose { query.removeEventListener(listener) }
     }
 
     private fun observeBooks(transform: (List<Book>) -> List<Book>): Flow<AppResult<List<Book>>> = callbackFlow {
