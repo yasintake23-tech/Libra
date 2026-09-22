@@ -44,7 +44,11 @@ class FirebasePostRepositoryImpl(
                             authorName = data["authorName"] as? String ?: "",
                             authorUsername = data["authorUsername"] as? String ?: "",
                             authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
+                            title = data["title"] as? String ?: "",
                             text = data["text"] as? String ?: "",
+                            mediaUrl = data["mediaUrl"] as? String ?: "",
+                            mediaType = data["mediaType"] as? String ?: "",
+                            tags = (data["tags"] as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
                             likesCount = (data["likesCount"] as? Number)?.toInt() ?: 0,
                             likedByCurrentUser = runCatching {
                                 document.reference.collection("likes").document(currentUserId).get().await().exists()
@@ -64,11 +68,22 @@ class FirebasePostRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun createPost(authorId: String, text: String): AppResult<Post> {
+    override suspend fun createPost(
+        authorId: String,
+        text: String,
+        title: String,
+        mediaUrl: String,
+        mediaType: String,
+        tags: List<String>
+    ): AppResult<Post> {
+        val cleanTitle = title.trim()
         val cleanText = text.trim()
+        val cleanTags = tags.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(10)
         if (authorId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
-        if (cleanText.isBlank()) return AppResult.Error(AppError.Validation("Gönderi boş olamaz."))
-        if (cleanText.length > 1000) return AppResult.Error(AppError.Validation("Gönderi en fazla 1000 karakter olabilir."))
+        if (cleanText.isBlank()) return AppResult.Error(AppError.Validation("Gönderi metni boş olamaz."))
+        if (cleanText.length > 2000) return AppResult.Error(AppError.Validation("Gönderi en fazla 2000 karakter olabilir."))
+        if (cleanTitle.length > 120) return AppResult.Error(AppError.Validation("Başlık en fazla 120 karakter olabilir."))
+        if (mediaUrl.isNotBlank() && mediaType != "image") return AppResult.Error(AppError.Validation("Şimdilik yalnızca fotoğraf paylaşılabilir."))
 
         return try {
             val profileResult = userRepository.getUserProfileFresh(authorId)
@@ -81,7 +96,11 @@ class FirebasePostRepositoryImpl(
                 authorName = profile.displayName,
                 authorUsername = profile.username,
                 authorPhotoUrl = profile.profileImageUrl,
+                title = cleanTitle,
                 text = cleanText,
+                mediaUrl = mediaUrl.trim(),
+                mediaType = mediaType.trim(),
+                tags = cleanTags,
                 createdAt = System.currentTimeMillis()
             )
 
@@ -91,7 +110,11 @@ class FirebasePostRepositoryImpl(
                     "authorName" to post.authorName,
                     "authorUsername" to post.authorUsername,
                     "authorPhotoUrl" to post.authorPhotoUrl,
+                    "title" to post.title,
                     "text" to post.text,
+                    "mediaUrl" to post.mediaUrl,
+                    "mediaType" to post.mediaType,
+                    "tags" to post.tags,
                     "likesCount" to 0,
                     "createdAt" to post.createdAt
                 )
