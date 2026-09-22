@@ -12,6 +12,7 @@ interface ChatRepository {
     fun observeDirectConversations(uid: String): Flow<AppResult<List<DirectConversation>>>
     fun observeDirectMessages(conversationId: String, limit: Long = 100): Flow<AppResult<List<DirectMessage>>>
     suspend fun sendDirectMessage(recipientId: String, text: String): AppResult<Unit>
+    suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String): AppResult<Unit>
     suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit>
     fun observeCommunityServers(): Flow<AppResult<List<com.libra.app.domain.model.CommunityServer>>>
     suspend fun createCommunityServer(name: String, description: String): AppResult<com.libra.app.domain.model.CommunityServer>
