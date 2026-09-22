@@ -99,20 +99,28 @@ class WriteViewModel(
                 return@launch
             }
             val now = System.currentTimeMillis()
-            chapters.forEach { chapter ->
-                bookRepository.saveChapter(chapter.copy(isPublished = true, updatedAt = now))
+            val publishedChapters = mutableListOf<Chapter>()
+            for (chapter in chapters) {
+                when (val saved = bookRepository.saveChapter(chapter.copy(isPublished = true, updatedAt = now))) {
+                    is AppResult.Success -> publishedChapters += saved.data
+                    is AppResult.Error -> {
+                        _editorError.value = "Bölüm ${chapter.chapterNumber} yayınlanamadı: ${saved.error.message}"
+                        _editorSaving.value = false
+                        return@launch
+                    }
+                }
             }
             when (
                 val result = bookRepository.updateBook(
                     book.copy(
                         status = BookStatus.PUBLISHED,
-                        chapterCount = chapters.size,
+                        chapterCount = publishedChapters.size,
                         updatedAt = now
                     )
                 )
             ) {
                 is AppResult.Success -> {
-                    _editorChapters.value = chapters.map { it.copy(isPublished = true, updatedAt = now) }
+                    _editorChapters.value = publishedChapters.sortedBy { it.chapterNumber }
                     loadMyBooks()
                 }
                 is AppResult.Error -> _editorError.value = result.error.message
