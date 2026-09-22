@@ -7,6 +7,7 @@ import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.repository.StorageRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -78,13 +79,31 @@ class CloudflareR2StorageRepositoryImpl(
             val objectKey =
                 targetDirectory + "/" + UUID.randomUUID().toString() + "-" + safeFileName
 
-            val response = withContext(Dispatchers.IO) {
-                putBytes(
-                    url = config.objectUrl(context, objectKey),
-                    apiToken = config.apiToken(context),
-                    bytes = request.bytes,
-                    contentType = request.contentType.ifBlank { "application/octet-stream" }
+            val response = try {
+                withContext(Dispatchers.IO) {
+                    putBytes(
+                        url = config.objectUrl(context, objectKey),
+                        apiToken = config.apiToken(context),
+                        bytes = request.bytes,
+                        contentType = request.contentType.ifBlank { "application/octet-stream" }
+                    )
+                }
+            } catch (e: CancellationException) {
+                // Flow.first() başarılı sonucu aldıktan sonra upstream'i iptal eder.
+                // Bu normal iptal durumunu R2 hatası olarak emit etmek Flow
+                // transparency ihlaline ve uygulama çökmesine neden olur.
+                throw e
+            } catch (e: Exception) {
+                emit(
+                    AppResult.Error(
+                        AppError.Storage(
+                            "R2 dosya yüklenemedi: " +
+                                (e.localizedMessage ?: "Bilinmeyen hata."),
+                            e
+                        )
+                    )
                 )
+                return@flow
             }
 
             if (response.code !in 200..299) {
@@ -95,25 +114,20 @@ class CloudflareR2StorageRepositoryImpl(
                         ?.optString("message")
                 }.getOrNull().orEmpty()
 
-                throw IllegalStateException(
-                    message.ifBlank {
-                        response.body.ifBlank { "R2 yükleme başarısız." }
-                    }
+                emit(
+                    AppResult.Error(
+                        AppError.Storage(
+                            "R2 dosya yüklenemedi: " +
+                                message.ifBlank {
+                                    response.body.ifBlank { "R2 yükleme başarısız." }
+                                }
+                        )
+                    )
                 )
+                return@flow
             }
 
             emit(AppResult.Success(config.objectUrl(context, objectKey)))
-        } catch (e: Exception) {
-            emit(
-                AppResult.Error(
-                    AppError.Storage(
-                        "R2 dosya yüklenemedi: " +
-                            (e.localizedMessage ?: "Bilinmeyen hata."),
-                        e
-                    )
-                )
-            )
-        }
     }
 
     override suspend fun deleteMedia(fileKey: String): AppResult<Unit> {
