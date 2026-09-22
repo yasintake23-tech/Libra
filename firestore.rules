@@ -116,9 +116,15 @@ service cloud.firestore {
         && request.resource.data.authorName is string
         && request.resource.data.authorUsername is string
         && request.resource.data.authorPhotoUrl is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 120
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 1000
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.mediaUrl is string
+        && request.resource.data.mediaType is string
+        && request.resource.data.tags is list
+        && request.resource.data.tags.size() <= 10
         && request.resource.data.likesCount == 0
         && request.resource.data.createdAt is number;
       allow update: if request.auth != null
