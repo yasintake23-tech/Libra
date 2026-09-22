@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,7 +38,6 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.core.di.ServiceLocator
-import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
@@ -84,7 +82,6 @@ private fun ProfileContent(
     var socialDialog by remember { mutableStateOf<SocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(profile.uid) {
         launch {
@@ -285,10 +282,7 @@ private fun SocialListDialog(
                                     .weight(1f)
                                     .padding(start = 10.dp)
                             ) {
-                                Text(
-                                    user.displayName,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Text(user.displayName, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     user.handle,
                                     style = MaterialTheme.typography.bodySmall,
@@ -303,13 +297,5 @@ private fun SocialListDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Kapat") }
         }
-    )    socialDialog?.let { type ->
-        SocialListDialog(
-            type = type,
-            users = if (type == SocialListType.FOLLOWERS) followers else following,
-            onDismiss = { socialDialog = null }
-        )
-    }
+    )
 }
-
-
