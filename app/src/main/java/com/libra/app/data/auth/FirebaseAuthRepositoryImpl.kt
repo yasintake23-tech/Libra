@@ -3,6 +3,10 @@ package com.libra.app.data.auth
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
@@ -141,12 +145,7 @@ class FirebaseAuthRepositoryImpl(
             runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
                 .getOrElse { AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.", cause = it)) }
         } catch (e: Exception) {
-            AppResult.Error(
-                AppError.Auth(
-                    "E-posta ile giriş başarısız: " + (e.localizedMessage ?: "E-posta veya şifre hatalı."),
-                    cause = e
-                )
-            )
+            AppResult.Error(emailAuthError("E-posta ile giriş başarısız.", e))
         }
     }
 
@@ -173,12 +172,7 @@ class FirebaseAuthRepositoryImpl(
             runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
                 .getOrElse { AppResult.Error(AppError.Auth("Hesap hazırlanırken zaman aşımı oldu.", cause = it)) }
         } catch (e: Exception) {
-            AppResult.Error(
-                AppError.Auth(
-                    "Hesap oluşturulamadı: " + (e.localizedMessage ?: "Bilinmeyen hata."),
-                    cause = e
-                )
-            )
+            AppResult.Error(emailAuthError("Hesap oluşturulamadı.", e))
         }
     }
 
@@ -231,6 +225,23 @@ class FirebaseAuthRepositoryImpl(
             _isAuthenticated.value = false
             AppResult.Error(AppError.Database("Kullanıcı profili alınamadı.", e))
         }
+    }
+
+    private fun emailAuthError(prefix: String, error: Exception): AppError.Auth {
+        val message = when (error) {
+            is FirebaseAuthUserCollisionException ->
+                "Bu e-posta zaten kayıtlı. Giriş yap sekmesinden devam et."
+            is FirebaseAuthInvalidCredentialsException ->
+                "E-posta veya şifre hatalı."
+            is FirebaseAuthInvalidUserException ->
+                "Bu hesap bulunamadı veya artık kullanılamıyor."
+            is FirebaseAuthWeakPasswordException ->
+                "Şifre Firebase'in belirlediği minimum güvenlik koşulunu karşılamıyor."
+            else ->
+                prefix + ": " + (error.localizedMessage ?: "Bilinmeyen hata.")
+        }
+
+        return AppError.Auth(message, cause = error)
     }
 
     private fun buildProfile(
