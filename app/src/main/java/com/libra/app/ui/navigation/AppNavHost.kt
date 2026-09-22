@@ -119,10 +119,13 @@ fun AppNavHost(
 
     val profile = currentUser
 
+    if (profile == null) {
+        LoadingView(message = "Profil hazırlanıyor…")
+        return
+    }
+
     createContentMode?.let { mode ->
         val vm: HomeViewModel = viewModel()
-        val homeState by vm.uiState.collectAsState()
-        val homeData = (homeState as? UiState.Success)?.data
         CreateContentScreen(
             mode = mode,
             user = profile,
@@ -139,11 +142,6 @@ fun AppNavHost(
             onClearError = vm::clearPostError,
             modifier = modifier.fillMaxSize()
         )
-        return
-    }
-
-    if (profile == null) {
-        LoadingView(message = "Profil hazırlanıyor…")
         return
     }
 
@@ -236,7 +234,7 @@ fun AppNavHost(
                     HomeScreen(
                         state,
                         { selectedBook = it },
-                        { createContentMode = CreateContentMode.POST },
+                        { selectedTab = BottomNavTab.WRITE },
                         { selectedTab = BottomNavTab.LIBRARY },
                         { selectedTab = BottomNavTab.PROFILE },
                         { selectedTab = BottomNavTab.DISCOVER },
