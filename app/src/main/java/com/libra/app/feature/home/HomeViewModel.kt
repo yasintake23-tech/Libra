@@ -1,6 +1,8 @@
 package com.libra.app.feature.home
 
 import androidx.lifecycle.ViewModel
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import androidx.lifecycle.viewModelScope
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
@@ -195,6 +197,65 @@ class HomeViewModel(
         }
     }
 
+    fun createStory(
+        text: String,
+        imageBytes: ByteArray?,
+        imageFileName: String,
+        imageContentType: String,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val user = authRepository.currentUser.value
+        if (user == null) {
+            _postError.value = "Oturum bulunamadı."
+            onComplete(false)
+            return
+        }
+
+        viewModelScope.launch {
+            _isPosting.value = true
+            _postError.value = null
+            try {
+                var mediaUrl = ""
+                if (imageBytes != null && imageBytes.isNotEmpty()) {
+                    when (val upload = storageRepository.uploadMedia(
+                        StorageUploadRequest(
+                            fileName = imageFileName.ifBlank { "story.jpg" },
+                            bytes = imageBytes,
+                            contentType = imageContentType.ifBlank { "image/jpeg" },
+                            targetDirectory = "users/${user.uid}"
+                        )
+                    ).first()) {
+                        is AppResult.Success -> mediaUrl = upload.data
+                        is AppResult.Error -> {
+                            _postError.value = upload.error.message
+                            onComplete(false)
+                            return@launch
+                        }
+                    }
+                }
+
+                val now = System.currentTimeMillis()
+                FirebaseFirestore.getInstance().collection("stories").add(
+                    mapOf(
+                        "authorId" to user.uid,
+                        "authorName" to (user.displayName ?: "Libra kullanıcısı"),
+                        "authorPhotoUrl" to (user.photoUrl?.toString() ?: ""),
+                        "text" to text.trim(),
+                        "mediaUrl" to mediaUrl,
+                        "mediaType" to if (mediaUrl.isBlank()) "" else "image",
+                        "createdAt" to now,
+                        "expiresAt" to now + 24L * 60L * 60L * 1000L
+                    )
+                ).await()
+                onComplete(true)
+            } catch (e: Exception) {
+                _postError.value = "Hikâye paylaşılırken hata oluştu: ${e.localizedMessage ?: "Bilinmeyen hata."}"
+                onComplete(false)
+            } finally {
+                _isPosting.value = false
+            }
+        }
+    }
     fun toggleLike(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
