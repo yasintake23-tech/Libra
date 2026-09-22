@@ -11,6 +11,7 @@ import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 enum class UsernameAvailability { IDLE, CHECKING, AVAILABLE, TAKEN }
@@ -110,99 +112,116 @@ class ProfileSetupViewModel(
             return
         }
         if (!isValidUsername(username)) {
-            _state.value = snapshot.copy(errorMessage = "Kullanıcı adı 3-20 karakter olmalı; sadece İngilizce harf, rakam, nokta ve alt çizgi kullanabilirsin.")
+            _state.value = snapshot.copy(
+                errorMessage = "Kullanıcı adı 3-20 karakter olmalı; sadece İngilizce harf, rakam, nokta ve alt çizgi kullanabilirsin."
+            )
             return
         }
 
         viewModelScope.launch {
             _state.value = snapshot.copy(isSaving = true, errorMessage = null)
+            var uploadedPhotoUrl: String? = null
 
-            val baseProfile = snapshot.profile.copy(
-                uid = uid,
-                displayName = displayName,
-                username = username,
-                bio = snapshot.bio.trim(),
-                profileCompleted = true,
-                updatedAt = System.currentTimeMillis()
-            )
-
-            when (val profileResult = userRepository.completeProfile(baseProfile)) {
-                is AppResult.Error -> {
-                    _state.value = _state.value.copy(isSaving = false, errorMessage = profileResult.error.message)
-                }
-                is AppResult.Success -> {
-                    var savedProfile = profileResult.data
-                    val selectedPhoto = snapshot.photoUri
-
-                    if (selectedPhoto != null) {
-                        val bytes = runCatching {
+            try {
+                // Fotoğraf seçildiyse önce R2'ye yükle. R2 başarısızken hesabı
+                // tamamlanmış sayıp kullanıcıyı ana ekrana göndermiyoruz.
+                val selectedPhoto = snapshot.photoUri
+                if (selectedPhoto != null) {
+                    val bytes = withContext(Dispatchers.IO) {
+                        runCatching {
                             contentResolver.openInputStream(selectedPhoto)?.use { it.readBytes() }
                         }.getOrNull()
-
-                        if (bytes == null || bytes.size > 8 * 1024 * 1024) {
-                            _state.value = _state.value.copy(
-                                profile = savedProfile,
-                                isSaving = false,
-                                errorMessage = if (bytes == null) "Profil oluşturuldu, ancak fotoğraf okunamadı." else "Profil oluşturuldu, ancak fotoğraf 8 MB'dan büyük."
-                            )
-                            onCompleted()
-                            return@launch
-                        }
-
-                        val mimeType = contentResolver.getType(selectedPhoto) ?: "image/jpeg"
-                        val extension = when (mimeType.lowercase(Locale.ROOT)) {
-                            "image/png" -> "png"
-                            "image/webp" -> "webp"
-                            else -> "jpg"
-                        }
-
-                        val request = StorageUploadRequest(
-                            fileName = "profile.$extension",
-                            bytes = bytes,
-                            contentType = if (mimeType.startsWith("image/")) mimeType else "image/jpeg",
-                            targetDirectory = "users/$uid"
-                        )
-
-                        when (val upload = r2StorageRepository.uploadMedia(request).first()) {
-                            is AppResult.Success -> {
-                                when (userRepository.updateProfilePhoto(uid, upload.data)) {
-                                    is AppResult.Success -> savedProfile = savedProfile.copy(
-                                        profileImageUrl = upload.data,
-                                        updatedAt = System.currentTimeMillis()
-                                    )
-                                    is AppResult.Error -> {
-                                        _state.value = _state.value.copy(
-                                            profile = savedProfile,
-                                            isSaving = false,
-                                            errorMessage = "Profil oluşturuldu, ancak fotoğraf bağlantısı kaydedilemedi."
-                                        )
-                                        onCompleted()
-                                        return@launch
-                                    }
-                                }
-                            }
-                            is AppResult.Error -> {
-                                _state.value = _state.value.copy(
-                                    profile = savedProfile,
-                                    isSaving = false,
-                                    errorMessage = "Profil oluşturuldu, ancak fotoğraf yüklenemedi: ${upload.error.message}"
-                                )
-                                onCompleted()
-                                return@launch
-                            }
-                        }
                     }
 
-                    _state.value = _state.value.copy(
-                        profile = savedProfile,
-                        displayName = savedProfile.displayName,
-                        username = savedProfile.username,
-                        bio = savedProfile.bio,
-                        isSaving = false,
-                        errorMessage = null
+                    if (bytes == null) {
+                        _state.value = _state.value.copy(
+                            isSaving = false,
+                            errorMessage = "Profil fotoğrafı okunamadı. Fotoğrafı tekrar seç."
+                        )
+                        return@launch
+                    }
+
+                    if (bytes.size > 8 * 1024 * 1024) {
+                        _state.value = _state.value.copy(
+                            isSaving = false,
+                            errorMessage = "Profil fotoğrafı 8 MB'dan büyük olamaz."
+                        )
+                        return@launch
+                    }
+
+                    val mimeType = contentResolver.getType(selectedPhoto) ?: "image/jpeg"
+                    val extension = when (mimeType.lowercase(Locale.ROOT)) {
+                        "image/png" -> "png"
+                        "image/webp" -> "webp"
+                        "image/heic" -> "heic"
+                        "image/heif" -> "heif"
+                        else -> "jpg"
+                    }
+
+                    val request = StorageUploadRequest(
+                        fileName = "profile.$extension",
+                        bytes = bytes,
+                        contentType = if (mimeType.startsWith("image/")) mimeType else "image/jpeg",
+                        targetDirectory = "users/$uid"
                     )
-                    onCompleted()
+
+                    when (val upload = r2StorageRepository.uploadMedia(request).first()) {
+                        is AppResult.Success -> uploadedPhotoUrl = upload.data
+                        is AppResult.Error -> {
+                            _state.value = _state.value.copy(
+                                isSaving = false,
+                                errorMessage = "Profil fotoğrafı yüklenemedi: ${upload.error.message}"
+                            )
+                            return@launch
+                        }
+                    }
                 }
+
+                // Fotoğraf URL'sini profil ilk kez yazılırken kaydet. Böylece
+                // Firestore'da profileCompleted=true olup profileImageUrl boş
+                // kalması durumunu önlüyoruz.
+                val baseProfile = snapshot.profile.copy(
+                    uid = uid,
+                    displayName = displayName,
+                    username = username,
+                    bio = snapshot.bio.trim(),
+                    profileImageUrl = uploadedPhotoUrl ?: snapshot.profile.profileImageUrl,
+                    profileCompleted = true,
+                    updatedAt = System.currentTimeMillis()
+                )
+
+                when (val profileResult = userRepository.completeProfile(baseProfile)) {
+                    is AppResult.Error -> {
+                        uploadedPhotoUrl?.let { runCatching { r2StorageRepository.deleteMedia(it) } }
+                        _state.value = _state.value.copy(
+                            isSaving = false,
+                            errorMessage = profileResult.error.message
+                        )
+                    }
+
+                    is AppResult.Success -> {
+                        _state.value = _state.value.copy(
+                            profile = profileResult.data,
+                            displayName = profileResult.data.displayName,
+                            username = profileResult.data.username,
+                            bio = profileResult.data.bio,
+                            photoUri = null,
+                            isSaving = false,
+                            errorMessage = null
+                        )
+
+                        // Beklenmeyen bir navigation callback hatasının
+                        // profil kaydını başarısız göstermesine izin verme.
+                        runCatching { onCompleted() }
+                    }
+                }
+            } catch (e: Exception) {
+                uploadedPhotoUrl?.let { runCatching { r2StorageRepository.deleteMedia(it) } }
+                _state.value = _state.value.copy(
+                    isSaving = false,
+                    errorMessage = "Profil oluşturulurken beklenmeyen bir hata oluştu: " +
+                        (e.localizedMessage ?: "Bilinmeyen hata.")
+                )
             }
         }
     }
