@@ -16,4 +16,6 @@ interface UserRepository {
     suspend fun isFollowing(followerId: String, followingId: String): AppResult<Boolean>
     suspend fun followUser(followerId: String, followingId: String): AppResult<Unit>
     suspend fun unfollowUser(followerId: String, followingId: String): AppResult<Unit>
+    suspend fun getFollowers(uid: String): AppResult<List<UserProfile>>
+    suspend fun getFollowing(uid: String): AppResult<List<UserProfile>>
 }
