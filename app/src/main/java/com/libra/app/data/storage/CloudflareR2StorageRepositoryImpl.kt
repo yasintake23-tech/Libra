@@ -210,14 +210,14 @@ class CloudflareR2StorageRepositoryImpl(
     private fun request(
         method: String,
         url: String,
-        apiToken: String
+        bearerToken: String
     ): HttpResponse {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
             connection.connectTimeout = 20_000
             connection.readTimeout = 30_000
-            connection.setRequestProperty("Authorization", "Bearer " + apiToken)
+            connection.setRequestProperty("Authorization", "Bearer " + bearerToken)
             connection.setRequestProperty("Accept", "application/json")
             HttpResponse(connection.responseCode, readResponse(connection))
         } finally {
