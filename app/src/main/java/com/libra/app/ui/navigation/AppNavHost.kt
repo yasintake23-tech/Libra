@@ -141,12 +141,14 @@ fun AppNavHost(
                     tags = tags,
                     imageBytes = imageBytes,
                     imageFileName = imageFileName,
-                    imageContentType = imageContentType
+                    imageContentType = imageContentType,
+                    onComplete = { success ->
+                        if (success && mode == CreateContentMode.POST) {
+                            createContentMode = null
+                            selectedTab = BottomNavTab.HOME
+                        }
+                    }
                 )
-                if (mode == CreateContentMode.POST) {
-                    createContentMode = null
-                    selectedTab = BottomNavTab.HOME
-                }
             },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
