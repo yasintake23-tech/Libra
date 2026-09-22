@@ -180,6 +180,66 @@ class FirebaseChatRepositoryImpl(
     }
 
 
+    override suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String): AppResult<Unit> {
+        val sender = auth.currentUser ?: return AppResult.Error(AppError.Auth("Medya göndermek için giriş yapmalısın."))
+        if (recipientId.isBlank() || recipientId == sender.uid || mediaUrl.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz medya mesajı."))
+        }
+        return try {
+            val senderProfile = (userRepository.getUserProfileFresh(sender.uid) as? AppResult.Success)?.data
+                ?: return AppResult.Error(AppError.Auth("Gönderen profili bulunamadı."))
+            val recipientProfile = (userRepository.getUserProfileFresh(recipientId) as? AppResult.Success)?.data
+                ?: return AppResult.Error(AppError.Validation("Bu kullanıcı artık mevcut değil."))
+            val ids = listOf(sender.uid, recipientId).sorted()
+            val conversationId = ids.joinToString("_")
+            val now = System.currentTimeMillis()
+            val conversation = conversationsRef.document(conversationId)
+            val base = mapOf(
+                "participants" to ids,
+                "updatedAt" to now,
+                "lastMessage" to if (mediaType.startsWith("image/")) "📷 Fotoğraf" else "📎 Dosya",
+                "otherUserName_" + sender.uid to recipientProfile.displayName,
+                "otherUserUsername_" + sender.uid to recipientProfile.username,
+                "otherUserPhotoUrl_" + sender.uid to recipientProfile.profileImageUrl,
+                "otherUserName_" + recipientId to senderProfile.displayName,
+                "otherUserUsername_" + recipientId to senderProfile.username,
+                "otherUserPhotoUrl_" + recipientId to senderProfile.profileImageUrl
+            )
+            firestore.runTransaction { transaction ->
+                val current = transaction.get(conversation).getLong("unreadCount_" + recipientId) ?: 0L
+                transaction.set(conversation, base + mapOf("unreadCount_" + recipientId to current + 1L), com.google.firebase.firestore.SetOptions.merge())
+                null
+            }.await()
+            conversation.collection("messages").add(
+                DirectMessage(
+                    senderId = sender.uid,
+                    recipientId = recipientId,
+                    text = "",
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    createdAt = now
+                )
+            ).await()
+            ServiceLocator.notificationRepository.create(
+                AppNotification(
+                    recipientId = recipientId,
+                    actorId = sender.uid,
+                    actorName = senderProfile.displayName,
+                    actorUsername = senderProfile.username,
+                    actorPhotoUrl = senderProfile.profileImageUrl,
+                    type = "MESSAGE",
+                    title = "Yeni medya mesajı",
+                    body = senderProfile.displayName + " sana bir medya gönderdi.",
+                    referenceId = conversationId,
+                    createdAt = now
+                )
+            )
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Medya mesajı gönderilemedi.", e))
+        }
+    }
+
     override suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit> {
         val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sohbet."))
