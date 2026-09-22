@@ -8,8 +8,9 @@
       }
     },
     "books": {
+      ".read": "auth != null && ((query.orderByChild === 'ownerId' && query.equalTo === auth.uid) || (query.orderByChild === 'status' && query.equalTo === 'PUBLISHED'))",
+      ".indexOn": ["ownerId", "status"],
       "$bookId": {
-        ".read": "auth != null && (data.child('status').val() === 'PUBLISHED' || data.child('ownerId').val() === auth.uid)",
         ".write": "auth != null && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
         ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()"
       }
