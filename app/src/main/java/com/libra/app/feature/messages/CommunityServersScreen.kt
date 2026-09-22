@@ -145,34 +145,6 @@ fun CommunityServersScreen(
         )
     }
 
-    if (showMembers) {
-        AlertDialog(
-            onDismissRequest = { showMembers = false },
-            title = { Text("Üyeler (${members.size})") },
-            text = {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(members, key = { it.uid }) { member ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(member.displayName.ifBlank { member.uid }, fontWeight = FontWeight.Bold)
-                                Text(member.role, style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (server.ownerId == currentUid && member.uid != currentUid) {
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        repository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
-                                    }
-                                }) { Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap") }
-                                TextButton(onClick = {
-                                    scope.launch { repository.removeServerMember(server.id, member.uid) }
-                                }) { Text("Çıkar") }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showMembers = false }) { Text("Kapat") } }
-        )
     }
 }
 
@@ -304,5 +276,34 @@ private fun ServerChatScreen(
                 }
             ) { Icon(Icons.Default.Send, "Gönder") }
         }
+    }
+    if (showMembers) {
+        AlertDialog(
+            onDismissRequest = { showMembers = false },
+            title = { Text("Üyeler (${members.size})") },
+            text = {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(members, key = { it.uid }) { member ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(member.displayName.ifBlank { member.uid }, fontWeight = FontWeight.Bold)
+                                Text(member.role, style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (server.ownerId == currentUid && member.uid != currentUid) {
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        repository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
+                                    }
+                                }) { Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap") }
+                                TextButton(onClick = {
+                                    scope.launch { repository.removeServerMember(server.id, member.uid) }
+                                }) { Text("Çıkar") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showMembers = false }) { Text("Kapat") } }
+        )
     }
 }
