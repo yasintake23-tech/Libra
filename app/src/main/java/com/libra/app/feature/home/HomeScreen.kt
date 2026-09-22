@@ -120,7 +120,7 @@ fun HomeScreen(
                     item { EmptyFeed(onNavigateToDiscover, onNavigateToWrite) }
                 } else {
                     items(data.posts, key = { it.id }) { post ->
-                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) })
+                        PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
                     }
                 }
                 item { SectionHeader("Kitap Dünyası", subtitle = "Libra'nın Wattpad tarafı") }
@@ -149,6 +149,29 @@ fun HomeScreen(
                 else items(recent.take(8), key = { it.id }) { book ->
                     HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
+            }
+
+            selectedPost?.let { post ->
+                PostCommentsDialog(
+                    post = post,
+                    currentUserId = data.currentUser?.uid.orEmpty(),
+                    comments = comments,
+                    text = commentText,
+                    onTextChanged = { if (it.length <= 500) commentText = it },
+                    onSend = {
+                        onAddComment(post, commentText.trim())
+                        commentText = ""
+                    },
+                    onDeleteComment = { onDeleteComment(post, it) },
+                    isSending = isCommenting,
+                    error = commentError,
+                    onClearError = onClearCommentError,
+                    onDismiss = {
+                        selectedPost = null
+                        commentText = ""
+                        onCloseComments()
+                    }
+                )
             }
         }
     }
