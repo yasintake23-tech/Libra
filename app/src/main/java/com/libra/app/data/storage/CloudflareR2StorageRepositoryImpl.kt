@@ -159,10 +159,12 @@ class CloudflareR2StorageRepositoryImpl(
         return try {
             connection.requestMethod = "PUT"
             connection.doOutput = true
+            connection.setFixedLengthStreamingMode(bytes.size)
             connection.connectTimeout = 20_000
             connection.readTimeout = 60_000
             connection.setRequestProperty("Authorization", "Bearer $idToken")
             connection.setRequestProperty("Content-Type", contentType)
+            connection.setRequestProperty("Accept", "application/json")
             connection.outputStream.use { it.write(bytes) }
 
             HttpResponse(connection.responseCode, readResponse(connection))
