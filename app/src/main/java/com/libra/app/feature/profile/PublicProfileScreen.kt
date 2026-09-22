@@ -229,8 +229,15 @@ fun PublicProfileScreen(
 private enum class SocialListType { FOLLOWERS, FOLLOWING }
 
 @Composable
-private fun ProfileStat(value: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ProfileStat(
+    value: Int,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.padding(horizontal = 8.dp)
+    ) {
         Text(
             value.toString(),
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
