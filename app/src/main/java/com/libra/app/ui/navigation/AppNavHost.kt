@@ -215,7 +215,13 @@ fun AppNavHost(
                         { selectedTab = BottomNavTab.PROFILE },
                         { selectedTab = BottomNavTab.DISCOVER },
                         { showNotifications = true },
-                        vm::loadHomeData
+                        vm::loadHomeData,
+                        onCreatePost = vm::createPost,
+                        onToggleLike = vm::toggleLike,
+                        onDeletePost = vm::deletePost,
+                        isPosting = vm.isPosting.collectAsState().value,
+                        postError = vm.postError.collectAsState().value,
+                        onClearPostError = vm::clearPostError
                     )
                 }
 
