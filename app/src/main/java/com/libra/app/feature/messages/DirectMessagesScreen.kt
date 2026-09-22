@@ -253,23 +253,48 @@ private fun DirectConversationScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
-    val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    var mediaUploading by remember { mutableStateOf(false) }
+    var mediaError by remember { mutableStateOf<String?>(null) }
+
+    val mediaLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            runCatching {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
-                if (bytes.isEmpty() || bytes.size > 8 * 1024 * 1024) return@runCatching
-                val type = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+            mediaUploading = true
+            mediaError = null
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)
+                    ?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Fotoğraf okunamadı.")
+
+                if (bytes.isEmpty()) {
+                    throw IllegalStateException("Fotoğraf boş.")
+                }
+                if (bytes.size > 8 * 1024 * 1024) {
+                    throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
+                }
+
+                val type = context.contentResolver.getType(uri)
+                    .orEmpty()
+                    .ifBlank { "image/jpeg" }
+                val extension = type.substringAfter('/').ifBlank { "jpg" }.take(8)
+
                 val upload = StorageUploadRequest(
-                    fileName = "dm-" + System.currentTimeMillis() + ".jpg",
+                    fileName = "dm-" + System.currentTimeMillis() + "." + extension,
                     bytes = bytes,
                     contentType = type,
                     targetDirectory = "users/" + ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
                 )
+
                 when (val result = ServiceLocator.storageRepository.uploadMedia(upload).first()) {
                     is AppResult.Success -> onSendMedia(result.data, type)
-                    is AppResult.Error -> Unit
+                    is AppResult.Error -> mediaError = result.error.message
                 }
+            } catch (e: Exception) {
+                mediaError = e.localizedMessage ?: "Fotoğraf gönderilemedi."
+            } finally {
+                mediaUploading = false
             }
         }
     }
@@ -292,6 +317,9 @@ private fun DirectConversationScreen(
             }
         }
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
+        mediaError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -321,7 +349,7 @@ private fun DirectConversationScreen(
             }
         }
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { mediaLauncher.launch("image/*") }) {
+            IconButton(enabled = !mediaUploading, onClick = { mediaLauncher.launch("image/*") }) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
