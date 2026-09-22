@@ -1,0 +1,243 @@
+name: Libra Android APK
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: libra-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  GRADLE_VERSION: '9.3.1'
+  EXPECTED_LIBRA_SHA1: '1adee3772ca397850d58969305a2943893e6460d'
+
+jobs:
+  build-apk:
+    name: Build and Package APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Libra
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-provider: basic
+
+      - name: Require Firebase and signing secrets
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+          LIBRA_KEYSTORE_B64: ${{ secrets.LIBRA_KEYSTORE_B64 }}
+          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
+          LIBRA_KEY_ALIAS: ${{ secrets.LIBRA_KEY_ALIAS }}
+          LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GOOGLE_SERVICES_JSON_B64" ]] || { echo "::error::GOOGLE_SERVICES_JSON_B64 secret eksik."; exit 1; }
+          [[ -n "$LIBRA_KEYSTORE_B64" ]] || { echo "::error::LIBRA_KEYSTORE_B64 secret eksik."; exit 1; }
+          [[ -n "$LIBRA_KEYSTORE_PASSWORD" ]] || { echo "::error::LIBRA_KEYSTORE_PASSWORD secret eksik."; exit 1; }
+          [[ -n "$LIBRA_KEY_ALIAS" ]] || { echo "::error::LIBRA_KEY_ALIAS secret eksik."; exit 1; }
+          [[ -n "$LIBRA_KEY_PASSWORD" ]] || { echo "::error::LIBRA_KEY_PASSWORD secret eksik."; exit 1; }
+          echo "Firebase ve sabit Libra signing secret'ları mevcut."
+
+      - name: Inject Firebase config
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
+          test -s app/google-services.json
+
+      - name: Inject R2 Worker endpoint when configured
+        shell: bash
+        env:
+          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
+            echo "R2 Worker endpoint secret yok; uygulama R2'siz derleniyor."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+
+          path = Path("app/src/main/res/values/strings.xml")
+          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
+          root = ET.parse(path).getroot()
+
+          for node in root.findall("string"):
+              if node.attrib.get("name") == "r2_upload_endpoint":
+                  node.text = endpoint
+                  break
+          else:
+              raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
+
+          ET.indent(root, space="    ")
+          path.write_text(ET.tostring(root, encoding="unicode"))
+          PY
+
+      - name: Prepare stable signing key
+        shell: bash
+        env:
+          LIBRA_KEYSTORE_B64: ${{ secrets.LIBRA_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/libra-signing"
+          printf '%s' "$LIBRA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/libra-signing/libra.jks"
+          test -s "$RUNNER_TEMP/libra-signing/libra.jks"
+          keytool -list             -keystore "$RUNNER_TEMP/libra-signing/libra.jks"             -storepass "${{ secrets.LIBRA_KEYSTORE_PASSWORD }}"             -alias "${{ secrets.LIBRA_KEY_ALIAS }}" >/dev/null
+
+      - name: Export stable signing configuration
+        shell: bash
+        run: |
+          {
+            echo "LIBRA_KEYSTORE_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
+            echo "LIBRA_KEYSTORE_PASSWORD=${{ secrets.LIBRA_KEYSTORE_PASSWORD }}"
+            echo "LIBRA_KEY_ALIAS=${{ secrets.LIBRA_KEY_ALIAS }}"
+            echo "LIBRA_KEY_PASSWORD=${{ secrets.LIBRA_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          java --version
+          gradle --version
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
+
+      - name: Verify Firebase signing certificate
+        id: verify_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+
+          if [[ -z "$APKSIGNER" ]]; then
+            echo "::error::apksigner bulunamadı."
+            exit 1
+          fi
+
+          ACTUAL_SHA1="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | awk -F': ' '/certificate SHA-1 digest/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_SHA256="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+
+          echo "Expected SHA-1: $EXPECTED_LIBRA_SHA1"
+          echo "Actual SHA-1:   $ACTUAL_SHA1"
+          echo "APK SHA-256:    $ACTUAL_SHA256"
+
+          if [[ "$ACTUAL_SHA1" != "$EXPECTED_LIBRA_SHA1" ]]; then
+            echo "::error::APK Firebase'de kayıtlı Libra SHA-1 ile eşleşmiyor."
+            exit 1
+          fi
+
+          echo "Firebase-matched signing certificate doğrulandı."
+          echo "sha1=$ACTUAL_SHA1" >> "$GITHUB_OUTPUT"
+          echo "sha256=$ACTUAL_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Verify APK
+        id: verify_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          [[ -f "$APK_PATH" ]] || { echo "::error::APK bulunamadı."; exit 1; }
+
+          APK_SIZE=$(stat -c%s "$APK_PATH")
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          mkdir -p artifacts
+          cp "$APK_PATH" "artifacts/Libra-debug-$GITHUB_RUN_NUMBER.apk"
+
+          cat > artifacts/build-info.txt <<EOF
+          Libra Android Build
+          ===================
+          Run: $GITHUB_RUN_NUMBER
+          Commit: $GITHUB_SHA
+          Ref: $GITHUB_REF
+          Build date: $BUILD_DATE
+          APK size: $APK_SIZE bytes
+          APK SHA-256: $SHA256
+          Signing SHA-1: ${{ steps.verify_signing.outputs.sha1 }}
+          Signing SHA-256: ${{ steps.verify_signing.outputs.sha256 }}
+          Package: com.libra.app
+          Version: 1.0.0 (1)
+          EOF
+
+          echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-APK-${{ github.run_number }}
+          path: artifacts/Libra-debug-${{ github.run_number }}.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-Build-Info-${{ github.run_number }}
+          path: artifacts/build-info.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-Test-Reports-${{ github.run_number }}
+          path: |
+            app/build/reports/tests/**
+            app/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Build summary
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          {
+            echo "## Libra APK"
+            echo ""
+            echo "Debug APK başarıyla oluşturuldu."
+            echo ""
+            echo "- Artifact: Libra-APK-$GITHUB_RUN_NUMBER"
+            echo "- Package: com.libra.app"
+            echo "- Signing SHA-1: ${{ steps.verify_signing.outputs.sha1 }}"
+            echo "- APK size: ${{ steps.verify_apk.outputs.apk_size }} bytes"
+            echo "- APK SHA-256: ${{ steps.verify_apk.outputs.sha256 }}"
+          } >> "$GITHUB_STEP_SUMMARY"
