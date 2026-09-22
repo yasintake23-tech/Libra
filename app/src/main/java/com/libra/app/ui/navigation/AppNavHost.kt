@@ -72,6 +72,7 @@ fun AppNavHost(
     var showGlobalChat by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
 
@@ -123,11 +124,9 @@ fun AppNavHost(
             onBack = { selectedPublicProfile = null },
             onFollow = { friendsVm.toggleFollowUser(publicProfile) },
             onMessage = {
-                Toast.makeText(
-                    context,
-                    "DM altyapısını bağladığımızda buradan doğrudan sohbet açılacak.",
-                    Toast.LENGTH_SHORT
-                ).show()
+                selectedPublicProfile = null
+                selectedDirectUser = publicProfile
+                selectedTab = BottomNavTab.DM
             },
             modifier = modifier.fillMaxSize()
         )
@@ -261,6 +260,8 @@ fun AppNavHost(
                         onGlobalChatClick = {
                             showGlobalChat = true
                         },
+                        initialUser = selectedDirectUser,
+                        onInitialUserConsumed = { selectedDirectUser = null },
                         onServersClick = {
                             Toast.makeText(
                                 context,
