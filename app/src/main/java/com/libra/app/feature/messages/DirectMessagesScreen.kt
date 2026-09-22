@@ -68,6 +68,11 @@ class DirectMessagesViewModel : ViewModel() {
 
     fun openConversation(conversation: DirectConversation) {
         observeConversation(conversation.id)
+        markRead(conversation.id)
+    }
+
+    fun markRead(conversationId: String) {
+        viewModelScope.launch { repository.markDirectConversationRead(conversationId) }
     }
 
     private fun observeConversation(id: String) {
@@ -92,6 +97,8 @@ class DirectMessagesViewModel : ViewModel() {
     }
 }
 
+private fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+
 private enum class MessageSection { MESSAGES, COMMUNITIES }
 
 @Composable
@@ -114,6 +121,7 @@ fun DirectMessagesScreen(
         initialUser?.let {
             selectedUser = it
             viewModel.openConversation(it)
+            viewModel.markRead(listOf(authUserId(), it.uid).sorted().joinToString("_"))
             onInitialUserConsumed()
         }
     }
@@ -187,6 +195,20 @@ fun DirectMessagesScreen(
                                         Text(conversation.otherUserName, fontWeight = FontWeight.Bold)
                                         Text("@"+conversation.otherUserUsername, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         if (conversation.lastMessage.isNotBlank()) Text(conversation.lastMessage, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    if (conversation.unreadCount > 0) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primary
+                                        ) {
+                                            Text(
+                                                conversation.unreadCount.coerceAtMost(99).toString(),
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                        Spacer(Modifier.width(6.dp))
                                     }
                                     Icon(Icons.Default.ChevronRight, null)
                                 }
