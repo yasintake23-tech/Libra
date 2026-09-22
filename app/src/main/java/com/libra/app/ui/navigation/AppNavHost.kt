@@ -40,6 +40,8 @@ import com.libra.app.feature.friends.FriendsState
 import com.libra.app.feature.friends.FriendsViewModel
 import com.libra.app.feature.home.HomeScreen
 import com.libra.app.feature.home.HomeViewModel
+import com.libra.app.feature.home.CreateContentMode
+import com.libra.app.feature.home.CreateContentScreen
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.messages.DirectMessagesScreen
@@ -77,6 +79,7 @@ fun AppNavHost(
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    var createContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
 
@@ -115,6 +118,29 @@ fun AppNavHost(
     }
 
     val profile = currentUser
+
+    createContentMode?.let { mode ->
+        val vm: HomeViewModel = viewModel()
+        val homeState by vm.uiState.collectAsState()
+        val homeData = (homeState as? UiState.Success)?.data
+        CreateContentScreen(
+            mode = mode,
+            user = profile,
+            isPosting = vm.isPosting.collectAsState().value,
+            error = vm.postError.collectAsState().value,
+            onPublishPost = { text ->
+                vm.createPost(text)
+                if (mode == CreateContentMode.POST) {
+                    createContentMode = null
+                    selectedTab = BottomNavTab.HOME
+                }
+            },
+            onBack = { createContentMode = null },
+            onClearError = vm::clearPostError,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
 
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
@@ -210,7 +236,7 @@ fun AppNavHost(
                     HomeScreen(
                         state,
                         { selectedBook = it },
-                        { selectedTab = BottomNavTab.WRITE },
+                        { createContentMode = CreateContentMode.POST },
                         { selectedTab = BottomNavTab.LIBRARY },
                         { selectedTab = BottomNavTab.PROFILE },
                         { selectedTab = BottomNavTab.DISCOVER },
@@ -218,6 +244,8 @@ fun AppNavHost(
                         { showNotifications = true },
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
+                        onOpenCreatePost = { createContentMode = CreateContentMode.POST },
+                        onOpenCreateStory = { createContentMode = CreateContentMode.STORY },
                         onToggleLike = vm::toggleLike,
                         onToggleSave = vm::toggleSave,
                         onDeletePost = vm::deletePost,
