@@ -310,6 +310,38 @@ class FirebaseChatRepositoryImpl(
         }
     }
 
+    override suspend fun updateCommunityServer(
+        serverId: String,
+        name: String,
+        description: String
+    ): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val cleanName = name.trim()
+        val cleanDescription = description.trim()
+        if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+        if (cleanName.length < 2) return AppResult.Error(AppError.Validation("Sunucu adı en az 2 karakter olmalı."))
+        if (cleanName.length > 40) return AppResult.Error(AppError.Validation("Sunucu adı en fazla 40 karakter olabilir."))
+        if (cleanDescription.length > 160) return AppResult.Error(AppError.Validation("Açıklama en fazla 160 karakter olabilir."))
+
+        return try {
+            val ref = serversRef.document(serverId)
+            val server = ref.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi düzenleyebilir."))
+            }
+            ref.update(
+                mapOf(
+                    "name" to cleanName,
+                    "description" to cleanDescription
+                )
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu güncellenemedi.", e))
+        }
+    }
+
     override suspend fun joinCommunityServer(serverId: String): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Sunucuya katılmak için giriş yapmalısın."))
         if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
