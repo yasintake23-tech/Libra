@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.Post
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.launch
@@ -81,6 +83,7 @@ private fun ProfileContent(
     modifier: Modifier
 ) {
     var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
+    var showSavedPosts by remember { mutableStateOf(false) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
@@ -187,6 +190,11 @@ private fun ProfileContent(
             Column(modifier = Modifier.padding(4.dp)) {
                 ProfileAction(Icons.Default.Book, "Kitaplarım")
                 ProfileAction(
+                    Icons.Default.BookmarkBorder,
+                    "Kaydedilen gönderiler",
+                    onClick = { showSavedPosts = true }
+                )
+                ProfileAction(
                     Icons.Default.People,
                     "Takip ettiklerim",
                     onClick = { socialDialog = OwnSocialListType.FOLLOWING }
@@ -196,6 +204,21 @@ private fun ProfileContent(
         }
 
         Spacer(Modifier.height(8.dp))
+
+        if (socialDialog != null) {
+            SocialListDialog(
+                type = socialDialog!!,
+                users = if (socialDialog == OwnSocialListType.FOLLOWERS) followers else following,
+                onDismiss = { socialDialog = null }
+            )
+        }
+
+        if (showSavedPosts) {
+            SavedPostsDialog(
+                userId = profile.uid,
+                onDismiss = { showSavedPosts = false }
+            )
+        }
 
         TextButton(
             onClick = onSignOut,
@@ -226,6 +249,60 @@ private fun ProfileAction(
 }
 
 private enum class OwnSocialListType { FOLLOWERS, FOLLOWING }
+
+
+@Composable
+private fun SavedPostsDialog(
+    userId: String,
+    onDismiss: () -> Unit
+) {
+    var posts by remember(userId) { mutableStateOf<List<Post>>(emptyList()) }
+    var error by remember(userId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(userId) {
+        ServiceLocator.postRepository.observeSavedPosts(userId).collect { result ->
+            when (result) {
+                is com.libra.app.core.result.AppResult.Success -> posts = result.data
+                is com.libra.app.core.result.AppResult.Error -> error = result.error.message
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Kaydedilen gönderiler") },
+        text = {
+            when {
+                error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                posts.isEmpty() -> Text("Henüz kaydettiğin bir gönderi yok.")
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(posts, key = { it.id }) { post ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(
+                                    post.authorName.ifBlank { post.authorUsername },
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (post.authorUsername.isNotBlank()) {
+                                    Text(
+                                        "@${post.authorUsername}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(post.text)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Kapat") }
+        }
+    )
+}
 
 @Composable
 private fun Stat(
