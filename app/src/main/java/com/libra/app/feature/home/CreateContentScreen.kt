@@ -39,12 +39,13 @@ fun CreateContentScreen(
     error: String?,
     onPublishPost: (String) -> Unit,
     onBack: () -> Unit,
-    onClearError: () -> Unit
+    onClearError: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var text by remember { mutableStateOf("") }
     val isPost = mode == CreateContentMode.POST
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Icon(if (isPost) Icons.Default.Edit else Icons.Default.AutoStories, null)
