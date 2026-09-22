@@ -150,6 +150,20 @@ fun AppNavHost(
                     }
                 )
             },
+            onPublishStory = { text, imageBytes, imageFileName, imageContentType ->
+                vm.createStory(
+                    text = text,
+                    imageBytes = imageBytes,
+                    imageFileName = imageFileName,
+                    imageContentType = imageContentType,
+                    onComplete = { success ->
+                        if (success) {
+                            createContentMode = null
+                            selectedTab = BottomNavTab.HOME
+                        }
+                    }
+                )
+            },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
             modifier = modifier.fillMaxSize()
