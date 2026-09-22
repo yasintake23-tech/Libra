@@ -35,7 +35,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.IconButton
@@ -161,7 +161,7 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(data.featuredBooks.take(8), key = { it.id }) { book ->
-                                VerticalBookCard(book) { onBookClick(book) }
+                                VerticalBookCard(book = book, onClick = { onBookClick(book) })
                             }
                         }
                     }
@@ -282,6 +282,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PostCommentsDialog(
     post: Post,
