@@ -333,7 +333,7 @@ private fun StoryComposerScreen(
                         modifier = Modifier.fillMaxWidth().height(150.dp),
                         label = { Text("Hikâyen") },
                         placeholder = { Text("Bugün ne paylaşmak istiyorsun?") },
-                        supportingText = { Text("0/500") }
+                        supportingText = { Text("${text.length}/500") }
                     )
 
                     Spacer(Modifier.height(12.dp))
