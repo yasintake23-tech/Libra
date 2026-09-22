@@ -200,7 +200,7 @@ private fun PostComposer(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onComment: () -> Unit) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -225,9 +225,72 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
+                IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
             }
         }
     }
+}
+
+@Composable
+private fun PostCommentsDialog(
+    post: Post,
+    currentUserId: String,
+    comments: List<PostComment>,
+    text: String,
+    onTextChanged: (String) -> Unit,
+    onSend: () -> Unit,
+    onDeleteComment: (PostComment) -> Unit,
+    isSending: Boolean,
+    error: String?,
+    onClearError: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Yorumlar") },
+        text = {
+            Column {
+                Text(post.text, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(10.dp))
+                if (comments.isEmpty()) {
+                    Text("Henüz yorum yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    LazyColumn(Modifier.height(260.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(comments, key = { it.id }) { comment ->
+                            Row(verticalAlignment = Alignment.Top) {
+                                UserAvatar(comment.authorPhotoUrl, comment.authorName.take(1).uppercase().ifBlank { "L" }, size = 34.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                    Text(comment.text, style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (comment.authorId == currentUserId) {
+                                    TextButton(onClick = { onDeleteComment(comment) }) { Text("Sil") }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChanged,
+                    placeholder = { Text("Yorum yaz...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3
+                )
+                if (error != null) {
+                    TextButton(onClick = onClearError) { Text(error, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
+                Text(if (isSending) "Gönderiliyor…" else "Gönder")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
+    )
 }
 
 @Composable
