@@ -67,12 +67,18 @@ fun CreateContentScreen(
         imageFileName: String,
         imageContentType: String
     ) -> Unit,
+    onPublishStory: (
+        text: String,
+        imageBytes: ByteArray?,
+        imageFileName: String,
+        imageContentType: String
+    ) -> Unit = { _, _, _, _ -> },
     onBack: () -> Unit,
     onClearError: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (mode == CreateContentMode.STORY) {
-        StoryPlaceholderScreen(onBack, modifier)
+        StoryComposerScreen(user, isPosting, error, onPublishStory, onBack, onClearError, modifier)
         return
     }
 
@@ -250,18 +256,130 @@ fun CreateContentScreen(
 }
 
 @Composable
-private fun StoryPlaceholderScreen(
+private fun StoryComposerScreen(
+    user: UserProfile,
+    isPosting: Boolean,
+    error: String?,
+    onPublishStory: (String, ByteArray?, String, String) -> Unit,
     onBack: () -> Unit,
+    onClearError: () -> Unit,
     modifier: Modifier
 ) {
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Icon(Icons.Default.AutoStories, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Hikâye oluştur", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    var selectedImage by remember { mutableStateOf<android.net.Uri?>(null) }
+    var imageName by remember { mutableStateOf("story.jpg") }
+    var imageType by remember { mutableStateOf("image/jpeg") }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        selectedImage = uri
+        if (uri != null) {
+            imageType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            imageName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "story.jpg" } ?: "story.jpg"
         }
-        Spacer(Modifier.height(20.dp))
-        Text("Hikâye editörü daha sonra bağlanacak. Gönderi editörü artık başlık, fotoğraf ve etiket desteğiyle hazır.", style = MaterialTheme.typography.bodyLarge)
+    }
+
+    Column(modifier.fillMaxSize().imePadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack, enabled = !isPosting) {
+                Icon(Icons.Default.ArrowBack, "Geri")
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Hikâye oluştur", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("24 saat boyunca paylaş.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(
+                enabled = (text.isNotBlank() || selectedImage != null) && !isPosting,
+                onClick = {
+                    val bytes = selectedImage?.let { uri ->
+                        runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                    }
+                    onPublishStory(text.trim(), bytes, imageName, imageType)
+                }
+            ) {
+                if (isPosting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Paylaş", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        UserAvatar(user.profileImageUrl, user.initials, size = 44.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(user.displayName.ifBlank { "Sen" }, fontWeight = FontWeight.Bold)
+                            Text("Hikâyen 24 saat sonra otomatik olarak süresi dolacak.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { if (it.length <= 500) text = it },
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
+                        label = { Text("Hikâyen") },
+                        placeholder = { Text("Bugün ne paylaşmak istiyorsun?") },
+                        supportingText = { Text("0/500") }
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (selectedImage == null) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable(enabled = !isPosting) { picker.launch("image/*") }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(26.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Fotoğraf ekle", fontWeight = FontWeight.SemiBold)
+                                Text("İstersen hikâyene tek fotoğraf ekleyebilirsin.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    } else {
+                        Box(
+                            Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(16.dp))
+                        ) {
+                            AsyncImage(
+                                model = selectedImage,
+                                contentDescription = "Hikâye fotoğrafı",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            IconButton(
+                                onClick = { selectedImage = null },
+                                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .88f), RoundedCornerShape(50))
+                            ) {
+                                Icon(Icons.Default.Close, "Fotoğrafı kaldır")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (error != null) {
+                TextButton(onClick = onClearError) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
     }
 }
