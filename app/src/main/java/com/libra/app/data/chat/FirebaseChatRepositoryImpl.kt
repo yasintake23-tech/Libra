@@ -95,7 +95,8 @@ class FirebaseChatRepositoryImpl(
                     otherUserUsername = doc.getString("otherUserUsername_" + uid).orEmpty(),
                     otherUserPhotoUrl = doc.getString("otherUserPhotoUrl_" + uid).orEmpty(),
                     lastMessage = doc.getString("lastMessage").orEmpty(),
-                    updatedAt = doc.getLong("updatedAt") ?: 0L
+                    updatedAt = doc.getLong("updatedAt") ?: 0L,
+                    unreadCount = (doc.getLong("unreadCount_" + uid) ?: 0L).toInt()
                 )
             }.sortedByDescending { it.updatedAt }
             trySend(AppResult.Success(conversations))
@@ -142,10 +143,15 @@ class FirebaseChatRepositoryImpl(
                 "otherUserPhotoUrl_" + sender.uid to recipientProfile.profileImageUrl,
                 "otherUserName_" + recipientId to senderProfile.displayName,
                 "otherUserUsername_" + recipientId to senderProfile.username,
-                "otherUserPhotoUrl_" + recipientId to senderProfile.profileImageUrl
+                "otherUserPhotoUrl_" + recipientId to senderProfile.profileImageUrl,
+                "unreadCount_" + recipientId to com.google.firebase.firestore.FieldValue.increment(1)
             )
             val conversation = conversationsRef.document(conversationId)
-            conversation.set(base, com.google.firebase.firestore.SetOptions.merge()).await()
+            firestore.runTransaction { transaction ->
+                val current = transaction.get(conversation).getLong("unreadCount_" + recipientId) ?: 0L
+                transaction.set(conversation, base + mapOf("unreadCount_" + recipientId to current + 1L), com.google.firebase.firestore.SetOptions.merge())
+                null
+            }.await()
             conversation.collection("messages").add(
                 com.libra.app.domain.model.DirectMessage(
                     senderId = sender.uid, recipientId = recipientId, text = clean, createdAt = now
@@ -157,6 +163,22 @@ class FirebaseChatRepositoryImpl(
         }
     }
 
+
+    override suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sohbet."))
+        return try {
+            conversationsRef.document(conversationId).update(
+                mapOf(
+                    "unreadCount_" + uid to 0L,
+                    "lastReadAt_" + uid to System.currentTimeMillis()
+                )
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sohbet okundu olarak işaretlenemedi.", e))
+        }
+    }
 
     override fun observeCommunityServers(): Flow<AppResult<List<CommunityServer>>> = callbackFlow {
         val registration = serversRef
