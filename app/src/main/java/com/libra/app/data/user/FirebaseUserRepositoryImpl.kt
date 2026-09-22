@@ -63,6 +63,29 @@ class FirebaseUserRepositoryImpl : UserRepository {
         }
     }
 
+    override suspend fun getUserProfileFresh(uid: String): AppResult<UserProfile?> {
+        if (uid.isBlank()) return AppResult.Success(null)
+
+        return try {
+            val snapshot = usersRef.document(uid).get(Source.SERVER).await()
+            if (!snapshot.exists()) {
+                cache.remove(uid)
+                AppResult.Success(null)
+            } else {
+                val profile = snapshot.toObject(UserProfile::class.java)
+                if (profile == null) {
+                    cache.remove(uid)
+                    AppResult.Success(null)
+                } else {
+                    cache[uid] = profile
+                    AppResult.Success(profile)
+                }
+            }
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kullanıcı profili doğrulanamadı.", e))
+        }
+    }
+
     override suspend fun createOrUpdateProfile(profile: UserProfile): AppResult<UserProfile> {
         val updated = profile.copy(updatedAt = System.currentTimeMillis())
 
