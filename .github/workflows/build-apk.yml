@@ -44,31 +44,28 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-provider: basic
 
-      - name: Require Firebase and signing secrets
+      - name: Require stable signing secret
         shell: bash
         env:
-          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
           LIBRA_KEYSTORE_B64: ${{ secrets.LIBRA_KEYSTORE_B64 }}
           LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
           LIBRA_KEY_ALIAS: ${{ secrets.LIBRA_KEY_ALIAS }}
           LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          [[ -n "$GOOGLE_SERVICES_JSON_B64" ]] || { echo "::error::GOOGLE_SERVICES_JSON_B64 secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEYSTORE_B64" ]] || { echo "::error::LIBRA_KEYSTORE_B64 secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEYSTORE_PASSWORD" ]] || { echo "::error::LIBRA_KEYSTORE_PASSWORD secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEY_ALIAS" ]] || { echo "::error::LIBRA_KEY_ALIAS secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEY_PASSWORD" ]] || { echo "::error::LIBRA_KEY_PASSWORD secret eksik."; exit 1; }
-          echo "Firebase ve sabit Libra signing secret'ları mevcut."
+          echo "Sabit Libra signing secret'ı mevcut."
 
-      - name: Inject Firebase config
+      - name: Verify committed Firebase config
         shell: bash
-        env:
-          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
         run: |
           set -euo pipefail
-          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > app/google-services.json
           test -s app/google-services.json
+          grep -q '"project_id": "libra-3bfb9"' app/google-services.json
+          grep -q '"package_name": "com.libra.app"' app/google-services.json
 
       - name: Inject R2 Worker endpoint when configured
         shell: bash
