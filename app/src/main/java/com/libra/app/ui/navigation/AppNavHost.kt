@@ -45,6 +45,7 @@ import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.messages.DirectMessagesScreen
 import com.libra.app.feature.messages.GlobalChatScreen
 import com.libra.app.feature.messages.CommunityServersScreen
+import com.libra.app.feature.notifications.NotificationsScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
@@ -72,6 +73,7 @@ fun AppNavHost(
     var showSettings by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
     var showCommunityServers by remember { mutableStateOf(false) }
+    var showNotifications by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -130,6 +132,14 @@ fun AppNavHost(
                 selectedDirectUser = publicProfile
                 selectedTab = BottomNavTab.DM
             },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    if (showNotifications) {
+        NotificationsScreen(
+            onBack = { showNotifications = false },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -204,6 +214,7 @@ fun AppNavHost(
                         { selectedTab = BottomNavTab.LIBRARY },
                         { selectedTab = BottomNavTab.PROFILE },
                         { selectedTab = BottomNavTab.DISCOVER },
+                        { showNotifications = true },
                         vm::loadHomeData
                     )
                 }
