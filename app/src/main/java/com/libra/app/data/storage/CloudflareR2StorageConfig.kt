@@ -15,6 +15,9 @@ object CloudflareR2StorageConfig {
     fun apiToken(context: Context): String =
         context.getString(R.string.cloudflare_r2_api_token).trim()
 
+    fun uploadEndpoint(context: Context): String =
+        context.getString(R.string.r2_upload_endpoint).trim().trimEnd('/')
+
     fun objectApiBaseUrl(context: Context): String {
         val account = accountId(context)
         val bucket = bucketName(context)
