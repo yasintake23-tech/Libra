@@ -167,7 +167,13 @@ fun HomeScreen(
                 }
 
                 item { SectionHeader("Yeni kitaplar", subtitle = "Son yayınlar") }
-                item { SectionHeader("Yeni Eklenenler", subtitle = "Libra'daki son yayınlar") }
+                if (data.recentBooks.isEmpty()) {
+                    item { EmptyStrip("Henüz yayınlanmış kitap yok.") }
+                } else {
+                    items(data.recentBooks.take(5), key = { it.id }) { book ->
+                        HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 3.dp))
+                    }
+                }
             }
 
             selectedPost?.let { post ->
