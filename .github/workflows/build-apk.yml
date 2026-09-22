@@ -64,6 +64,11 @@ jobs:
           java --version
           gradle --version
 
+      - name: Show Firebase Android signing SHA-1
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:signingReport --no-daemon --console=plain
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain
 
