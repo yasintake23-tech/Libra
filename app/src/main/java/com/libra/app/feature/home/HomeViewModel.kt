@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 data class HomeData(
@@ -42,46 +44,56 @@ class HomeViewModel(
     private val _postError = MutableStateFlow<String?>(null)
     val postError: StateFlow<String?> = _postError.asStateFlow()
 
+    private var homeJob: Job? = null
+    private var postsJob: Job? = null
+
     init { loadHomeData() }
 
     fun loadHomeData() {
-        viewModelScope.launch {
-            val userId = authRepository.currentUser.value?.uid
-            if (userId == null) {
-                _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı."))
-                return@launch
-            }
+        homeJob?.cancel()
+        postsJob?.cancel()
 
+        val userId = authRepository.currentUser.value?.uid
+        if (userId == null) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı."))
+            return
+        }
+
+        homeJob = viewModelScope.launch {
             combine(
                 bookRepository.getFeaturedBooks(),
                 bookRepository.getRecentBooks(),
-                bookRepository.getUserLibrary(userId, ShelfType.READING),
-                postRepository.observeFeed(userId)
-            ) { featured, recent, reading, posts -> Quadruple(featured, recent, reading, posts) }
-                .collect { values ->
-                    val error = listOf(values.first, values.second, values.third, values.fourth)
+                bookRepository.getUserLibrary(userId, ShelfType.READING)
+            ) { featured, recent, reading -> Triple(featured, recent, reading) }
+                .collectLatest { values ->
+                    val error = listOf(values.first, values.second, values.third)
                         .filterIsInstance<AppResult.Error>()
                         .firstOrNull()
                     if (error != null) {
                         _uiState.value = UiState.Error(error.error)
-                        return@collect
+                        return@collectLatest
                     }
 
-                    val featuredBooks = (values.first as AppResult.Success).data
-                    val recentBooks = (values.second as AppResult.Success).data
-                    val readingItems = (values.third as AppResult.Success).data
-                    val posts = (values.fourth as AppResult.Success).data
-
+                    val existingPosts = (_uiState.value as? UiState.Success)?.data?.posts.orEmpty()
                     _uiState.value = UiState.Success(
                         HomeData(
                             currentUser = authRepository.currentUser.value,
-                            featuredBooks = featuredBooks,
-                            recentBooks = recentBooks,
-                            currentlyReading = readingItems.firstOrNull(),
-                            posts = posts
+                            featuredBooks = (values.first as AppResult.Success).data,
+                            recentBooks = (values.second as AppResult.Success).data,
+                            currentlyReading = (values.third as AppResult.Success).data.firstOrNull(),
+                            posts = existingPosts
                         )
                     )
                 }
+        }
+
+        postsJob = viewModelScope.launch {
+            postRepository.observeFeed(userId).collect { result ->
+                if (result is AppResult.Success) {
+                    val current = (_uiState.value as? UiState.Success)?.data ?: return@collect
+                    _uiState.value = UiState.Success(current.copy(posts = result.data))
+                }
+            }
         }
     }
 
