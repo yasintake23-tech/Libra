@@ -14,13 +14,14 @@ import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.PostRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class HomeData(
     val currentUser: UserProfile?,
@@ -68,42 +69,57 @@ class HomeViewModel(
             return
         }
 
-        homeJob = viewModelScope.launch {
-            combine(
-                bookRepository.getFeaturedBooks(),
-                bookRepository.getRecentBooks(),
-                bookRepository.getUserLibrary(userId, ShelfType.READING)
-            ) { featured, recent, reading -> Triple(featured, recent, reading) }
-                .collectLatest { values ->
-                    val error = listOf(values.first, values.second, values.third)
-                        .filterIsInstance<AppResult.Error>()
-                        .firstOrNull()
-                    if (error != null) {
-                        _uiState.value = UiState.Error(error.error)
-                        return@collectLatest
-                    }
+        // Do not let a slow/unavailable library listener block the whole Home screen.
+        _uiState.value = UiState.Success(
+            HomeData(
+                currentUser = authRepository.currentUser.value,
+                featuredBooks = emptyList(),
+                recentBooks = emptyList(),
+                currentlyReading = null,
+                posts = emptyList()
+            )
+        )
 
-                    val existingPosts = (_uiState.value as? UiState.Success)?.data?.posts.orEmpty()
-                    _uiState.value = UiState.Success(
-                        HomeData(
-                            currentUser = authRepository.currentUser.value,
-                            featuredBooks = (values.first as AppResult.Success).data,
-                            recentBooks = (values.second as AppResult.Success).data,
-                            currentlyReading = (values.third as AppResult.Success).data.firstOrNull(),
-                            posts = existingPosts
-                        )
-                    )
+        homeJob = viewModelScope.launch {
+            launch {
+                bookRepository.getFeaturedBooks().collect { result ->
+                    if (result is AppResult.Success) {
+                        updateHome { it.copy(featuredBooks = result.data) }
+                    }
                 }
+            }
+
+            launch {
+                bookRepository.getRecentBooks().collect { result ->
+                    if (result is AppResult.Success) {
+                        updateHome { it.copy(recentBooks = result.data) }
+                    }
+                }
+            }
+
+            launch {
+                val reading = withTimeoutOrNull(8_000L) {
+                    bookRepository.getUserLibrary(userId, ShelfType.READING)
+                        .first { it is AppResult.Success || it is AppResult.Error }
+                }
+                if (reading is AppResult.Success) {
+                    updateHome { it.copy(currentlyReading = reading.data.firstOrNull()) }
+                }
+            }
         }
 
         postsJob = viewModelScope.launch {
             postRepository.observeFeed(userId).collect { result ->
                 if (result is AppResult.Success) {
-                    val current = (_uiState.value as? UiState.Success)?.data ?: return@collect
-                    _uiState.value = UiState.Success(current.copy(posts = result.data))
+                    updateHome { it.copy(posts = result.data) }
                 }
             }
         }
+    }
+
+    private fun updateHome(transform: (HomeData) -> HomeData) {
+        val current = (_uiState.value as? UiState.Success)?.data ?: return
+        _uiState.value = UiState.Success(transform(current))
     }
 
     fun createPost(text: String) {
@@ -196,6 +212,4 @@ class HomeViewModel(
     fun clearCommentError() { _commentError.value = null }
 
     fun clearPostError() { _postError.value = null }
-
-    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 }
