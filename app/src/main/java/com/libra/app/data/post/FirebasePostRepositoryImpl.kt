@@ -6,6 +6,7 @@ import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.Post
+import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.repository.PostRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -143,4 +144,71 @@ class FirebasePostRepositoryImpl(
             AppResult.Error(AppError.Database("Gönderi silinemedi.", e))
         }
     }
+    override fun observeComments(postId: String, limit: Long): Flow<AppResult<List<PostComment>>> = callbackFlow {
+        if (postId.isBlank()) {
+            trySend(AppResult.Success(emptyList()))
+            close()
+            return@callbackFlow
+        }
+        val registration = postsRef.document(postId).collection("comments")
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Yorumlar yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val comments = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(PostComment::class.java)?.copy(id = doc.id, postId = postId)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(comments))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun addComment(postId: String, authorId: String, text: String): AppResult<PostComment> {
+        val cleanText = text.trim()
+        if (postId.isBlank() || authorId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (cleanText.isBlank()) return AppResult.Error(AppError.Validation("Yorum boş olamaz."))
+        if (cleanText.length > 500) return AppResult.Error(AppError.Validation("Yorum en fazla 500 karakter olabilir."))
+        return try {
+            val profile = (userRepository.getUserProfileFresh(authorId) as? AppResult.Success)?.data
+                ?: return AppResult.Error(AppError.Database("Profil bilgileri alınamadı."))
+            val ref = postsRef.document(postId).collection("comments").document()
+            val comment = PostComment(
+                id = ref.id,
+                postId = postId,
+                authorId = authorId,
+                authorName = profile.displayName,
+                authorUsername = profile.username,
+                authorPhotoUrl = profile.profileImageUrl,
+                text = cleanText,
+                createdAt = System.currentTimeMillis()
+            )
+            ref.set(comment).await()
+            AppResult.Success(comment)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Yorum gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun deleteComment(postId: String, commentId: String, userId: String): AppResult<Unit> {
+        if (postId.isBlank() || commentId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val ref = postsRef.document(postId).collection("comments").document(commentId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Success(Unit)
+            if (snapshot.getString("authorId") != userId) {
+                return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
+            }
+            ref.delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Yorum silinemedi.", e))
+        }
+    }
+
+
 }
