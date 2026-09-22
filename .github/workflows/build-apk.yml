@@ -141,6 +141,14 @@ jobs:
           print("Direct R2 PUT başarılı.")
           PY
 
+          curl --fail --silent --show-error             --request GET             --header "Authorization: Bearer $R2_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-get.txt"
+
+          cmp "$RUNNER_TEMP/r2-test.txt" "$RUNNER_TEMP/r2-get.txt" || {
+            echo "::error::R2 GET doğrulaması PUT edilen içerikle eşleşmiyor."
+            exit 1
+          }
+          echo "Direct R2 GET başarılı."
+
           curl --fail --silent --show-error \
             --request DELETE \
             --header "Authorization: Bearer $R2_TOKEN" \
