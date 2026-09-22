@@ -9,6 +9,8 @@ import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.repository.PostRepository
 import com.libra.app.domain.repository.UserRepository
+import com.libra.app.domain.model.AppNotification
+import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +35,8 @@ class FirebasePostRepositoryImpl(
             val documents = snapshot?.documents.orEmpty()
             launch {
                 try {
-                    val posts = documents.mapNotNull { document ->
+                    val followingIds = (userRepository.getFollowingIds(currentUserId) as? AppResult.Success)?.data.orEmpty() + currentUserId
+                    val posts = documents.filter { it.getString("authorId") in followingIds }.mapNotNull { document ->
                         val data = document.data ?: return@mapNotNull null
                         Post(
                             id = document.id,
@@ -45,6 +48,9 @@ class FirebasePostRepositoryImpl(
                             likesCount = (data["likesCount"] as? Number)?.toInt() ?: 0,
                             likedByCurrentUser = runCatching {
                                 document.reference.collection("likes").document(currentUserId).get().await().exists()
+                            }.getOrDefault(false),
+                            savedByCurrentUser = runCatching {
+                                firestore.collection("savedPosts").document(currentUserId).collection("posts").document(document.id).get().await().exists()
                             }.getOrDefault(false),
                             createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
                         )
@@ -124,6 +130,29 @@ class FirebasePostRepositoryImpl(
                 null
             }.await()
 
+            if (liked) {
+                val postSnapshot = postsRef.document(postId).get().await()
+                val recipientId = postSnapshot.getString("authorId").orEmpty()
+                if (recipientId.isNotBlank() && recipientId != userId) {
+                    val actor = (userRepository.getUserProfileFresh(userId) as? AppResult.Success)?.data
+                    if (actor != null) {
+                        ServiceLocator.notificationRepository.create(
+                            AppNotification(
+                                recipientId = recipientId,
+                                actorId = userId,
+                                actorName = actor.displayName,
+                                actorUsername = actor.username,
+                                actorPhotoUrl = actor.profileImageUrl,
+                                type = "LIKE",
+                                title = "Yeni beğeni",
+                                body = actor.displayName + " gönderini beğendi.",
+                                referenceId = postId,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
             AppResult.Success(liked)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Beğeni işlemi tamamlanamadı.", e))
@@ -188,6 +217,24 @@ class FirebasePostRepositoryImpl(
                 createdAt = System.currentTimeMillis()
             )
             ref.set(comment).await()
+            val postSnapshot = postsRef.document(postId).get().await()
+            val recipientId = postSnapshot.getString("authorId").orEmpty()
+            if (recipientId.isNotBlank() && recipientId != authorId) {
+                ServiceLocator.notificationRepository.create(
+                    AppNotification(
+                        recipientId = recipientId,
+                        actorId = authorId,
+                        actorName = profile.displayName,
+                        actorUsername = profile.username,
+                        actorPhotoUrl = profile.profileImageUrl,
+                        type = "COMMENT",
+                        title = "Yeni yorum",
+                        body = profile.displayName + " gönderine yorum yaptı.",
+                        referenceId = postId,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+            }
             AppResult.Success(comment)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum gönderilemedi.", e))
@@ -210,5 +257,66 @@ class FirebasePostRepositoryImpl(
         }
     }
 
+
+    override suspend fun toggleSave(postId: String, userId: String): AppResult<Boolean> {
+        if (postId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val ref = firestore.collection("savedPosts").document(userId).collection("posts").document(postId)
+            if (ref.get().await().exists()) {
+                ref.delete().await()
+                AppResult.Success(false)
+            } else {
+                if (!postsRef.document(postId).get().await().exists()) {
+                    return AppResult.Error(AppError.Database("Gönderi bulunamadı."))
+                }
+                ref.set(mapOf("postId" to postId, "userId" to userId, "savedAt" to System.currentTimeMillis())).await()
+                AppResult.Success(true)
+            }
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kaydetme işlemi tamamlanamadı.", e))
+        }
+    }
+
+    override fun observeSavedPosts(userId: String, limit: Long): Flow<AppResult<List<Post>>> = callbackFlow {
+        if (userId.isBlank()) {
+            trySend(AppResult.Success(emptyList()))
+            close()
+            return@callbackFlow
+        }
+        val registration = firestore.collection("savedPosts").document(userId).collection("posts")
+            .orderBy("savedAt", Query.Direction.DESCENDING).limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Kaydedilenler yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                launch {
+                    try {
+                        val posts = snapshot?.documents.orEmpty().mapNotNull { saved ->
+                            val id = saved.getString("postId") ?: saved.id
+                            postsRef.document(id).get().await().takeIf { it.exists() }?.let { doc ->
+                                val data = doc.data ?: return@let null
+                                Post(
+                                    id = doc.id,
+                                    authorId = data["authorId"] as? String ?: "",
+                                    authorName = data["authorName"] as? String ?: "",
+                                    authorUsername = data["authorUsername"] as? String ?: "",
+                                    authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
+                                    text = data["text"] as? String ?: "",
+                                    likesCount = (data["likesCount"] as? Number)?.toInt() ?: 0,
+                                    likedByCurrentUser = doc.reference.collection("likes").document(userId).get().await().exists(),
+                                    savedByCurrentUser = true,
+                                    createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
+                                )
+                            }
+                        }
+                        trySend(AppResult.Success(posts))
+                    } catch (e: Exception) {
+                        trySend(AppResult.Error(AppError.Database("Kaydedilenler çözümlenemedi.", e)))
+                    }
+                }
+            }
+        awaitClose { registration.remove() }
+    }
 
 }
