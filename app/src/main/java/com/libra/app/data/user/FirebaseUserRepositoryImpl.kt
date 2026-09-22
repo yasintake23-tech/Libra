@@ -32,8 +32,6 @@ class FirebaseUserRepositoryImpl : UserRepository {
         get() = firestore.collection("follows")
 
     override fun getUserProfile(uid: String): Flow<AppResult<UserProfile?>> = callbackFlow {
-        cache[uid]?.let { trySend(AppResult.Success(it)) }
-
         var registration: ListenerRegistration? = null
 
         registration = usersRef.document(uid).addSnapshotListener { snapshot, error ->
@@ -216,9 +214,17 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 .get()
                 .await()
 
-            AppResult.Success(
-                snapshot.documents.mapNotNull { it.getString("followingId") }.toSet()
-            )
+            val ids = snapshot.documents.mapNotNull { it.getString("followingId") }.distinct()
+            val validIds = ids.chunked(10).flatMap { chunk ->
+                usersRef.whereIn("__name__", chunk).get(Source.SERVER).await()
+                    .documents.map { it.id }
+            }.toSet()
+
+            snapshot.documents
+                .filter { it.getString("followingId")?.let { id -> id !in validIds } == true }
+                .forEach { doc -> runCatching { doc.reference.delete().await() } }
+
+            AppResult.Success(validIds)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Takip edilenler yüklenemedi.", e))
         }
