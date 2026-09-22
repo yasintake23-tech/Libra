@@ -65,9 +65,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.Post
@@ -370,8 +372,36 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, "Gönderiyi sil") }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            if (post.title.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    post.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Text(post.text, style = MaterialTheme.typography.bodyLarge)
+
+            if (post.mediaUrl.isNotBlank() && post.mediaType == "image") {
+                Spacer(Modifier.height(12.dp))
+                AsyncImage(
+                    model = post.mediaUrl,
+                    contentDescription = "Gönderi fotoğrafı",
+                    modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            if (post.tags.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    post.tags.joinToString("  "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onLike) {
                     Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
