@@ -53,6 +53,7 @@ import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
+import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.ui.components.LoadingView
@@ -77,11 +78,13 @@ fun AppNavHost(
     var showCommunityServers by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var createContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
+    val writeVm: WriteViewModel = viewModel()
 
     if (!authenticated) {
         when (authState) {
@@ -147,6 +150,27 @@ fun AppNavHost(
             },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    selectedWritingBook?.let { book ->
+        val chapters by writeVm.editorChapters.collectAsState()
+        val isSaving by writeVm.editorSaving.collectAsState()
+        val editorError by writeVm.editorError.collectAsState()
+
+        BookEditorScreen(
+            book = book,
+            chapters = chapters,
+            isSaving = isSaving,
+            error = editorError,
+            onLoadChapters = writeVm::loadChapters,
+            onSaveBook = writeVm::saveBook,
+            onSaveChapter = writeVm::saveChapter,
+            onPublish = writeVm::publishBook,
+            onClearError = writeVm::clearEditorError,
+            onBack = { selectedWritingBook = null },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -313,14 +337,13 @@ fun AppNavHost(
                 }
 
                 BottomNavTab.WRITE -> {
-                    val vm: WriteViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
+                    val state by writeVm.uiState.collectAsState()
 
                     WriteScreen(
                         state,
-                        vm::createNewBook,
-                        { selectedBook = it },
-                        vm::loadMyBooks
+                        writeVm::createNewBook,
+                        { selectedWritingBook = it },
+                        writeVm::loadMyBooks
                     )
                 }
 
