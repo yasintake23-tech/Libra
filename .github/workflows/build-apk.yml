@@ -81,16 +81,24 @@ jobs:
           grep -q '"project_id": "libra-3bfb9"' app/google-services.json
           grep -q '"package_name": "com.libra.app"' app/google-services.json
 
-      - name: Inject R2 Worker endpoint when configured
+      - name: Inject and verify R2 Worker endpoint
         shell: bash
         env:
-          LIBRA_R2_ENDPOINT: ${{ vars.LIBRA_R2_ENDPOINT }}
+          R2_WORKER_ENDPOINT_SECRET: ${{ secrets.R2_WORKER_ENDPOINT }}
+          R2_WORKER_ENDPOINT_VARIABLE: ${{ vars.LIBRA_R2_ENDPOINT }}
         run: |
           set -euo pipefail
-          if [[ -z "$LIBRA_R2_ENDPOINT" ]]; then
-            echo "R2 endpoint variable yok; mevcut uygulama yapılandırması korunuyor."
-            exit 0
+
+          R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT_SECRET:-}"
+          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
+            R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT_VARIABLE:-}"
           fi
+          R2_WORKER_ENDPOINT="${R2_WORKER_ENDPOINT%/}"
+
+          [[ -n "$R2_WORKER_ENDPOINT" ]] || {
+            echo "::error::R2 Worker endpoint eksik. Repository secret 'R2_WORKER_ENDPOINT' veya variable 'LIBRA_R2_ENDPOINT' tanımlanmalı."
+            exit 1
+          }
 
           python3 - <<'PY'
           from pathlib import Path
@@ -98,7 +106,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           path = Path("app/src/main/res/values/strings.xml")
-          endpoint = os.environ["LIBRA_R2_ENDPOINT"].strip().rstrip("/")
+          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
           root = ET.parse(path).getroot()
 
           for node in root.findall("string"):
@@ -108,12 +116,21 @@ jobs:
           else:
               raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
 
-          path.write_text(
-              ET.tostring(root, encoding="unicode")
-          )
+          path.write_text(ET.tostring(root, encoding="unicode"))
           PY
 
-          echo "R2 Worker endpoint inject edildi."
+          health="$(curl --fail --silent --show-error --location --max-time 15 "$R2_WORKER_ENDPOINT/health")"
+          python3 - <<'PY' "$health"
+          import json
+          import sys
+
+          payload = json.loads(sys.argv[1])
+          if payload.get("ok") is not True or payload.get("storage") != "r2":
+              raise SystemExit(f"R2 Worker health check başarısız: {payload}")
+          print("R2 Worker health check başarılı.")
+          PY
+
+          echo "R2 Worker endpoint build'e enjekte edildi."
 
       - name: Show toolchain
         shell: bash
