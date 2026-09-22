@@ -1,6 +1,7 @@
 package com.libra.app.data.user
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.ListenerRegistration
 import com.libra.app.core.result.AppError
@@ -239,7 +240,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
 
             val ids = snapshot.documents.mapNotNull { it.getString("followingId") }.distinct()
             val validIds = ids.chunked(10).flatMap { chunk ->
-                usersRef.whereIn("__name__", chunk).get(Source.SERVER).await()
+                usersRef.whereIn(FieldPath.documentId(), chunk).get(Source.SERVER).await()
                     .documents.map { it.id }
             }.toSet()
 
