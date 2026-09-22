@@ -152,6 +152,7 @@ fun AppNavHost(
                 authViewModel.signOut()
                 selectedTab = BottomNavTab.HOME
             },
+            onBack = { showSettings = false },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -222,6 +223,18 @@ fun AppNavHost(
                                             "Kullanıcı profili yenilenemedi.",
                                             Toast.LENGTH_SHORT
                                         ).show()
+                                    }
+                                }
+                            }
+                        },
+                        { user ->
+                            scope.launch {
+                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
+                                    is com.libra.app.core.result.AppResult.Success -> {
+                                        if (result.data != null) selectedPublicProfile = result.data
+                                    }
+                                    is com.libra.app.core.result.AppResult.Error -> {
+                                        Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
