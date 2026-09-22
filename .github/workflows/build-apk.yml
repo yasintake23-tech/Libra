@@ -44,20 +44,40 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-provider: basic
 
-      - name: Require stable signing secret
+      - name: Require stable signing password
         shell: bash
         env:
-          LIBRA_KEYSTORE_B64: ${{ secrets.LIBRA_KEYSTORE_B64 }}
           LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
-          LIBRA_KEY_ALIAS: ${{ secrets.LIBRA_KEY_ALIAS }}
           LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          [[ -n "$LIBRA_KEYSTORE_B64" ]] || { echo "::error::LIBRA_KEYSTORE_B64 secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEYSTORE_PASSWORD" ]] || { echo "::error::LIBRA_KEYSTORE_PASSWORD secret eksik."; exit 1; }
-          [[ -n "$LIBRA_KEY_ALIAS" ]] || { echo "::error::LIBRA_KEY_ALIAS secret eksik."; exit 1; }
           [[ -n "$LIBRA_KEY_PASSWORD" ]] || { echo "::error::LIBRA_KEY_PASSWORD secret eksik."; exit 1; }
-          echo "Sabit Libra signing secret'ı mevcut."
+          echo "Sabit Libra signing parolaları mevcut."
+
+      - name: Prepare stable signing key
+        shell: bash
+        env:
+          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/libra-signing"
+          base64 --decode signing/libra-signing.jks.b64 > "$RUNNER_TEMP/libra-signing/libra.jks"
+          test -s "$RUNNER_TEMP/libra-signing/libra.jks"
+          keytool -list             -keystore "$RUNNER_TEMP/libra-signing/libra.jks"             -storepass "$LIBRA_KEYSTORE_PASSWORD"             -alias "libra" >/dev/null
+
+      - name: Export stable signing configuration
+        shell: bash
+        env:
+          LIBRA_KEYSTORE_PASSWORD: ${{ secrets.LIBRA_KEYSTORE_PASSWORD }}
+          LIBRA_KEY_PASSWORD: ${{ secrets.LIBRA_KEY_PASSWORD }}
+        run: |
+          {
+            echo "LIBRA_KEYSTORE_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
+            echo "LIBRA_KEYSTORE_PASSWORD=$LIBRA_KEYSTORE_PASSWORD"
+            echo "LIBRA_KEY_ALIAS=libra"
+            echo "LIBRA_KEY_PASSWORD=$LIBRA_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Verify committed Firebase config
         shell: bash
