@@ -1,6 +1,7 @@
 package com.libra.app.data.user
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.ListenerRegistration
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
@@ -42,6 +43,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
             }
 
             if (snapshot == null || !snapshot.exists()) {
+                cache.remove(uid)
                 trySend(AppResult.Success(null))
                 return@addSnapshotListener
             }
@@ -141,7 +143,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 is AppResult.Success -> saved
                 is AppResult.Error -> {
                     runCatching {
-                        val current = usernameDoc.get().await()
+                        val current = usernameDoc.get(Source.SERVER).await()
                         if (current.getString("uid") == normalizedProfile.uid) {
                             usernameDoc.delete().await()
                         }
@@ -280,6 +282,55 @@ class FirebaseUserRepositoryImpl : UserRepository {
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Takipten çıkılamadı.", e))
+        }
+    }
+
+    override suspend fun getFollowers(uid: String): AppResult<List<UserProfile>> =
+        getSocialProfiles(uid, "followingId")
+
+    override suspend fun getFollowing(uid: String): AppResult<List<UserProfile>> =
+        getSocialProfiles(uid, "followerId")
+
+    private suspend fun getSocialProfiles(
+        uid: String,
+        directionField: String
+    ): AppResult<List<UserProfile>> {
+        if (uid.isBlank()) return AppResult.Success(emptyList())
+
+        return try {
+            val snapshot = followsRef
+                .whereEqualTo(directionField, uid)
+                .limit(1000)
+                .get(Source.SERVER)
+
+            val otherField = if (directionField == "followingId") "followerId" else "followingId"
+            val ids = snapshot.documents.mapNotNull { it.getString(otherField) }.distinct()
+
+            if (ids.isEmpty()) {
+                return AppResult.Success(emptyList())
+            }
+
+            val profiles = ids.chunked(10).flatMap { chunk ->
+                usersRef.whereIn("__name__", chunk).get(Source.SERVER).await()
+                    .documents.mapNotNull { document ->
+                        runCatching { document.toObject(UserProfile::class.java) }
+                            .getOrNull()
+                            ?.takeIf { it.profileCompleted && it.uid.isNotBlank() }
+                    }
+            }
+
+            val existingIds = profiles.map { it.uid }.toSet()
+            // Remove stale follow documents that point to users deleted from Firebase.
+            snapshot.documents
+                .filter { doc -> doc.getString(otherField)?.let { it !in existingIds } == true }
+                .forEach { doc -> runCatching { doc.reference.delete().await() } }
+
+            profiles.forEach { cache[it.uid] = it }
+            AppResult.Success(
+                profiles.sortedBy { it.displayName.lowercase(Locale.ROOT) }
+            )
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Takip listesi yüklenemedi.", e))
         }
     }
 
