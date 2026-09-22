@@ -18,11 +18,19 @@ import kotlinx.coroutines.launch
 
 data class WriteState(val myBooks: List<Book> = emptyList(), val isCreatingBook: Boolean = false, val lastErrorMessage: String? = null)
 
+
+
 class WriteViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
     private val bookRepository: BookRepository = ServiceLocator.bookRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<UiState<WriteState>>(UiState.Loading)
+    private val _editorChapters = MutableStateFlow<List<Chapter>>(emptyList())
+    val editorChapters: StateFlow<List<Chapter>> = _editorChapters.asStateFlow()
+    private val _editorSaving = MutableStateFlow(false)
+    val editorSaving: StateFlow<Boolean> = _editorSaving.asStateFlow()
+    private val _editorError = MutableStateFlow<String?>(null)
+    val editorError: StateFlow<String?> = _editorError.asStateFlow()
     val uiState: StateFlow<UiState<WriteState>> = _uiState.asStateFlow()
 
     init { loadMyBooks() }
@@ -39,6 +47,82 @@ class WriteViewModel(
                 }
             }
         }
+    }
+
+    fun loadChapters(bookId: String) {
+        viewModelScope.launch {
+            bookRepository.getBookChapters(bookId).collect { result ->
+                when (result) {
+                    is AppResult.Success -> _editorChapters.value = result.data
+                    is AppResult.Error -> _editorError.value = result.error.message
+                }
+            }
+        }
+    }
+
+    fun saveBook(book: Book) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            _editorError.value = null
+            when (val result = bookRepository.updateBook(book)) {
+                is AppResult.Success -> loadMyBooks()
+                is AppResult.Error -> _editorError.value = result.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
+    fun saveChapter(chapter: Chapter) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            _editorError.value = null
+            when (val result = bookRepository.saveChapter(chapter)) {
+                is AppResult.Success -> {
+                    _editorChapters.value = _editorChapters.value
+                        .filterNot { it.id == result.data.id } + result.data
+                    _editorChapters.value = _editorChapters.value.sortedBy { it.chapterNumber }
+                }
+                is AppResult.Error -> _editorError.value = result.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
+    fun publishBook(book: Book) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            _editorError.value = null
+            val chapters = _editorChapters.value
+            if (chapters.isEmpty() || chapters.any { it.content.trim().isBlank() }) {
+                _editorError.value = "Yayınlamak için en az bir bölüm ve bölüm içeriği gerekli."
+                _editorSaving.value = false
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            chapters.forEach { chapter ->
+                bookRepository.saveChapter(chapter.copy(isPublished = true, updatedAt = now))
+            }
+            when (
+                val result = bookRepository.updateBook(
+                    book.copy(
+                        status = BookStatus.PUBLISHED,
+                        chapterCount = chapters.size,
+                        updatedAt = now
+                    )
+                )
+            ) {
+                is AppResult.Success -> {
+                    _editorChapters.value = chapters.map { it.copy(isPublished = true, updatedAt = now) }
+                    loadMyBooks()
+                }
+                is AppResult.Error -> _editorError.value = result.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
+    fun clearEditorError() {
+        _editorError.value = null
     }
 
     fun createNewBook(title: String, description: String, category: BookCategory) {
