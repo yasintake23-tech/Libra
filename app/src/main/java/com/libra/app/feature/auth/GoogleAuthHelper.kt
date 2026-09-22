@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.libra.app.R
 import kotlinx.coroutines.Dispatchers
@@ -34,14 +34,17 @@ object GoogleAuthHelper {
             try {
                 val credentialManager = CredentialManager.create(context)
 
-                // Explicit Google button flow. It does not require a prior authorization.
-                val googleSignInOption =
-                    GetSignInWithGoogleOption.Builder(resolvedServerClientId)
-                        .setNonce(UUID.randomUUID().toString())
-                        .build()
+                // Use the standard Google ID option so the account chooser can select
+                // any Google account on the device without requiring prior authorization.
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setServerClientId(resolvedServerClientId)
+                    .setFilterByAuthorizedAccounts(false)
+                    .setAutoSelectEnabled(false)
+                    .setNonce(UUID.randomUUID().toString())
+                    .build()
 
                 val request = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleSignInOption)
+                    .addCredentialOption(googleIdOption)
                     .build()
 
                 val result = credentialManager.getCredential(
@@ -67,16 +70,16 @@ object GoogleAuthHelper {
                     onError("Google hesabı doğrulanamadı.")
                 }
             } catch (e: GetCredentialException) {
+                val message = e.localizedMessage ?: e.message ?: "İşlem tamamlanamadı."
+
                 onError(
                     when {
-                        e.message?.contains(
-                            "No credentials available",
-                            ignoreCase = true
-                        ) == true ->
+                        message.contains("No credentials available", ignoreCase = true) ->
                             "Google hesabı seçilemedi. Telefonda Google hesabının açık olduğundan ve Google Play Hizmetleri'nin güncel olduğundan emin ol."
+                        message.contains("Account reauth failed", ignoreCase = true) ->
+                            "Google hesabı yeniden doğrulanamadı. APK'nın Firebase'deki doğru SHA-1 sertifikasıyla imzalandığından emin ol."
                         else ->
-                            "Google girişi: " +
-                                (e.localizedMessage ?: "İşlem tamamlanamadı.")
+                            "Google girişi: $message"
                     }
                 )
             } catch (e: Exception) {
