@@ -12,4 +12,8 @@ interface UserRepository {
     suspend fun updateBio(uid: String, bio: String): AppResult<Unit>
     suspend fun updateProfilePhoto(uid: String, photoUrl: String): AppResult<Unit>
     fun searchUsers(query: String): Flow<AppResult<List<UserProfile>>>
+    suspend fun getFollowingIds(uid: String): AppResult<Set<String>>
+    suspend fun isFollowing(followerId: String, followingId: String): AppResult<Boolean>
+    suspend fun followUser(followerId: String, followingId: String): AppResult<Unit>
+    suspend fun unfollowUser(followerId: String, followingId: String): AppResult<Unit>
 }
