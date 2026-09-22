@@ -80,7 +80,7 @@ private fun ProfileContent(
     onSettingsClick: () -> Unit,
     modifier: Modifier
 ) {
-    var socialDialog by remember { mutableStateOf<OwnOwnSocialListType?>(null) }
+    var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
