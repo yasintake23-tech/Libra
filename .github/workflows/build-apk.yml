@@ -19,7 +19,6 @@ permissions:
 env:
   JAVA_VERSION: '21'
   GRADLE_VERSION: '9.3.1'
-  EXPECTED_LIBRA_SHA1: 'f322c7e4a951958d463972db788399aef1b8764f'
 
 jobs:
   build-apk:
@@ -96,21 +95,58 @@ jobs:
 
       - name: Prepare stable signing key
         if: env.LIBRA_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIBRA_KEYSTORE_PASSWORD: changeit
+          LIBRA_KEY_ALIAS: libra
+          LIBRA_KEY_PASSWORD: changeit
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/libra-signing"
-          base64 --decode signing/libra-signing.jks.b64 > "$RUNNER_TEMP/libra-signing/libra.jks"
-          test -s "$RUNNER_TEMP/libra-signing/libra.jks"
-          keytool -list -keystore "$RUNNER_TEMP/libra-signing/libra.jks" -storepass 'Libra2026!SigningKey' -alias libra >/dev/null
+          SIGN_DIR="$RUNNER_TEMP/libra-signing"
+          mkdir -p "$SIGN_DIR"
+          rm -f "$SIGN_DIR/libra.jks" "$SIGN_DIR/signing-info.txt"
+
+          PREVIOUS_RUN_ID="$(gh run list --workflow '.github/workflows/build-apk.yml' --limit 20 --json databaseId,status,conclusion --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' | head -n 1 || true)"
+          if [[ -n "$PREVIOUS_RUN_ID" ]] && gh run download "$PREVIOUS_RUN_ID" --name Libra-Signing-Key --dir "$SIGN_DIR" 2>/dev/null; then
+            echo "Existing stable signing key restored."
+          else
+            echo "Creating the first stable Libra signing key."
+            keytool -genkeypair -v               -keystore "$SIGN_DIR/libra.jks"               -storetype JKS               -alias "$LIBRA_KEY_ALIAS"               -keyalg RSA               -keysize 2048               -validity 10000               -storepass "$LIBRA_KEYSTORE_PASSWORD"               -keypass "$LIBRA_KEY_PASSWORD"               -dname "CN=Libra, OU=Libra, O=Libra, L=Istanbul, ST=Istanbul, C=TR" >/dev/null 2>&1
+          fi
+
+          test -s "$SIGN_DIR/libra.jks"
+          SHA1="$(keytool -list -v -keystore "$SIGN_DIR/libra.jks" -storepass "$LIBRA_KEYSTORE_PASSWORD" -alias "$LIBRA_KEY_ALIAS" | awk -F': ' '/^ *SHA1: / {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          SHA256="$(keytool -list -v -keystore "$SIGN_DIR/libra.jks" -storepass "$LIBRA_KEYSTORE_PASSWORD" -alias "$LIBRA_KEY_ALIAS" | awk -F': ' '/^ *SHA256: / {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          test -n "$SHA1"
+          echo "Stable SHA-1: $SHA1"
+          echo "Stable SHA-256: $SHA256"
+          printf 'SHA-1: %s
+SHA-256: %s
+Alias: %s
+' "$SHA1" "$SHA256" "$LIBRA_KEY_ALIAS" > "$SIGN_DIR/signing-info.txt"
+          echo "LIBRA_SIGNING_SHA1=$SHA1" >> "$GITHUB_ENV"
+
+      - name: Preserve stable signing key
+        if: env.LIBRA_SIGNING_CONFIGURED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libra-Signing-Key
+          path: |
+            ${{ runner.temp }}/libra-signing/libra.jks
+            ${{ runner.temp }}/libra-signing/signing-info.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
 
       - name: Export stable signing configuration
         if: env.LIBRA_SIGNING_CONFIGURED == 'true'
         run: |
           {
             echo "LIBRA_KEYSTORE_PATH=$RUNNER_TEMP/libra-signing/libra.jks"
-            echo "LIBRA_KEYSTORE_PASSWORD=Libra2026!SigningKey"
+            echo "LIBRA_KEYSTORE_PASSWORD=changeit"
             echo "LIBRA_KEY_ALIAS=libra"
-            echo "LIBRA_KEY_PASSWORD=Libra2026!SigningKey"
+            echo "LIBRA_KEY_PASSWORD=changeit"
           } >> "$GITHUB_ENV"
 
       - name: Show toolchain
@@ -139,15 +175,15 @@ jobs:
           fi
 
           ACTUAL_SHA1="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>&1 | awk -F': ' '/certificate SHA-1 digest/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-          echo "Expected SHA-1: $EXPECTED_LIBRA_SHA1"
+          echo "Expected SHA-1: $LIBRA_SIGNING_SHA1"
           echo "Actual SHA-1:   $ACTUAL_SHA1"
 
-          if [[ "$ACTUAL_SHA1" != "$EXPECTED_LIBRA_SHA1" ]]; then
+          if [[ "$ACTUAL_SHA1" != "$LIBRA_SIGNING_SHA1" ]]; then
             echo "::error::APK yanlış imza anahtarıyla oluşturuldu."
             exit 1
           fi
 
-          echo "Stable Firebase-matched signing certificate doğrulandı."
+          echo "Stable Libra signing certificate doğrulandı."
 
       - name: Show APK signing certificate fingerprint
         shell: bash
