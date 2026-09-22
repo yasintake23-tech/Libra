@@ -44,6 +44,7 @@ import com.libra.app.feature.messages.DirectMessagesScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileViewModel
+import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.ui.components.LoadingView
@@ -52,7 +53,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavHost(
     authViewModel: AuthViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    darkTheme: Boolean = true,
+    onDarkThemeChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -61,6 +64,7 @@ fun AppNavHost(
     val currentUser by authViewModel.currentUser.collectAsState()
 
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
+    var showSettings by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
 
     if (!authenticated) {
@@ -101,6 +105,21 @@ fun AppNavHost(
 
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
+        return
+    }
+
+    if (showSettings) {
+        SettingsScreen(
+            profile = profile,
+            darkTheme = darkTheme,
+            onDarkThemeChanged = onDarkThemeChanged,
+            onSignOut = {
+                showSettings = false
+                authViewModel.signOut()
+                selectedTab = BottomNavTab.HOME
+            },
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
 
@@ -219,7 +238,8 @@ fun AppNavHost(
                             authViewModel.signOut()
                             selectedTab = BottomNavTab.HOME
                         },
-                        vm::loadProfile
+                        vm::loadProfile,
+                        onSettingsClick = { showSettings = true }
                     )
                 }
             }
