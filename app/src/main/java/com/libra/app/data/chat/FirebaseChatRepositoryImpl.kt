@@ -314,10 +314,24 @@ class FirebaseChatRepositoryImpl(
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Sunucuya katılmak için giriş yapmalısın."))
         if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
         return try {
-            serversRef.document(serverId).get().await()
-            serversRef.document(serverId).collection("members").document(user.uid)
-                .set(mapOf("uid" to user.uid, "displayName" to (user.displayName ?: ""), "role" to "MEMBER", "joinedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
-                .await()
+            val serverRef = serversRef.document(serverId)
+            if (!serverRef.get().await().exists()) {
+                return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+            }
+
+            val memberRef = serverRef.collection("members").document(user.uid)
+            if (!memberRef.get().await().exists()) {
+                memberRef.set(
+                    mapOf(
+                        "uid" to user.uid,
+                        "displayName" to (user.displayName ?: ""),
+                        "role" to "MEMBER",
+                        "joinedAt" to System.currentTimeMillis()
+                    )
+                ).await()
+            }
+            // Zaten üyeyse rolünü ezme. Böylece OWNER hesabı tekrar açıldığında
+            // OWNER olarak kalır ve yönetim araçları görünür.
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucuya katılınamadı.", e))
