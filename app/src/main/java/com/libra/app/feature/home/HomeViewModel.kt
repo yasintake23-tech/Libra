@@ -7,6 +7,7 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.Post
+import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
@@ -44,8 +45,16 @@ class HomeViewModel(
     private val _postError = MutableStateFlow<String?>(null)
     val postError: StateFlow<String?> = _postError.asStateFlow()
 
+    private val _comments = MutableStateFlow<List<PostComment>>(emptyList())
+    val comments: StateFlow<List<PostComment>> = _comments.asStateFlow()
+    private val _commentError = MutableStateFlow<String?>(null)
+    val commentError: StateFlow<String?> = _commentError.asStateFlow()
+    private val _isCommenting = MutableStateFlow(false)
+    val isCommenting: StateFlow<Boolean> = _isCommenting.asStateFlow()
+
     private var homeJob: Job? = null
     private var postsJob: Job? = null
+    private var commentsJob: Job? = null
 
     init { loadHomeData() }
 
@@ -129,6 +138,52 @@ class HomeViewModel(
             }
         }
     }
+
+    fun openComments(post: Post) {
+        commentsJob?.cancel()
+        _comments.value = emptyList()
+        _commentError.value = null
+        commentsJob = viewModelScope.launch {
+            postRepository.observeComments(post.id).collect { result ->
+                when (result) {
+                    is AppResult.Success -> _comments.value = result.data
+                    is AppResult.Error -> _commentError.value = result.error.message
+                }
+            }
+        }
+    }
+
+    fun closeComments() {
+        commentsJob?.cancel()
+        commentsJob = null
+        _comments.value = emptyList()
+        _commentError.value = null
+    }
+
+    fun addComment(post: Post, text: String) {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            _isCommenting.value = true
+            _commentError.value = null
+            when (val result = postRepository.addComment(post.id, userId, text)) {
+                is AppResult.Error -> _commentError.value = result.error.message
+                is AppResult.Success -> Unit
+            }
+            _isCommenting.value = false
+        }
+    }
+
+    fun deleteComment(post: Post, comment: PostComment) {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            when (val result = postRepository.deleteComment(post.id, comment.id, userId)) {
+                is AppResult.Error -> _commentError.value = result.error.message
+                is AppResult.Success -> Unit
+            }
+        }
+    }
+
+    fun clearCommentError() { _commentError.value = null }
 
     fun clearPostError() { _postError.value = null }
 
