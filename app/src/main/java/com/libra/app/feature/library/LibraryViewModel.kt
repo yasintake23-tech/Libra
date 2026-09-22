@@ -74,7 +74,6 @@ class LibraryViewModel(
                     AppError.Database("Kütüphane yüklenemedi. İnternet bağlantısını kontrol edip tekrar dene.")
                 )
             }
-            }
         }
     }
 
