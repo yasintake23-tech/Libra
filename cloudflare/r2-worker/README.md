@@ -13,7 +13,7 @@ Worker:
 - `/media/*` üzerinden dosyayı yayınlar.
 - `/health` üzerinden sağlık kontrolü verir.
 
-R2 erişimi Worker'ın R2 binding'i üzerinden yapılır. Bu nedenle R2 Access Key ve Secret Key'i Android APK'ya koymak gerekmez. Cloudflare'ın güncel R2 Worker API'si, bucket binding ile `put/get/delete` işlemlerini doğrudan Worker içinde destekler. citeturn891706search0turn891706search5
+R2 erişimi Worker'ın R2 binding'i üzerinden yapılır. Bu nedenle R2 Access Key ve Secret Key'i Android APK'ya koymak gerekmez. Cloudflare'ın güncel R2 Worker API'si, bucket binding ile `put/get/delete` işlemlerini doğrudan Worker içinde destekler.
 
 ## Kurulum
 
@@ -30,7 +30,7 @@ npm install
 npx wrangler secret put FIREBASE_WEB_API_KEY --name libra-r2-worker
 ```
 
-Cloudflare, Worker secret'larının kaynak koda veya `vars` içine yazılmamasını ve `wrangler secret put` ile saklanmasını öneriyor. citeturn430417search3turn430417search10
+Cloudflare, Worker secret'larının kaynak koda veya `vars` içine yazılmamasını ve `wrangler secret put` ile saklanmasını öneriyor.
 
 4. Worker'ı deploy et:
 
@@ -65,4 +65,4 @@ tanımlanmalıdır.
 
 Workflow, mevcut Firebase yapılandırmasından Web API Key'i çıkarıp Worker'a secret olarak yükler ve ardından Worker'ı deploy eder.
 
-R2 bucket binding'i `wrangler.toml` içinde `libra-media` olarak sabittir. citeturn891706search8
+R2 bucket binding'i `wrangler.toml` içinde `libra-media` olarak sabittir.
