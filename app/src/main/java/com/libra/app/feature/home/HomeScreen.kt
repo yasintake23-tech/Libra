@@ -385,12 +385,29 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
 
             if (post.mediaUrl.isNotBlank() && post.mediaType == "image") {
                 Spacer(Modifier.height(12.dp))
-                AsyncImage(
-                    model = post.mediaUrl,
-                    contentDescription = "Gönderi fotoğrafı",
-                    modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
-                    contentScale = ContentScale.Crop
-                )
+                var mediaFailed by remember(post.mediaUrl) { mutableStateOf(false) }
+                if (mediaFailed) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "Fotoğraf yüklenemedi",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    AsyncImage(
+                        model = post.mediaUrl,
+                        contentDescription = "Gönderi fotoğrafı",
+                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Crop,
+                        onError = { mediaFailed = true }
+                    )
+                }
             }
 
             if (post.tags.isNotEmpty()) {
