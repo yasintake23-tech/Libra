@@ -1,7 +1,6 @@
 package com.libra.app.data.notification
 
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
@@ -22,7 +21,6 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
             return@callbackFlow
         }
         val registration = ref.whereEqualTo("recipientId", uid)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -32,7 +30,7 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
                 val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
                 }
-                trySend(AppResult.Success(list))
+                trySend(AppResult.Success(list.sortedByDescending { it.createdAt }))
             }
         awaitClose { registration.remove() }
     }
@@ -47,22 +45,28 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         AppResult.Error(AppError.Database("Bildirim oluşturulamadı.", e))
     }
 
-    override suspend fun markRead(notificationId: String): AppResult<Unit> = try {
+    override suspend fun markRead(notificationId: String): AppResult<Unit> {
         if (notificationId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz bildirim."))
-        ref.document(notificationId).update("read", true).await()
-        AppResult.Success(Unit)
-    } catch (e: Exception) {
-        AppResult.Error(AppError.Database("Bildirim okunamadı.", e))
+        return try {
+            ref.document(notificationId).update("read", true).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bildirim okunamadı.", e))
+        }
     }
 
-    override suspend fun markAllRead(uid: String): AppResult<Unit> = try {
+    override suspend fun markAllRead(uid: String): AppResult<Unit> {
         if (uid.isBlank()) return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
-        val snapshot = ref.whereEqualTo("recipientId", uid).whereEqualTo("read", false).limit(100).get().await()
-        val batch = firestore.batch()
-        snapshot.documents.forEach { batch.update(it.reference, "read", true) }
-        batch.commit().await()
-        AppResult.Success(Unit)
-    } catch (e: Exception) {
-        AppResult.Error(AppError.Database("Bildirimler okunamadı.", e))
+        return try {
+            val snapshot = ref.whereEqualTo("recipientId", uid).limit(100).get().await()
+            val batch = firestore.batch()
+            snapshot.documents.filter { it.getBoolean("read") != true }.forEach {
+                batch.update(it.reference, "read", true)
+            }
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bildirimler okunamadı.", e))
+        }
     }
 }
