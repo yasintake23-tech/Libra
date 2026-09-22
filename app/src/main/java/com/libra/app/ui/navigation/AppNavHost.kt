@@ -43,6 +43,7 @@ import com.libra.app.feature.home.HomeViewModel
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
 import com.libra.app.feature.messages.DirectMessagesScreen
+import com.libra.app.feature.messages.GlobalChatScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
@@ -68,6 +69,7 @@ fun AppNavHost(
 
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var showSettings by remember { mutableStateOf(false) }
+    var showGlobalChat by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
@@ -127,6 +129,14 @@ fun AppNavHost(
                     Toast.LENGTH_SHORT
                 ).show()
             },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    if (showGlobalChat) {
+        GlobalChatScreen(
+            onBack = { showGlobalChat = false },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -236,11 +246,7 @@ fun AppNavHost(
                     DirectMessagesScreen(
                         onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
                         onGlobalChatClick = {
-                            Toast.makeText(
-                                context,
-                                "Genel Chat bir sonraki aşamada aktif edilecek.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showGlobalChat = true
                         },
                         onServersClick = {
                             Toast.makeText(
