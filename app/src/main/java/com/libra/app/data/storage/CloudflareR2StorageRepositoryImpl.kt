@@ -27,9 +27,7 @@ class CloudflareR2StorageRepositoryImpl(
 
     val isConfigured: Boolean
         get() = runCatching {
-            config.accountId(context).isNotBlank() &&
-                config.bucketName(context).isNotBlank() &&
-                config.apiToken(context).isNotBlank()
+            config.uploadEndpoint(context).isNotBlank()
         }.getOrDefault(false)
 
     override fun uploadMedia(request: StorageUploadRequest): Flow<AppResult<String>> = flow {
@@ -49,125 +47,118 @@ class CloudflareR2StorageRepositoryImpl(
         }
 
         val user = FirebaseAuth.getInstance().currentUser
-                ?: run {
-                    emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
-                    return@flow
-                }
-
-            val safeFileName = request.fileName
-                .substringAfterLast('/')
-                .trim()
-                .ifBlank { "file" }
-
-            val targetDirectory = request.targetDirectory
-                .trim('/')
-                .ifBlank { "uploads" }
-
-            val ownerDirectory = "users/" + user.uid
-            if (targetDirectory != ownerDirectory) {
-                emit(
-                    AppResult.Error(
-                        AppError.Storage(
-                            "R2 hedef klasörü giriş yapan kullanıcıya ait olmalı."
-                        )
-                    )
-                )
+            ?: run {
+                emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
                 return@flow
             }
 
-            val objectKey =
-                targetDirectory + "/" + UUID.randomUUID().toString() + "-" + safeFileName
+        val safeFileName = request.fileName
+            .substringAfterLast('/')
+            .trim()
+            .ifBlank { "file" }
 
-            val response = try {
-                withContext(Dispatchers.IO) {
-                    putBytes(
-                        url = config.objectUrl(context, objectKey),
-                        apiToken = config.apiToken(context),
-                        bytes = request.bytes,
-                        contentType = request.contentType.ifBlank { "application/octet-stream" }
-                    )
-                }
-            } catch (e: CancellationException) {
-                // Flow.first() başarılı sonucu aldıktan sonra upstream'i iptal eder.
-                // Bu normal iptal durumunu R2 hatası olarak emit etmek Flow
-                // transparency ihlaline ve uygulama çökmesine neden olur.
-                throw e
-            } catch (e: Exception) {
-                emit(
-                    AppResult.Error(
-                        AppError.Storage(
-                            "R2 dosya yüklenemedi: " +
-                                (e.localizedMessage ?: "Bilinmeyen hata."),
-                            e
-                        )
-                    )
+        val targetDirectory = request.targetDirectory
+            .trim('/')
+            .ifBlank { "uploads" }
+
+        val ownerDirectory = "users/" + user.uid
+        if (targetDirectory != ownerDirectory) {
+            emit(AppResult.Error(AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")))
+            return@flow
+        }
+
+        val objectKey = targetDirectory + "/" + UUID.randomUUID().toString() + "-" + safeFileName
+        val idToken = try {
+            user.getIdToken(false).await().token
+        } catch (e: Exception) {
+            emit(AppResult.Error(AppError.Auth("Medya yükleme oturumu doğrulanamadı.", e)))
+            return@flow
+        }
+
+        if (idToken.isNullOrBlank()) {
+            emit(AppResult.Error(AppError.Auth("Firebase oturum anahtarı alınamadı.")))
+            return@flow
+        }
+
+        val response = try {
+            withContext(Dispatchers.IO) {
+                putBytes(
+                    url = config.uploadEndpoint(context) + "/upload?path=" +
+                        java.net.URLEncoder.encode(objectKey, "UTF-8").replace("+", "%20"),
+                    bearerToken = idToken,
+                    bytes = request.bytes,
+                    contentType = request.contentType.ifBlank { "application/octet-stream" }
                 )
-                return@flow
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emit(AppResult.Error(AppError.Storage(
+                "Medya yüklenemedi: " + (e.localizedMessage ?: "Bilinmeyen hata."), e
+            )))
+            return@flow
+        }
 
-            if (response.code !in 200..299) {
-                val message = runCatching {
-                    JSONObject(response.body)
-                        .optJSONArray("errors")
-                        ?.optJSONObject(0)
-                        ?.optString("message")
-                }.getOrNull().orEmpty()
+        if (response.code !in 200..299) {
+            emit(AppResult.Error(AppError.Storage(
+                "Medya yüklenemedi: " + response.body.ifBlank { "Sunucu yüklemeyi reddetti." }
+            )))
+            return@flow
+        }
 
-                emit(
-                    AppResult.Error(
-                        AppError.Storage(
-                            "R2 dosya yüklenemedi: " +
-                                message.ifBlank {
-                                    response.body.ifBlank { "R2 yükleme başarısız." }
-                                }
-                        )
-                    )
-                )
-                return@flow
-            }
+        val publicUrl = runCatching { JSONObject(response.body).optString("url") }.getOrNull().orEmpty()
+        if (publicUrl.isBlank()) {
+            emit(AppResult.Error(AppError.Storage("Yükleme tamamlandı ancak herkese açık medya adresi alınamadı.")))
+            return@flow
+        }
 
-            emit(AppResult.Success(config.objectUrl(context, objectKey)))
+        emit(AppResult.Success(publicUrl))
     }
 
     override suspend fun deleteMedia(fileKey: String): AppResult<Unit> {
         if (!isConfigured) {
-            return AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik."))
+            return AppResult.Error(AppError.Storage("Cloudflare R2 Worker yapılandırması eksik."))
         }
 
         return try {
+            val user = FirebaseAuth.getInstance().currentUser
+                ?: return AppResult.Error(AppError.Auth("Medya silmek için giriş yapmalısın."))
+            val idToken = user.getIdToken(false).await().token
+                ?: return AppResult.Error(AppError.Auth("Firebase oturum anahtarı alınamadı."))
+
             val key = extractObjectKey(fileKey)
-                ?: return AppResult.Error(AppError.Storage("R2 nesne yolu çözümlenemedi."))
+                ?: return AppResult.Error(AppError.Storage("Medya yolu çözümlenemedi."))
 
             val response = withContext(Dispatchers.IO) {
                 request(
                     method = "DELETE",
-                    url = config.objectUrl(context, key),
-                    apiToken = config.apiToken(context)
+                    url = config.uploadEndpoint(context) + "/delete?path=" +
+                        java.net.URLEncoder.encode(key, "UTF-8").replace("+", "%20"),
+                    bearerToken = idToken
                 )
             }
 
-            if (response.code in 200..299) {
-                AppResult.Success(Unit)
-            } else {
-                AppResult.Error(
-                    AppError.Storage(
-                        response.body.ifBlank { "R2 dosyası silinemedi." }
-                    )
-                )
-            }
+            if (response.code in 200..299) AppResult.Success(Unit)
+            else AppResult.Error(AppError.Storage(response.body.ifBlank { "Medya silinemedi." }))
         } catch (e: Exception) {
-            AppResult.Error(AppError.Storage("R2 dosyası silinemedi.", e))
+            AppResult.Error(AppError.Storage("Medya silinemedi.", e))
         }
     }
 
     override fun getPublicCdnUrl(fileKey: String): String {
         if (fileKey.startsWith("http://") || fileKey.startsWith("https://")) {
+            val key = extractObjectKey(fileKey)
+            if (key != null && isConfigured) {
+                return config.uploadEndpoint(context) + "/media/" +
+                    key.split("/").joinToString("/") { android.net.Uri.encode(it) }
+            }
             return fileKey
         }
 
         if (!isConfigured) return fileKey
 
-        return config.objectUrl(context, fileKey)
+        return config.uploadEndpoint(context) + "/media/" +
+            fileKey.trim('/').split("/").joinToString("/") { android.net.Uri.encode(it) }
     }
 
     private fun extractObjectKey(fileKey: String): String? {
@@ -194,7 +185,7 @@ class CloudflareR2StorageRepositoryImpl(
 
     private fun putBytes(
         url: String,
-        apiToken: String,
+        bearerToken: String,
         bytes: ByteArray,
         contentType: String
     ): HttpResponse {
@@ -205,7 +196,7 @@ class CloudflareR2StorageRepositoryImpl(
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.connectTimeout = 20_000
             connection.readTimeout = 60_000
-            connection.setRequestProperty("Authorization", "Bearer " + apiToken)
+            connection.setRequestProperty("Authorization", "Bearer " + bearerToken)
             connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept", "application/json")
             connection.outputStream.use { it.write(bytes) }
