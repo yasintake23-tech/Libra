@@ -60,6 +60,40 @@ jobs:
           test -s app/google-services.json
           echo "Firebase configuration injected for this build."
 
+      - name: Inject R2 Worker endpoint when available
+        shell: bash
+        env:
+          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
+            echo "No R2 Worker endpoint configured yet."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+
+          path = Path("app/src/main/res/values/strings.xml")
+          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
+          root = ET.parse(path).getroot()
+
+          for node in root.findall("string"):
+              if node.attrib.get("name") == "r2_upload_endpoint":
+                  node.text = endpoint
+                  break
+          else:
+              raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
+
+          ET.indent(root, space="    ")
+          path.write_text(ET.tostring(root, encoding="unicode"))
+          PY
+
+          grep -q 'name="r2_upload_endpoint">' app/src/main/res/values/strings.xml
+          echo "R2 Worker endpoint injected."
+
       - name: Prepare stable signing key
         if: env.LIBRA_SIGNING_CONFIGURED == 'true'
         env:
