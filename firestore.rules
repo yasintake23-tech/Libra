@@ -83,7 +83,9 @@ service cloud.firestore {
         allow create: if request.auth != null
           && uid == request.auth.uid
           && request.resource.data.uid == request.auth.uid
-          && request.resource.data.role == "MEMBER";
+          && request.resource.data.role in ["OWNER", "MEMBER"]
+          && (request.resource.data.role == "MEMBER"
+            || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
         allow update: if request.auth != null
           && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
           && uid != request.auth.uid
