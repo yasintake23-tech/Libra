@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
@@ -100,12 +102,11 @@ fun HomeScreen(
     onClearPostError: () -> Unit = {}
 ) {
     when (uiState) {
-        is UiState.Loading -> LoadingView(message = "Kitaplığın hazırlanıyor…")
+        is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
         is UiState.Error -> HomeError(uiState.error.message, onRetry)
         is UiState.Empty -> LoadingView(message = "Hazırlanıyor…")
         is UiState.Success -> {
             val data = uiState.data
-            var selectedCategory by remember { mutableStateOf<BookCategory?>(null)}
             var composerText by remember { mutableStateOf("") }
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
@@ -137,32 +138,36 @@ fun HomeScreen(
                         PostCard(post, data.currentUser?.uid.orEmpty(), { onToggleLike(post) }, { onDeletePost(post) }, { onToggleSave(post) }, { selectedPost = post; commentText = ""; onOpenComments(post) })
                     }
                 }
-                item { SectionHeader("Kitap Dünyası", subtitle = "Libra'nın Wattpad tarafı") }
-                item { HeroCard() }
-                item { QuickActions(onNavigateToDiscover, onNavigateToWrite, onNavigateToLibrary, onNavigateToDiscover, onNavigateToServers) }
+                item { SectionHeader("Kitaplık", subtitle = "Okumaya devam et veya yeni bir kitap keşfet") }
 
                 data.currentlyReading?.let { reading ->
-                    item { SectionHeader("Devam Et", actionLabel = "Kütüphane", onActionClick = onNavigateToLibrary) }
-                    item { CurrentlyReadingCard(reading, { onBookClick(reading.book) }, Modifier.padding(horizontal = 16.dp)) }
-                }
-
-                item { SectionHeader("Senin İçin", actionLabel = "Tümünü Gör", onActionClick = onNavigateToDiscover) }
-                item {
-                    if (data.featuredBooks.isEmpty()) EmptyStrip("Yeni kitaplar burada görünecek.")
-                    else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(data.featuredBooks.take(10), key = { it.id }) { book -> VerticalBookCard(book, { onBookClick(book) }) }
+                    item {
+                        CurrentlyReadingCard(
+                            reading,
+                            { onBookClick(reading.book) },
+                            Modifier.padding(horizontal = 16.dp)
+                        )
                     }
                 }
 
-                item { SectionHeader("Popüler Kategoriler", actionLabel = "Tümü", onActionClick = onNavigateToDiscover) }
-                item { CategoryRow(selectedCategory) { selectedCategory = if (selectedCategory == it) null else it } }
-
-                item { SectionHeader("Yeni Eklenenler", subtitle = "Libra'daki son yayınlar") }
-                val recent = if (selectedCategory == null) data.recentBooks else data.recentBooks.filter { it.category == selectedCategory }
-                if (recent.isEmpty()) item { EmptyStrip("Henüz yayınlanmış bir kitap yok.") }
-                else items(recent.take(8), key = { it.id }) { book ->
-                    HorizontalBookCard(book, { onBookClick(book) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                item { SectionHeader("Önerilenler", actionLabel = "Keşfet", onActionClick = onNavigateToDiscover) }
+                if (data.featuredBooks.isEmpty()) {
+                    item { EmptyStrip("Şimdilik önerilecek kitap yok.") }
+                } else {
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(data.featuredBooks.take(8), key = { it.id }) { book ->
+                                VerticalBookCard(book) { onBookClick(book) }
+                            }
+                        }
+                    }
                 }
+
+                item { SectionHeader("Yeni kitaplar", subtitle = "Son yayınlar") }
+                item { SectionHeader("Yeni Eklenenler", subtitle = "Libra'daki son yayınlar") }
             }
 
             selectedPost?.let { post ->
@@ -188,21 +193,6 @@ fun HomeScreen(
                 )
             }
 
-            selectedPost?.let { post ->
-                PostCommentsDialog(
-                    post = post,
-                    currentUserId = data.currentUser?.uid.orEmpty(),
-                    comments = comments,
-                    text = commentText,
-                    onTextChanged = { if (it.length <= 500) commentText = it },
-                    onSend = { onAddComment(post, commentText.trim()); commentText = "" },
-                    onDeleteComment = { onDeleteComment(post, it) },
-                    isSending = isCommenting,
-                    error = commentError,
-                    onClearError = onClearCommentError,
-                    onDismiss = { selectedPost = null; commentText = ""; onCloseComments() }
-                )
-            }
         }
     }
 }
@@ -299,52 +289,59 @@ private fun PostCommentsDialog(
     onClearError: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Yorumlar") },
-        text = {
-            Column {
-                Text(post.text, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(10.dp))
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+            Column(Modifier.padding(horizontal = 18.dp)) {
+                Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("\${comments.size} yorum", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            LazyColumn(
+                Modifier.fillMaxWidth().height(340.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 if (comments.isEmpty()) {
-                    Text("Henüz yorum yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    item {
+                        Text("Henüz yorum yok. İlk yorumu sen bırak.", Modifier.padding(vertical = 35.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else {
-                    LazyColumn(Modifier.height(260.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(comments, key = { it.id }) { comment ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                UserAvatar(comment.authorPhotoUrl, comment.authorName.take(1).uppercase().ifBlank { "L" }, size = 34.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
-                                    Text(comment.text, style = MaterialTheme.typography.bodySmall)
-                                }
+                    items(comments, key = { it.id }) { comment ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            UserAvatar(comment.authorPhotoUrl, comment.authorName.take(1).uppercase().ifBlank { "L" }, size = 36.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                Text(comment.text, style = MaterialTheme.typography.bodyMedium)
                                 if (comment.authorId == currentUserId) {
-                                    TextButton(onClick = { onDeleteComment(comment) }) { Text("Sil") }
+                                    TextButton(onClick = { onDeleteComment(comment) }, contentPadding = PaddingValues(0.dp)) { Text("Sil") }
                                 }
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+            }
+            if (error != null) {
+                TextButton(onClick = onClearError, modifier = Modifier.padding(horizontal = 14.dp)) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChanged,
-                    placeholder = { Text("Yorum yaz...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3
+                    placeholder = { Text("Yorum ekle…") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 3,
+                    shape = RoundedCornerShape(22.dp)
                 )
-                if (error != null) {
-                    TextButton(onClick = onClearError) { Text(error, color = MaterialTheme.colorScheme.error) }
+                Spacer(Modifier.width(8.dp))
+                TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
+                    Text(if (isSending) "…" else "Gönder")
                 }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
-                Text(if (isSending) "Gönderiliyor…" else "Gönder")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
-    )
+        }
+    }
 }
 
 @Composable
