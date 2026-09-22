@@ -13,7 +13,7 @@ import kotlinx.coroutines.tasks.await
 class FirebaseStorageRepositoryImpl : StorageRepository {
 
     private val storage: FirebaseStorage by lazy {
-        FirebaseStorage.getInstance()
+        FirebaseStorage.getInstance("gs://libra-3bfb9.firebasestorage.app")
     }
 
     override fun uploadMedia(
