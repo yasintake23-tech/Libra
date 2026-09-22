@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libra.app.core.state.UiState
+import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.feature.auth.AuthViewModel
@@ -192,7 +193,28 @@ fun AppNavHost(
                         friendsState,
                         friendsVm::updateSearchQuery,
                         { user ->
-                            selectedPublicProfile = user
+                            scope.launch {
+                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
+                                    is com.libra.app.core.result.AppResult.Success -> {
+                                        if (result.data != null) {
+                                            selectedPublicProfile = result.data
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Bu kullanıcı artık mevcut değil.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                    is com.libra.app.core.result.AppResult.Error -> {
+                                        Toast.makeText(
+                                            context,
+                                            "Kullanıcı profili yenilenemedi.",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
                         },
                         friendsVm::loadSocialData
                     )
