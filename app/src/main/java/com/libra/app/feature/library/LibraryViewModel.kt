@@ -17,8 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class LibraryState(
     val selectedShelf: ShelfType = ShelfType.READING,
@@ -50,8 +49,15 @@ class LibraryViewModel(
             _uiState.value = UiState.Loading
             val flow = bookRepository.getUserLibrary(userId, shelfType)
 
-            try {
-                withTimeout(8_000L) {
+            val firstResult = withTimeoutOrNull(8_000L) {
+                flow.first { it is AppResult.Success || it is AppResult.Error }
+            }
+
+            when (firstResult) {
+                is AppResult.Success -> {
+                    _uiState.value = UiState.Success(
+                        LibraryState(shelfType, firstResult.data, currentSearch)
+                    )
                     flow.collect { result ->
                         when (result) {
                             is AppResult.Success -> {
@@ -59,20 +65,15 @@ class LibraryViewModel(
                                     LibraryState(shelfType, result.data, currentSearch)
                                 )
                             }
-                            is AppResult.Error -> {
-                                _uiState.value = UiState.Error(result.error)
-                            }
+                            is AppResult.Error -> _uiState.value = UiState.Error(result.error)
                         }
                     }
                 }
-            } catch (_: TimeoutCancellationException) {
-                if (_uiState.value is UiState.Loading) {
-                    _uiState.value = UiState.Error(
-                        AppError.Database(
-                            "Kütüphane yüklenemedi. İnternet bağlantısını kontrol edip tekrar dene."
-                        )
-                    )
-                }
+                is AppResult.Error -> _uiState.value = UiState.Error(firstResult.error)
+                null -> _uiState.value = UiState.Error(
+                    AppError.Database("Kütüphane yüklenemedi. İnternet bağlantısını kontrol edip tekrar dene.")
+                )
+            }
             }
         }
     }
