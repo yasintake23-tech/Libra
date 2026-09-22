@@ -310,7 +310,7 @@ private fun PostCommentsDialog(
         Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             Column(Modifier.padding(horizontal = 18.dp)) {
                 Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("\${comments.size} yorum", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${comments.size} yorum", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             LazyColumn(
                 Modifier.fillMaxWidth().weight(1f).imePadding(),
