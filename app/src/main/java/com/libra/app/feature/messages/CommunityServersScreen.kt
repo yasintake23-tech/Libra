@@ -103,7 +103,7 @@ fun CommunityServersScreen(
                                 contentAlignment = Alignment.Center
                             ) { Icon(Icons.Default.Groups, null) }
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(serverName, fontWeight = FontWeight.Bold)
+                                Text(server.name, fontWeight = FontWeight.Bold)
                                 if (server.description.isNotBlank()) {
                                     Text(server.description, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
