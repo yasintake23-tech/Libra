@@ -35,6 +35,7 @@ import com.libra.app.feature.auth.AuthViewModel
 import com.libra.app.feature.auth.GoogleAuthHelper
 import com.libra.app.feature.auth.LoginScreen
 import com.libra.app.feature.friends.FriendsScreen
+import com.libra.app.feature.friends.FriendsState
 import com.libra.app.feature.friends.FriendsViewModel
 import com.libra.app.feature.home.HomeScreen
 import com.libra.app.feature.home.HomeViewModel
@@ -68,6 +69,8 @@ fun AppNavHost(
     var showSettings by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    val friendsVm: FriendsViewModel = viewModel()
+    val friendsState by friendsVm.uiState.collectAsState()
 
     if (!authenticated) {
         when (authState) {
@@ -111,13 +114,11 @@ fun AppNavHost(
     }
 
     selectedPublicProfile?.let { publicProfile ->
-        val socialVm: FriendsViewModel = viewModel()
-        val socialState by socialVm.uiState.collectAsState()
         PublicProfileScreen(
             profile = publicProfile,
-            isFollowing = socialState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+            isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
             onBack = { selectedPublicProfile = null },
-            onFollow = { socialVm.toggleFollowUser(publicProfile) },
+            onFollow = { friendsVm.toggleFollowUser(publicProfile) },
             onMessage = {
                 Toast.makeText(
                     context,
@@ -187,17 +188,13 @@ fun AppNavHost(
                 }
 
                 BottomNavTab.DISCOVER -> {
-                    val vm: FriendsViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
-
                     FriendsScreen(
-                        state,
-                        vm::updateSearchQuery,
+                        friendsState,
+                        friendsVm::updateSearchQuery,
                         { user ->
                             selectedPublicProfile = user
-                            socialState // keep the social ViewModel alive for the selected profile
                         },
-                        vm::loadSocialData
+                        friendsVm::loadSocialData
                     )
                 }
 
