@@ -26,7 +26,7 @@ class HybridStorageRepositoryImpl(
                             com.libra.app.core.result.AppError.Storage(
                                 "R2 yüklemesi başarısız: ${r2Result.error.message}. " +
                                     "Firebase Storage fallback de başarısız: ${fallbackResult.error.message}",
-                                fallbackResult.error
+                                null
                             )
                         )
                     )
