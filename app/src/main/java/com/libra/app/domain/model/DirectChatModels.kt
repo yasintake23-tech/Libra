@@ -19,5 +19,11 @@ data class DirectMessage(
     val text: String = "",
     val mediaUrl: String = "",
     val mediaType: String = "",
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    val editedAt: Long? = null,
+    val replyToMessageId: String = "",
+    val replyToText: String = "",
+    val replyToSenderId: String = "",
+    val replyToSenderName: String = "",
+    val reactions: Map<String, String> = emptyMap()
 )
