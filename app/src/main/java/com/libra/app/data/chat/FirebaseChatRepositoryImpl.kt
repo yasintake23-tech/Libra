@@ -123,7 +123,7 @@ class FirebaseChatRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun sendDirectMessage(recipientId: String, text: String): AppResult<Unit> {
+    override suspend fun sendDirectMessage(recipientId: String, text: String, replyTo: DirectMessage?): AppResult<Unit> {
         val sender = auth.currentUser ?: return AppResult.Error(AppError.Auth("Mesaj için giriş yapmalısın."))
         val clean = text.trim()
         if (recipientId.isBlank() || recipientId == sender.uid) return AppResult.Error(AppError.Validation("Geçersiz kullanıcı."))
@@ -157,7 +157,15 @@ class FirebaseChatRepositoryImpl(
             }.await()
             conversation.collection("messages").add(
                 com.libra.app.domain.model.DirectMessage(
-                    senderId = sender.uid, recipientId = recipientId, text = clean, createdAt = now
+                    senderId = sender.uid,
+                    recipientId = recipientId,
+                    text = clean,
+                    createdAt = now,
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.replyToSenderName?.takeIf { it.isNotBlank() }
+                        ?: if (replyTo?.senderId == sender.uid) senderProfile.displayName else recipientProfile.displayName
                 )
             ).await()
             ServiceLocator.notificationRepository.create(
@@ -181,7 +189,7 @@ class FirebaseChatRepositoryImpl(
     }
 
 
-    override suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String): AppResult<Unit> {
+    override suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String, replyTo: DirectMessage?): AppResult<Unit> {
         val sender = auth.currentUser ?: return AppResult.Error(AppError.Auth("Medya göndermek için giriş yapmalısın."))
         if (recipientId.isBlank() || recipientId == sender.uid || mediaUrl.isBlank()) {
             return AppResult.Error(AppError.Validation("Geçersiz medya mesajı."))
@@ -218,7 +226,12 @@ class FirebaseChatRepositoryImpl(
                     text = "",
                     mediaUrl = mediaUrl,
                     mediaType = mediaType,
-                    createdAt = now
+                    createdAt = now,
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { "📷 Fotoğraf" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.replyToSenderName?.takeIf { it.isNotBlank() }
+                        ?: if (replyTo?.senderId == sender.uid) senderProfile.displayName else recipientProfile.displayName
                 )
             ).await()
             ServiceLocator.notificationRepository.create(
@@ -238,6 +251,62 @@ class FirebaseChatRepositoryImpl(
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Medya mesajı gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun editDirectMessage(conversationId: String, messageId: String, text: String): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = text.trim()
+        if (conversationId.isBlank() || messageId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz mesaj."))
+        if (clean.isBlank()) return AppResult.Error(AppError.Validation("Mesaj boş olamaz."))
+        if (clean.length > 1000) return AppResult.Error(AppError.Validation("Mesaj en fazla 1000 karakter olabilir."))
+        return try {
+            val ref = conversationsRef.document(conversationId).collection("messages").document(messageId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            if (snapshot.getString("senderId") != uid) return AppResult.Error(AppError.Auth("Sadece kendi mesajını düzenleyebilirsin."))
+            if (snapshot.getString("mediaUrl").orEmpty().isNotBlank()) return AppResult.Error(AppError.Validation("Medya mesajları düzenlenemez."))
+            ref.update("text", clean, "editedAt", System.currentTimeMillis()).await()
+            conversationsRef.document(conversationId).update("lastMessage", clean, "updatedAt", System.currentTimeMillis()).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Mesaj düzenlenemedi.", e))
+        }
+    }
+
+    override suspend fun deleteDirectMessage(conversationId: String, messageId: String): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val ref = conversationsRef.document(conversationId).collection("messages").document(messageId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            if (snapshot.getString("senderId") != uid) return AppResult.Error(AppError.Auth("Sadece kendi mesajını silebilirsin."))
+            ref.delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Mesaj silinemedi.", e))
+        }
+    }
+
+    override suspend fun toggleDirectMessageReaction(conversationId: String, messageId: String, emoji: String): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val allowed = setOf("❤️", "😂", "😮", "😢", "😡", "👍")
+        if (emoji !in allowed) return AppResult.Error(AppError.Validation("Geçersiz tepki."))
+        return try {
+            val ref = conversationsRef.document(conversationId).collection("messages").document(messageId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            val reactions = (snapshot.get("reactions") as? Map<*, *>)?.mapNotNull { (k, v) ->
+                if (k is String && v is String) k to v else null
+            }?.toMap().orEmpty()
+            if (reactions[uid] == emoji) {
+                ref.update("reactions.$uid", com.google.firebase.firestore.FieldValue.delete()).await()
+            } else {
+                ref.update("reactions.$uid", emoji).await()
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Tepki bırakılamadı.", e))
         }
     }
 
