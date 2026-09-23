@@ -62,7 +62,7 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = snapshot.child("reactions").children.associateNotNull { key to getValue(String::class.java) }
+                reactions = snapshot.child("reactions").children.associateNotNull { key.orEmpty() to getValue(String::class.java) }
             )
         }.getOrNull()
 
@@ -115,7 +115,7 @@ class RealtimeChatRepositoryImpl(
         otherPhotoUrl: String,
         lastMessage: String,
         updatedAt: Long,
-        unreadCount: Int
+        unreadCount: Long
     ) = mapOf(
         "otherUserId" to otherUid,
         "otherUserName" to otherName,
@@ -200,7 +200,7 @@ class RealtimeChatRepositoryImpl(
                         otherUserPhotoUrl = child.child("otherUserPhotoUrl").getValue(String::class.java).orEmpty(),
                         lastMessage = child.child("lastMessage").getValue(String::class.java).orEmpty(),
                         updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: 0L,
-                        unreadCount = child.child("unreadCount").getValue(Int::class.java) ?: 0
+                        unreadCount = child.child("unreadCount").getValue(Long::class.java) ?: 0L
                     )
                 }.sortedByDescending { it.updatedAt }
                 trySend(AppResult.Success(items))
