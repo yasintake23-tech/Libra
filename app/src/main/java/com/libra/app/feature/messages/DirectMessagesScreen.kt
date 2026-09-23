@@ -505,7 +505,7 @@ private fun DirectConversationScreen(
                                         }
                                     } else {
                                         AsyncImage(
-                                            model = message.mediaUrl,
+                                            model = ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl),
                                             contentDescription = "Gönderilen fotoğraf",
                                             modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)),
                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
