@@ -56,17 +56,14 @@ class FirebaseChatRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun sendGlobalMessage(text: String): AppResult<Unit> {
+    override suspend fun sendGlobalMessage(text: String, replyTo: GlobalChatMessage?): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Sohbet için giriş yapmalısın."))
         val clean = text.trim()
         if (clean.isBlank()) return AppResult.Error(AppError.Validation("Mesaj boş olamaz."))
         if (clean.length > 1000) return AppResult.Error(AppError.Validation("Mesaj en fazla 1000 karakter olabilir."))
-
         return try {
-            val profileResult = userRepository.getUserProfileFresh(user.uid)
-            val profile = (profileResult as? AppResult.Success)?.data
+            val profile = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
                 ?: return AppResult.Error(AppError.Auth("Profil bulunamadı."))
-
             messagesRef.add(
                 GlobalChatMessage(
                     senderId = user.uid,
@@ -74,15 +71,63 @@ class FirebaseChatRepositoryImpl(
                     senderUsername = profile.username,
                     senderPhotoUrl = profile.profileImageUrl,
                     text = clean,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = System.currentTimeMillis(),
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.senderName.orEmpty()
                 )
             ).await()
-
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Mesaj gönderilemedi.", e))
         }
     }
+
+    override suspend fun sendGlobalMediaMessage(
+        mediaUrl: String,
+        mediaType: String,
+        text: String,
+        replyTo: GlobalChatMessage?
+    ): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Medya göndermek için giriş yapmalısın."))
+        val clean = text.trim()
+        if (mediaUrl.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz medya."))
+        if (clean.length > 1000) return AppResult.Error(AppError.Validation("Mesaj en fazla 1000 karakter olabilir."))
+        return try {
+            val profile = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
+                ?: return AppResult.Error(AppError.Auth("Profil bulunamadı."))
+            messagesRef.add(
+                GlobalChatMessage(
+                    senderId = user.uid,
+                    senderName = profile.displayName,
+                    senderUsername = profile.username,
+                    senderPhotoUrl = profile.profileImageUrl,
+                    text = clean,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    createdAt = System.currentTimeMillis(),
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.senderName.orEmpty()
+                )
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Medya mesajı gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun editGlobalMessage(messageId: String, text: String): AppResult<Unit> =
+        editCommunityLikeMessage(messagesRef.document(messageId), text, "Genel mesaj")
+
+    override suspend fun deleteGlobalMessage(messageId: String): AppResult<Unit> =
+        deleteCommunityLikeMessage(messagesRef.document(messageId))
+
+    override suspend fun toggleGlobalMessageReaction(messageId: String, emoji: String): AppResult<Unit> =
+        toggleCommunityLikeReaction(messagesRef.document(messageId), emoji)
+
     override fun observeDirectConversations(uid: String): Flow<AppResult<List<DirectConversation>>> = callbackFlow {
         val registration = conversationsRef.whereArrayContains("participants", uid).addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -533,7 +578,7 @@ class FirebaseChatRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun sendServerMessage(serverId: String, text: String): AppResult<Unit> {
+    override suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage?): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Mesaj için giriş yapmalısın."))
         val clean = text.trim()
         if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
@@ -549,7 +594,11 @@ class FirebaseChatRepositoryImpl(
                     senderUsername = profile.username,
                     senderPhotoUrl = profile.profileImageUrl,
                     text = clean,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = System.currentTimeMillis(),
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.senderName.orEmpty()
                 )
             ).await()
             AppResult.Success(Unit)
@@ -557,5 +606,110 @@ class FirebaseChatRepositoryImpl(
             AppResult.Error(AppError.Database("Mesaj gönderilemedi.", e))
         }
     }
+
+    override suspend fun sendServerMediaMessage(
+        serverId: String,
+        mediaUrl: String,
+        mediaType: String,
+        text: String,
+        replyTo: ServerMessage?
+    ): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Medya göndermek için giriş yapmalısın."))
+        val clean = text.trim()
+        if (serverId.isBlank() || mediaUrl.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz medya mesajı."))
+        if (clean.length > 1000) return AppResult.Error(AppError.Validation("Mesaj en fazla 1000 karakter olabilir."))
+        return try {
+            val profile = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
+                ?: return AppResult.Error(AppError.Auth("Profil bulunamadı."))
+            serversRef.document(serverId).collection("messages").add(
+                ServerMessage(
+                    senderId = user.uid,
+                    senderName = profile.displayName,
+                    senderUsername = profile.username,
+                    senderPhotoUrl = profile.profileImageUrl,
+                    text = clean,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    createdAt = System.currentTimeMillis(),
+                    replyToMessageId = replyTo?.id.orEmpty(),
+                    replyToText = replyTo?.text?.ifBlank { "📷 Fotoğraf" }.orEmpty(),
+                    replyToSenderId = replyTo?.senderId.orEmpty(),
+                    replyToSenderName = replyTo?.senderName.orEmpty()
+                )
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Medya mesajı gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun editServerMessage(serverId: String, messageId: String, text: String): AppResult<Unit> =
+        editCommunityLikeMessage(serversRef.document(serverId).collection("messages").document(messageId), text, "Sunucu mesajı")
+
+    override suspend fun deleteServerMessage(serverId: String, messageId: String): AppResult<Unit> =
+        deleteCommunityLikeMessage(serversRef.document(serverId).collection("messages").document(messageId))
+
+    override suspend fun toggleServerMessageReaction(serverId: String, messageId: String, emoji: String): AppResult<Unit> =
+        toggleCommunityLikeReaction(serversRef.document(serverId).collection("messages").document(messageId), emoji)
+
+    private suspend fun editCommunityLikeMessage(
+        ref: com.google.firebase.firestore.DocumentReference,
+        text: String,
+        label: String
+    ): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = text.trim()
+        if (clean.isBlank() || clean.length > 1000) return AppResult.Error(AppError.Validation("Mesaj 1-1000 karakter arasında olmalı."))
+        return try {
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            if (snapshot.getString("senderId") != uid) return AppResult.Error(AppError.Auth("Sadece kendi mesajını düzenleyebilirsin."))
+            if (snapshot.getString("mediaUrl").orEmpty().isNotBlank()) return AppResult.Error(AppError.Validation("Medya mesajları düzenlenemez."))
+            ref.update("text", clean, "editedAt", System.currentTimeMillis()).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("$label düzenlenemedi.", e))
+        }
+    }
+
+    private suspend fun deleteCommunityLikeMessage(
+        ref: com.google.firebase.firestore.DocumentReference
+    ): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            if (snapshot.getString("senderId") != uid) return AppResult.Error(AppError.Auth("Sadece kendi mesajını silebilirsin."))
+            ref.delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Mesaj silinemedi.", e))
+        }
+    }
+
+    private suspend fun toggleCommunityLikeReaction(
+        ref: com.google.firebase.firestore.DocumentReference,
+        emoji: String
+    ): AppResult<Unit> {
+        val uid = auth.currentUser?.uid ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val allowed = setOf("❤️", "😂", "😮", "😢", "😡", "👍")
+        if (emoji !in allowed) return AppResult.Error(AppError.Validation("Geçersiz tepki."))
+        return try {
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.Validation("Mesaj bulunamadı."))
+            val reactions = (snapshot.get("reactions") as? Map<*, *>)?.mapNotNull { (k, v) ->
+                if (k is String && v is String) k to v else null
+            }?.toMap().orEmpty()
+            if (reactions[uid] == emoji) {
+                ref.update("reactions.$uid", com.google.firebase.firestore.FieldValue.delete()).await()
+            } else {
+                ref.update("reactions.$uid", emoji).await()
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Tepki bırakılamadı.", e))
+        }
+    }
+
 
 }
