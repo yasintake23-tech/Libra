@@ -271,8 +271,8 @@ fun DirectMessagesScreen(
             messages = messages,
             error = error,
             onBack = { selectedUser = null },
-            onSend = { text, reply -> viewModel.send(user.uid, text, reply) },
-            onSendMedia = { url, type, text, reply -> viewModel.sendMedia(user.uid, url, type, text, reply) },
+            onSend = { text, reply, onComplete -> viewModel.send(user.uid, text, reply, onComplete) },
+            onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendMedia(user.uid, url, type, text, reply, onComplete) },
             onEdit = { id, text -> viewModel.edit(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, text) },
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
@@ -458,8 +458,8 @@ private fun DirectConversationScreen(
     messages: List<DirectMessage>,
     error: String?,
     onBack: () -> Unit,
-    onSend: (String, DirectMessage?) -> Unit,
-    onSendMedia: (String, String, String, DirectMessage?) -> Unit,
+    onSend: (String, DirectMessage?, (Boolean) -> Unit) -> Unit,
+    onSendMedia: (String, String, String, DirectMessage?, (Boolean) -> Unit) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
@@ -479,6 +479,7 @@ private fun DirectConversationScreen(
     var pendingMediaUrl by remember { mutableStateOf("") }
     var pendingMediaType by remember { mutableStateOf("image/jpeg") }
     var mediaUploadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var sending by remember { mutableStateOf(false) }
     val conversationId = remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
 
@@ -770,27 +771,53 @@ private fun DirectConversationScreen(
                 maxLines = 4
             )
             IconButton(
-                enabled = (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) && !mediaUploading,
+                enabled = !sending &&
+                    (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
+                    !mediaUploading,
                 onClick = {
                     val text = draft.trim()
                     val editing = editingMessage
                     if (editing != null) {
                         onEdit(editing.id, text)
                         editingMessage = null
-                    } else if (pendingMediaUrl.isNotBlank()) {
-                        onSendMedia(pendingMediaUrl, pendingMediaType, text, replyTarget)
-                        pendingMediaUri = null
-                        pendingMediaUrl = ""
-                        mediaError = null
-                        mediaProgress = 0
-                        replyTarget = null
+                        draft = ""
                     } else {
-                        onSend(text, replyTarget)
-                        replyTarget = null
+                        sending = true
+                        if (pendingMediaUrl.isNotBlank()) {
+                            onSendMedia(
+                                pendingMediaUrl,
+                                pendingMediaType,
+                                text,
+                                replyTarget
+                            ) { success ->
+                                sending = false
+                                if (success) {
+                                    pendingMediaUri = null
+                                    pendingMediaUrl = ""
+                                    mediaError = null
+                                    mediaProgress = 0
+                                    replyTarget = null
+                                    draft = ""
+                                }
+                            }
+                        } else {
+                            onSend(text, replyTarget) { success ->
+                                sending = false
+                                if (success) {
+                                    replyTarget = null
+                                    draft = ""
+                                }
+                            }
+                        }
                     }
-                    draft = ""
                 }
-            ) { Icon(Icons.Default.Send, "Gönder") }
+            ) {
+                if (sending) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Send, "Gönder")
+                }
+            }
         }
     }
 
