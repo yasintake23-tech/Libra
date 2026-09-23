@@ -280,7 +280,7 @@ class RealtimeChatRepositoryImpl(
         )
 
         return try {
-            database?.reference?.updateChildren(updates)?.await()
+            (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")).updateChildren(updates).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { error("Mesaj gönderilemedi.", e) }
     }
