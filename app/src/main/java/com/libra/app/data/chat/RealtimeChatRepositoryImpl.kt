@@ -277,15 +277,6 @@ class RealtimeChatRepositoryImpl(
             "reactions" to emptyMap<String, String>()
         )
 
-        val updates = mutableMapOf<String, Any?>()
-        updates["directMessages/" + conversation + "/" + messageRef.key] = message
-        updates["directConversations/" + sender.uid + "/" + conversation] = summary(
-            recipientId, recipientProfile.displayName, recipientProfile.username, recipientProfile.profileImageUrl, lastText, now, 0
-        )
-        updates["directConversations/$recipientId/$conversation"] = summary(
-            sender.uid, senderProfile.displayName, senderProfile.username, senderProfile.profileImageUrl, lastText, now, com.google.firebase.database.ServerValue.increment(1)
-        )
-
         return try {
             val root = database?.reference
                 ?: return error("Realtime Database yapılandırması bulunamadı.")
@@ -294,8 +285,8 @@ class RealtimeChatRepositoryImpl(
             // conversation summary rule is stale or temporarily unavailable.
             root.updateChildren(
                 mapOf(
-                    "directMessages/$conversation/\${messageRef.key}" to message,
-                    "directConversations/$\{sender.uid\}/$conversation" to summary(
+                    "directMessages/$conversation/${messageRef.key}" to message,
+                    "directConversations/${sender.uid}/$conversation" to summary(
                         recipientId,
                         recipientProfile.displayName,
                         recipientProfile.username,
