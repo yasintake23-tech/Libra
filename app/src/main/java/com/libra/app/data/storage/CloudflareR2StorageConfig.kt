@@ -43,6 +43,15 @@ object CloudflareR2StorageConfig {
             return raw.removePrefix(publicBase + "/").trim('/').takeIf { it.startsWith("users/") }
         }
 
+        // Accept direct R2 S3 endpoint URLs saved by older/manual uploads:
+        // https://<account>.r2.cloudflarestorage.com/libra-media/users/...
+        val endpointPrefix = "https://" + accountId(context) + ".r2.cloudflarestorage.com/"
+        if (raw.startsWith(endpointPrefix)) {
+            val path = raw.removePrefix(endpointPrefix).trim('/')
+            val withoutBucket = path.removePrefix(bucketName(context) + "/")
+            return withoutBucket.takeIf { it.startsWith("users/") }
+        }
+
         return objectKeyFromValue(raw)
     }
 
