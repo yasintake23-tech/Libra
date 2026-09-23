@@ -48,7 +48,7 @@ fun CommunityServersScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val repository = ServiceLocator.chatRepository
+    val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
@@ -56,7 +56,7 @@ fun CommunityServersScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        repository.observeCommunityServers().collect { result ->
+        communityRepository.observeCommunityServers().collect { result ->
             when (result) {
                 is AppResult.Success -> servers = result.data
                 is AppResult.Error -> error = result.error.message
@@ -123,7 +123,7 @@ fun CommunityServersScreen(
                             }
                             IconButton(onClick = {
                                 scope.launch {
-                                    when (val result = repository.joinCommunityServer(server.id)) {
+                                    when (val result = communityRepository.joinCommunityServer(server.id)) {
                                         is AppResult.Success -> {
                                             error = null
                                             selectedServer = server
@@ -146,7 +146,7 @@ fun CommunityServersScreen(
             onDismiss = { showCreate = false },
             onCreate = { name, description ->
                 scope.launch {
-                    when (val result = repository.createCommunityServer(name, description)) {
+                    when (val result = communityRepository.createCommunityServer(name, description)) {
                         is AppResult.Success -> {
                             showCreate = false
                             error = null
@@ -191,7 +191,8 @@ private fun ServerChatScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val repository = ServiceLocator.chatRepository
+    val chatRepository = ServiceLocator.chatRepository
+    val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
     var messages by remember(server.id) { mutableStateOf<List<ServerMessage>>(emptyList()) }
     var error by remember(server.id) { mutableStateOf<String?>(null) }
@@ -248,13 +249,13 @@ private fun ServerChatScreen(
     }
 
     LaunchedEffect(server.id) {
-        repository.observeServerMembers(server.id).collect { result ->
+        communityRepository.observeServerMembers(server.id).collect { result ->
             if (result is AppResult.Success) members = result.data
         }
     }
 
     LaunchedEffect(server.id) {
-        repository.observeServerMessages(server.id).collect { result ->
+        chatRepository.observeServerMessages(server.id).collect { result ->
             when (result) {
                 is AppResult.Success -> messages = result.data
                 is AppResult.Error -> error = result.error.message
@@ -330,7 +331,7 @@ private fun ServerChatScreen(
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.pointerInput(message.id + "-tap") {
                             detectTapGestures(
-                                onDoubleTap = { scope.launch { repository.toggleServerMessageReaction(server.id, message.id, "❤️") } },
+                                onDoubleTap = { scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️") } },
                                 onLongPress = { actionMessage = message }
                             )
                         }
@@ -379,15 +380,15 @@ private fun ServerChatScreen(
                     val text = draft.trim()
                     val edit = editingMessage
                     if (edit != null) {
-                        scope.launch { repository.editServerMessage(server.id, edit.id, text) }
+                        scope.launch { chatRepository.editServerMessage(server.id, edit.id, text) }
                         editingMessage = null
                     } else if (pendingUrl.isNotBlank()) {
-                        scope.launch { repository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget) }
+                        scope.launch { chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget) }
                         pendingUri = null
                         pendingUrl = ""
                         replyTarget = null
                     } else {
-                        scope.launch { repository.sendServerMessage(server.id, text, replyTarget) }
+                        scope.launch { chatRepository.sendServerMessage(server.id, text, replyTarget) }
                         replyTarget = null
                     }
                     draft = ""
@@ -401,9 +402,9 @@ private fun ServerChatScreen(
             canDelete = message.senderId == currentUid,
             onDismiss = { actionMessage = null },
             onReply = { replyTarget = message; actionMessage = null },
-            onReaction = { emoji -> scope.launch { repository.toggleServerMessageReaction(server.id, message.id, emoji) }; actionMessage = null },
+            onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji) }; actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
-            onDelete = { scope.launch { repository.deleteServerMessage(server.id, message.id) }; actionMessage = null }
+            onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id) }; actionMessage = null }
         )
     }
 
@@ -441,7 +442,7 @@ private fun ServerChatScreen(
                     enabled = serverName.trim().length >= 2,
                     onClick = {
                         scope.launch {
-                            when (val result = repository.updateCommunityServer(server.id, serverName, serverDescription)) {
+                            when (val result = communityRepository.updateCommunityServer(server.id, serverName, serverDescription)) {
                                 is AppResult.Success -> {
                                     actionError = null
                                     showManage = false
@@ -475,11 +476,11 @@ private fun ServerChatScreen(
                             if (server.ownerId == currentUid && member.uid != currentUid) {
                                 TextButton(onClick = {
                                     scope.launch {
-                                        repository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
+                                        communityRepository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
                                     }
                                 }) { Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap") }
                                 TextButton(onClick = {
-                                    scope.launch { repository.removeServerMember(server.id, member.uid) }
+                                    scope.launch { communityRepository.removeServerMember(server.id, member.uid) }
                                 }) { Text("Çıkar") }
                             }
                         }
