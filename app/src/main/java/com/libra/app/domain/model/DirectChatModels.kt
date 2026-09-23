@@ -15,6 +15,7 @@ data class DirectConversation(
 data class DirectMessage(
     val id: String = "",
     val senderId: String = "",
+    val senderPhotoUrl: String = "",
     val recipientId: String = "",
     val text: String = "",
     val mediaUrl: String = "",
