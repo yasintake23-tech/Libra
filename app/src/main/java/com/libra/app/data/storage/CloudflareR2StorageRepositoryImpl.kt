@@ -188,21 +188,17 @@ class CloudflareR2StorageRepositoryImpl(
         val raw = fileKey.trim()
         if (raw.isBlank()) return fileKey
 
-        // Keep already-public URLs untouched.
-        val publicBase = config.publicBaseUrl(context)
-        if (publicBase.isNotBlank() && (raw == publicBase || raw.startsWith(publicBase + "/"))) {
-            return raw
-        }
+        // Libra is a social app, so media is intentionally public-read.
+        // R2_PUBLIC must point to the bucket's public r2.dev URL or a public
+        // custom domain. The app stores the object key and always resolves it
+        // to this stable public URL.
+        val publicBase = config.publicBaseUrl(context).trimEnd('/')
+        if (publicBase.isBlank()) return raw
 
-        // Prefer a short-lived signed GET for R2 object keys so Android can read
-        // private buckets without relying on the public r2.dev endpoint.
-        return presignedGetUrl(raw) ?: run {
-            val key = config.objectKeyFromValue(context, raw) ?: return raw
-            if (publicBase.isBlank()) return key
-            publicBase + "/" + key
-                .split("/")
-                .joinToString("/") { Uri.encode(it) }
-        }
+        val key = config.objectKeyFromValue(context, raw) ?: return raw
+        return publicBase + "/" + key
+            .split("/")
+            .joinToString("/") { Uri.encode(it) }
     }
 
     private fun createClient(): AmazonS3Client {
@@ -227,39 +223,6 @@ class CloudflareR2StorageRepositoryImpl(
                     .build()
             )
         }
-    }
-
-    private val presignedGetCache = ConcurrentHashMap<String, CachedGetUrl>()
-
-    private data class CachedGetUrl(
-        val url: String,
-        val expiresAt: Long
-    )
-
-    private fun presignedGetUrl(fileKey: String): String? {
-        val key = config.objectKeyFromValue(context, fileKey) ?: return null
-        val now = System.currentTimeMillis()
-        val cached = presignedGetCache[key]
-        if (cached != null && cached.expiresAt > now + 30_000L) {
-            return cached.url
-        }
-
-        return runCatching {
-            val expiresAt = now + 10L * 60L * 1000L
-            val s3 = createClient()
-            try {
-                val url = s3.generatePresignedUrl(
-                    config.bucketName(context),
-                    key,
-                    Date(expiresAt),
-                    HttpMethod.GET
-                ).toString()
-                presignedGetCache[key] = CachedGetUrl(url, expiresAt)
-                url
-            } finally {
-                s3.shutdown()
-            }
-        }.getOrNull()
     }
 
     private companion object {
