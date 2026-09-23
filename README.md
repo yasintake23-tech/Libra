@@ -27,6 +27,10 @@ app/src/main/java/com/libra/app/
 │   ├── ai/
 │   ├── auth/
 │   ├── book/
+│   ├── chat/
+│   ├── community/
+│   ├── notification/
+│   ├── post/
 │   ├── storage/
 │   └── user/
 ├── domain/
@@ -36,6 +40,7 @@ app/src/main/java/com/libra/app/
 │   ├── auth/
 │   ├── home/
 │   ├── library/
+│   ├── messages/
 │   ├── write/
 │   ├── friends/
 │   └── profile/
