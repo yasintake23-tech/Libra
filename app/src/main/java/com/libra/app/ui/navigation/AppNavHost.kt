@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +86,12 @@ fun AppNavHost(
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
+
+    LaunchedEffect(currentUser?.uid, selectedTab) {
+        if (selectedTab == BottomNavTab.DISCOVER && currentUser?.uid?.isNotBlank() == true) {
+            friendsVm.loadSocialData()
+        }
+    }
 
     if (!authenticated) {
         when (authState) {
