@@ -12,9 +12,6 @@ object CloudflareR2StorageConfig {
     fun bucketName(context: Context): String =
         context.getString(R.string.cloudflare_r2_bucket_name).trim()
 
-    fun apiToken(context: Context): String =
-        context.getString(R.string.cloudflare_r2_api_token).trim()
-
     fun uploadEndpoint(context: Context): String =
         context.getString(R.string.r2_upload_endpoint).trim().trimEnd('/')
 
