@@ -67,15 +67,27 @@ app/src/main/java/com/libra/app/
 /libraries/{uid}/{shelfType}/{bookId}
 /friendships/{uid}/...
 /notifications/{uid}/...
+
+/globalMessages/{messageId}
+/directMessages/{conversationId}/{messageId}
+/directConversations/{uid}/{conversationId}
+/serverMessages/{serverId}/{messageId}
+/serverMessageMembers/{serverId}/{uid}
 ```
 
-Kütüphane kayıtları kitap objesini kopyalamak yerine kitap ID'si, okuma ilerlemesi ve eklenme zamanı referansı tutar.
+Canlı mesaj verisi tamamen Realtime Database'dedir. Firestore, kullanıcı/sosyal veriler ve community server metadata gibi belge tabanlı veriler için kullanılır.
 
 ## Cloudflare R2
 
-R2, istemciye uzun ömürlü erişim anahtarı gömmek yerine abstraction/presigned upload yaklaşımı için ayrılmıştır. `StorageRepository` UI ve domain katmanlarını R2 ayrıntılarından korur.
+- Tüm uygulama medyası için Cloudflare R2 kullanılır.
+- Android istemcisi R2'nin S3-compatible API'sine doğrudan bağlanır.
+- Yüklenen nesneler `users/{uid}/...` altında tutulur.
+- Medya kayıtlarında dosyanın kendisi yerine R2 object key saklanır.
+- `R2_PUBLIC` ile yapılandırılan public URL üzerinden görseller kalıcı olarak okunur.
+- UI ve domain katmanları yalnızca `StorageRepository` arayüzünü kullanır.
+- Firebase Storage ve Cloudflare Worker medya yolu kullanılmaz.
 
-Gerçek upload için bir backend/presigned URL endpoint'i bağlandığında `CloudflareR2StorageRepositoryImpl` bu akışa adapte edilecektir.
+> Not: S3 erişim anahtarlarını APK içine gömmek üretim güvenliği açısından risklidir. Bu sürüm, doğrudan R2 S3 mimarisi gereksinimi nedeniyle bu modeli kullanır.
 
 ## AI
 
@@ -134,7 +146,7 @@ Henüz tamamlanmayan ana modüller:
 - Gelişmiş kitap editörü ve bölüm yönetimi ekranları
 - Gerçek arkadaşlık/takip işlemleri ve bildirimler
 - Arama/keşif sıralama sistemi
-- Cloudflare R2 presigned upload backend'i
+- Daha ileri medya erişim güvenliği için geçici R2 credentials / server-mediated upload modeli
 - Gerçek AI provider entegrasyonu
 
 ## Architecture decisions
