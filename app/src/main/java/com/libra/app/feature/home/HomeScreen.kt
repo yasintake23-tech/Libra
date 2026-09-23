@@ -1,5 +1,7 @@
 package com.libra.app.feature.home
 
+import com.libra.app.core.di.ServiceLocator
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
