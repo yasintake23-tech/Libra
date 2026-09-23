@@ -89,17 +89,19 @@ jobs:
           grep -q '"project_id": "libra-3bfb9"' app/google-services.json
           grep -q '"package_name": "com.libra.app"' app/google-services.json
 
-      - name: Inject R2 Worker endpoint
+      - name: Inject direct R2 S3 configuration
         shell: bash
         env:
-          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT || vars.R2_WORKER_ENDPOINT }}
+          R2_KEY_ID: ${{ secrets.R2_KEY_ID || vars.R2_KEY_ID }}
+          R2_SECRET: ${{ secrets.R2_SECRET || vars.R2_SECRET }}
+          R2_PUBLIC: ${{ secrets.R2_PUBLIC || vars.R2_PUBLIC }}
         run: |
           set -euo pipefail
-
-          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
-            echo "::error::R2_WORKER_ENDPOINT tanımlı değil. Libra medya altyapısı R2-only olduğu için build durduruldu."
-            exit 1
-          fi
+          [[ -n "$R2_KEY_ID" ]] || { echo "::error::R2_KEY_ID eksik."; exit 1; }
+          [[ -n "$R2_SECRET" ]] || { echo "::error::R2_SECRET eksik."; exit 1; }
+          echo "::add-mask::$R2_KEY_ID"
+          echo "::add-mask::$R2_SECRET"
+          [[ -z "$R2_PUBLIC" ]] || echo "::add-mask::$R2_PUBLIC"
 
           python3 - <<'PY'
           from pathlib import Path
@@ -108,110 +110,26 @@ jobs:
           import re
 
           path = Path("app/src/main/res/values/strings.xml")
-          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
           content = path.read_text(encoding="utf-8")
-
-          pattern = r'(<string name="r2_upload_endpoint">)(.*?)(</string>)'
-          updated, count = re.subn(
-              pattern,
-              lambda m: m.group(1) + escape(endpoint) + m.group(3),
-              content,
-              count=1,
-              flags=re.DOTALL,
-          )
-
-          if count != 1:
-              raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
-          path.write_text(updated, encoding="utf-8")
-          PY
-
-          echo "R2 Worker endpoint APK derlemesine enjekte edildi."
-
-      - name: Verify direct Cloudflare R2 access
-        shell: bash
-        env:
-          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY' > "$RUNNER_TEMP/r2.env"
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          root = ET.parse("app/src/main/res/values/strings.xml").getroot()
           values = {
-              node.attrib["name"]: (node.text or "").strip()
-              for node in root.findall("string")
+              "cloudflare_r2_access_key_id": os.environ["R2_KEY_ID"].strip(),
+              "cloudflare_r2_secret_access_key": os.environ["R2_SECRET"].strip(),
+              "cloudflare_r2_public_base_url": os.environ.get("R2_PUBLIC", "").strip().rstrip("/"),
           }
 
-          endpoint = values.get("r2_upload_endpoint", "")
-          account = values.get("cloudflare_r2_account_id", "")
-          bucket = values.get("cloudflare_r2_bucket_name", "")
-          print("R2_ENDPOINT=" + endpoint)
-          print("R2_ACCOUNT=" + account)
-          print("R2_BUCKET=" + bucket)
-          PY
+          for name, value in values.items():
+              pattern = r'(<string name="' + re.escape(name) + r'">)(.*?)(</string>)'
+              content, count = re.subn(
+                  pattern,
+                  lambda m: m.group(1) + escape(value) + m.group(3),
+                  content,
+                  count=1,
+                  flags=re.DOTALL,
+              )
+              if count != 1:
+                  raise SystemExit(name + " bulunamadı.")
 
-          set -a
-          source "$RUNNER_TEMP/r2.env"
-          set +a
-
-          if [[ -z "$R2_ENDPOINT" ]]; then
-            echo "::error::R2 Worker endpoint yapılandırması eksik. R2 doğrulaması zorunlu."
-            exit 1
-          fi
-
-          if [[ -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
-            echo "::error::CLOUDFLARE_R2_API_TOKEN eksik. R2 doğrulaması zorunlu."
-            exit 1
-          fi
-
-          HEALTH_URL="${R2_ENDPOINT%/}/health"
-          curl --fail --silent --show-error "$HEALTH_URL" > "$RUNNER_TEMP/r2-health.json"
-
-          python3 - <<'PY' "$RUNNER_TEMP/r2-health.json"
-          import json
-          import sys
-
-          payload = json.load(open(sys.argv[1], encoding="utf-8"))
-          if payload.get("ok") is not True or payload.get("storage") != "r2":
-              raise SystemExit("R2 Worker health doğrulaması başarısız: " + repr(payload))
-          print("R2 Worker health başarılı.")
-          PY
-
-          echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
-          API_BASE="https://api.cloudflare.com/client/v4/accounts/$R2_ACCOUNT/r2/buckets/$R2_BUCKET/objects"
-          TEST_KEY="_ci/libra-$GITHUB_RUN_ID.txt"
-          printf '%s\n' 'libra-r2-ci' > "$RUNNER_TEMP/r2-test.txt"
-
-          curl --fail --silent --show-error             --request PUT             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             --header "Content-Type: text/plain"             --data-binary @"$RUNNER_TEMP/r2-test.txt"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-put.json"
-
-          python3 - <<'PY' "$RUNNER_TEMP/r2-put.json"
-          import json
-          import sys
-          payload = json.load(open(sys.argv[1], encoding="utf-8"))
-          if payload.get("success") is not True:
-              raise SystemExit("R2 PUT başarısız: " + repr(payload))
-          print("Direct R2 PUT başarılı.")
-          PY
-
-          curl --fail --silent --show-error             --request GET             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-get.txt"
-
-          cmp "$RUNNER_TEMP/r2-test.txt" "$RUNNER_TEMP/r2-get.txt" || {
-            echo "::error::R2 GET doğrulaması PUT edilen içerikle eşleşmiyor."
-            exit 1
-          }
-          echo "Direct R2 GET başarılı."
-
-          curl --fail --silent --show-error             --request DELETE             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-delete.json"
-
-          python3 - <<'PY' "$RUNNER_TEMP/r2-delete.json"
-          import json
-          import sys
-          payload = json.load(open(sys.argv[1], encoding="utf-8"))
-          if payload.get("success") is not True:
-              raise SystemExit("R2 DELETE başarısız: " + repr(payload))
-          print("Direct R2 DELETE başarılı.")
+          path.write_text(content, encoding="utf-8")
           PY
 
       - name: Show toolchain
