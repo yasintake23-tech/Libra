@@ -17,7 +17,8 @@ class FirebaseStorageRepositoryImpl : StorageRepository {
     }
 
     override fun uploadMedia(
-        request: StorageUploadRequest
+        request: StorageUploadRequest,
+        onProgress: (Int) -> Unit
     ): Flow<AppResult<String>> = flow {
         try {
             if (request.bytes.isEmpty()) {
@@ -38,7 +39,13 @@ class FirebaseStorageRepositoryImpl : StorageRepository {
                 .build()
 
             val reference = storage.reference.child(path)
-            reference.putBytes(request.bytes, metadata).await()
+            val uploadTask = reference.putBytes(request.bytes, metadata)
+            uploadTask.addOnProgressListener { snapshot ->
+                val total = snapshot.totalByteCount.coerceAtLeast(1L)
+                onProgress(((snapshot.bytesTransferred.toDouble() / total) * 100).toInt().coerceIn(0, 100))
+            }
+            uploadTask.await()
+            onProgress(100)
 
             // Firebase's Android SDK returns a shareable download URL only after
             // the upload task has completed. Use the exact same reference so the
