@@ -378,8 +378,17 @@ private fun DirectConversationScreen(
                                 }
                             )
                         },
-                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
+                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.Bottom
                 ) {
+                    if (!mine) {
+                        UserAvatar(
+                            message.senderPhotoUrl.ifBlank { user.profileImageUrl },
+                            message.senderId.take(1).uppercase(),
+                            size = 30.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Column(
                         modifier = Modifier
                             .offset { IntOffset(dragX.roundToInt(), 0) }
