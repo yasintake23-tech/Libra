@@ -31,12 +31,7 @@ object ServiceLocator {
         CloudflareR2StorageRepositoryImpl(com.google.firebase.FirebaseApp.getInstance().applicationContext)
     }
 
-    val storageRepository: StorageRepository by lazy {
-        HybridStorageRepositoryImpl(
-            r2 = r2StorageRepository,
-            fallback = FirebaseStorageRepositoryImpl()
-        )
-    }
+    val storageRepository: StorageRepository by lazy { r2StorageRepository }
 
     val aiAssistantRepository: AiAssistantRepository by lazy { AiAssistantRepositoryImpl() }
 }
