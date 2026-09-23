@@ -149,19 +149,6 @@ class HomeViewModel(
             _isPosting.value = true
             _postError.value = null
             try {
-                when (upload) {
-                        is AppResult.Success -> {
-                            mediaUrl = upload.data
-                            mediaType = "image"
-                        }
-                        is AppResult.Error -> {
-                            _postError.value = upload.error.message
-                            onComplete(false)
-                            return@launch
-                        }
-                    }
-                }
-
                 when (
                     val result = postRepository.createPost(
                         authorId = userId,
@@ -186,9 +173,8 @@ class HomeViewModel(
 
     fun createStory(
         text: String,
-        imageBytes: ByteArray?,
-        imageFileName: String,
-        imageContentType: String,
+        mediaUrl: String,
+        mediaType: String,
         onComplete: (Boolean) -> Unit = {}
     ) {
         val user = authRepository.currentUser.value
