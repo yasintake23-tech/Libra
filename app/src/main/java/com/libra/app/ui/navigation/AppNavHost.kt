@@ -134,14 +134,13 @@ fun AppNavHost(
             user = profile,
             isPosting = vm.isPosting.collectAsState().value,
             error = vm.postError.collectAsState().value,
-            onPublishPost = { title, text, tags, imageBytes, imageFileName, imageContentType ->
+            onPublishPost = { title, text, tags, mediaUrl, mediaType ->
                 vm.createRichPost(
                     title = title,
                     text = text,
                     tags = tags,
-                    imageBytes = imageBytes,
-                    imageFileName = imageFileName,
-                    imageContentType = imageContentType,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     onComplete = { success ->
                         if (success && mode == CreateContentMode.POST) {
                             createContentMode = null
@@ -150,12 +149,11 @@ fun AppNavHost(
                     }
                 )
             },
-            onPublishStory = { text, imageBytes, imageFileName, imageContentType ->
+            onPublishStory = { text, mediaUrl, mediaType ->
                 vm.createStory(
                     text = text,
-                    imageBytes = imageBytes,
-                    imageFileName = imageFileName,
-                    imageContentType = imageContentType,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     onComplete = { success ->
                         if (success) {
                             createContentMode = null
