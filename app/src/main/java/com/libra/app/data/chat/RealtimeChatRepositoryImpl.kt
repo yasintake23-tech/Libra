@@ -16,6 +16,7 @@ import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.repository.ChatRepository
+import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +29,8 @@ import kotlinx.coroutines.tasks.await
  */
 class RealtimeChatRepositoryImpl(
     private val userRepository: UserRepository,
-    private val delegate: ChatRepository
+    private val delegate: ChatRepository,
+    private val storageRepository: StorageRepository
 ) : ChatRepository {
 
     private val auth = FirebaseAuth.getInstance()
@@ -117,7 +119,7 @@ class RealtimeChatRepositoryImpl(
         otherPhotoUrl: String,
         lastMessage: String,
         updatedAt: Long,
-        unreadCount: Int
+        unreadCount: Any
     ) = mapOf(
         "otherUserId" to otherUid,
         "otherUserName" to otherName,
@@ -273,10 +275,6 @@ class RealtimeChatRepositoryImpl(
             "reactions" to emptyMap<String, String>()
         )
 
-        val existingUnread = runCatching {
-            ref("directConversations/$recipientId/$conversation/unreadCount")?.get()?.await()?.getValue(Int::class.java) ?: 0
-        }.getOrDefault(0)
-
         val updates = mutableMapOf<String, Any?>()
         updates["directMessages/" + conversation + "/" + messageRef.key] = message
         updates["directConversations/" + sender.uid + "/" + conversation] = summary(
@@ -308,11 +306,17 @@ class RealtimeChatRepositoryImpl(
         } catch (e: Exception) { error("Mesaj gönderilemedi.", e) }
     }
 
-    override suspend fun editDirectMessage(conversationId: String, messageId: String, text: String): AppResult<Unit> =
-        editMessage(ref("directMessages/$conversationId/$messageId"), text)
+    override suspend fun editDirectMessage(conversationId: String, messageId: String, text: String): AppResult<Unit> {
+        val result = editMessage(ref("directMessages/$conversationId/$messageId"), text)
+        if (result is AppResult.Success) refreshDirectConversationSummary(conversationId)
+        return result
+    }
 
-    override suspend fun deleteDirectMessage(conversationId: String, messageId: String): AppResult<Unit> =
-        deleteMessage(ref("directMessages/$conversationId/$messageId"))
+    override suspend fun deleteDirectMessage(conversationId: String, messageId: String): AppResult<Unit> {
+        val result = deleteMessage(ref("directMessages/$conversationId/$messageId"))
+        if (result is AppResult.Success) refreshDirectConversationSummary(conversationId)
+        return result
+    }
 
     override suspend fun toggleDirectMessageReaction(conversationId: String, messageId: String, emoji: String): AppResult<Unit> =
         toggleReaction(ref("directMessages/$conversationId/$messageId"), emoji)
@@ -429,7 +433,15 @@ class RealtimeChatRepositoryImpl(
             if (snapshot.child("senderId").getValue(String::class.java) != uid) {
                 return AppResult.Error(AppError.Auth("Bu mesajı düzenleme yetkin yok."))
             }
-            messageRefSafe.updateChildren(mapOf("text" to clean, "editedAt" to System.currentTimeMillis())).await()
+            if (snapshot.child("mediaUrl").getValue(String::class.java).orEmpty().isNotBlank()) {
+                return AppResult.Error(AppError.Validation("Medya mesajları düzenlenemez."))
+            }
+            messageRefSafe.updateChildren(
+                mapOf(
+                    "text" to clean,
+                    "editedAt" to System.currentTimeMillis()
+                )
+            ).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { error("Mesaj düzenlenemedi.", e) }
     }
@@ -443,9 +455,72 @@ class RealtimeChatRepositoryImpl(
             if (snapshot.child("senderId").getValue(String::class.java) != uid) {
                 return AppResult.Error(AppError.Auth("Bu mesajı silme yetkin yok."))
             }
+
+            val mediaKey = snapshot.child("mediaUrl").getValue(String::class.java).orEmpty()
             messageRefSafe.removeValue().await()
+
+            if (mediaKey.isNotBlank()) {
+                runCatching { storageRepository.deleteMedia(mediaKey) }
+            }
+
             AppResult.Success(Unit)
         } catch (e: Exception) { error("Mesaj silinemedi.", e) }
+    }
+
+    private suspend fun refreshDirectConversationSummary(conversationId: String): AppResult<Unit> {
+        val uid = requireUid() ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val mySummaryRef = ref("directConversations/$uid/$conversationId")
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+        return try {
+            val mySummary = mySummaryRef.get().await()
+            if (!mySummary.exists()) return AppResult.Success(Unit)
+
+            val otherUid = mySummary.child("otherUserId").getValue(String::class.java).orEmpty()
+            if (otherUid.isBlank()) return AppResult.Success(Unit)
+
+            val messagesRef = ref("directMessages/$conversationId")
+                ?: return error("Realtime Database yapılandırması bulunamadı.")
+            val latest = messagesRef
+                .orderByChild("createdAt")
+                .limitToLast(1)
+                .get()
+                .await()
+                .children
+                .mapNotNull(::directMessageFrom)
+                .maxByOrNull { it.createdAt }
+
+            val otherSummaryRef = ref("directConversations/$otherUid/$conversationId")
+                ?: return error("Realtime Database yapılandırması bulunamadı.")
+            val updates = mutableMapOf<String, Any?>()
+
+            if (latest == null) {
+                if (mySummary.exists()) updates["directConversations/$uid/$conversationId"] = null
+                if (otherSummaryRef.get().await().exists()) {
+                    updates["directConversations/$otherUid/$conversationId"] = null
+                }
+            } else {
+                val lastText = latest.text.ifBlank {
+                    if (latest.mediaUrl.isNotBlank()) "📷 Fotoğraf" else ""
+                }
+                updates["directConversations/$uid/$conversationId/lastMessage"] = lastText
+                updates["directConversations/$uid/$conversationId/updatedAt"] = latest.createdAt
+                if (otherSummaryRef.get().await().exists()) {
+                    updates["directConversations/$otherUid/$conversationId/lastMessage"] = lastText
+                    updates["directConversations/$otherUid/$conversationId/updatedAt"] = latest.createdAt
+                }
+            }
+
+            if (updates.isNotEmpty()) {
+                (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı."))
+                    .updateChildren(updates)
+                    .await()
+            }
+
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Sohbet özeti güncellenemedi.", e)
+        }
     }
 
     private suspend fun toggleReaction(messageRef: DatabaseReference?, emoji: String): AppResult<Unit> {
