@@ -62,11 +62,12 @@
     "directConversations": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && ($uid === auth.uid || (newData.exists() && newData.child('otherUserId').val() === auth.uid))",
+        ".write": "auth != null && auth.uid === $uid",
         ".indexOn": [
           "updatedAt"
         ],
         "$conversationId": {
+          ".write": "auth != null && ($uid === auth.uid || (newData.exists() && newData.child('otherUserId').val() === auth.uid) || (data.exists() && data.child('otherUserId').val() === auth.uid))",
           ".validate": "newData.hasChildren(['otherUserId','lastMessage','updatedAt','unreadCount']) && newData.child('otherUserId').isString() && newData.child('otherUserId').val() !== $uid && ($conversationId === ($uid + '_' + newData.child('otherUserId').val()) || $conversationId === (newData.child('otherUserId').val() + '_' + $uid)) && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0"
         }
       }
