@@ -89,6 +89,44 @@ jobs:
           grep -q '"project_id": "libra-3bfb9"' app/google-services.json
           grep -q '"package_name": "com.libra.app"' app/google-services.json
 
+      - name: Inject R2 Worker endpoint
+        shell: bash
+        env:
+          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
+            echo "::error::R2_WORKER_ENDPOINT Actions secret eksik. Fotoğraf yükleme için Worker endpoint zorunludur."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.sax.saxutils import escape
+          import os
+          import re
+
+          path = Path("app/src/main/res/values/strings.xml")
+          endpoint = os.environ["R2_WORKER_ENDPOINT"].strip().rstrip("/")
+          content = path.read_text(encoding="utf-8")
+
+          pattern = r'(<string name="r2_upload_endpoint">)(.*?)(</string>)'
+          updated, count = re.subn(
+              pattern,
+              lambda m: m.group(1) + escape(endpoint) + m.group(3),
+              content,
+              count=1,
+              flags=re.DOTALL,
+          )
+
+          if count != 1:
+              raise SystemExit("r2_upload_endpoint kaynağı bulunamadı.")
+          path.write_text(updated, encoding="utf-8")
+          PY
+
+          echo "R2 Worker endpoint APK derlemesine enjekte edildi."
+
       - name: Verify direct Cloudflare R2 access
         shell: bash
         env:
@@ -119,8 +157,8 @@ jobs:
           set +a
 
           if [[ -z "$R2_ENDPOINT" || -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
-            echo "Direct R2 doğrulaması atlandı: Worker endpoint veya Actions secret yapılandırılmamış. Uygulama Firebase Storage fallback kullanacak."
-            exit 0
+            echo "::error::R2 doğrulaması için Worker endpoint ve CLOUDFLARE_R2_API_TOKEN zorunludur."
+            exit 1
           fi
 
           echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
