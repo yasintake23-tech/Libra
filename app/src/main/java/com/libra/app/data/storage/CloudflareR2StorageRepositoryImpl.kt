@@ -149,7 +149,9 @@ class CloudflareR2StorageRepositoryImpl(
         if (raw.isBlank()) return fileKey
 
         val publicBase = config.publicBaseUrl(context)
-        if (publicBase.isNotBlank() && raw == publicBase) return raw
+        if (publicBase.isNotBlank() && (raw == publicBase || raw.startsWith(publicBase + "/"))) {
+            return raw
+        }
 
         val key = config.objectKeyFromValue(context, raw)
         if (key == null) return raw
