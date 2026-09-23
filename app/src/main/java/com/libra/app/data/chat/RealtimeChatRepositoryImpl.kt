@@ -10,11 +10,11 @@ import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.AppNotification
-import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.repository.ChatRepository
+import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -28,7 +28,8 @@ import kotlinx.coroutines.tasks.await
  */
 class RealtimeChatRepositoryImpl(
     private val userRepository: UserRepository,
-    private val storageRepository: StorageRepository
+    private val storageRepository: StorageRepository,
+    private val notificationRepository: NotificationRepository
 ) : ChatRepository {
 
     private val auth = FirebaseAuth.getInstance()
@@ -285,7 +286,7 @@ class RealtimeChatRepositoryImpl(
         return try {
             (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")).updateChildren(updates).await()
             runCatching {
-                ServiceLocator.notificationRepository.create(
+                notificationRepository.create(
                     AppNotification(
                         recipientId = recipientId,
                         actorId = sender.uid,
