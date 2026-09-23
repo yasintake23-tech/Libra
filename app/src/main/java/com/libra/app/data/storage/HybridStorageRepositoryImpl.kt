@@ -11,15 +11,15 @@ class HybridStorageRepositoryImpl(
     private val r2: CloudflareR2StorageRepositoryImpl,
     private val fallback: StorageRepository
 ) : StorageRepository {
-    override fun uploadMedia(request: StorageUploadRequest): Flow<AppResult<String>> = flow {
+    override fun uploadMedia(request: StorageUploadRequest, onProgress: (Int) -> Unit): Flow<AppResult<String>> = flow {
         if (!r2.isConfigured) {
-            emit(fallback.uploadMedia(request).first())
+            emit(fallback.uploadMedia(request, onProgress).first())
             return@flow
         }
-        when (val r2Result = r2.uploadMedia(request).first()) {
+        when (val r2Result = r2.uploadMedia(request, onProgress).first()) {
             is AppResult.Success -> emit(r2Result)
             is AppResult.Error -> {
-                when (val fallbackResult = fallback.uploadMedia(request).first()) {
+                when (val fallbackResult = fallback.uploadMedia(request, onProgress).first()) {
                     is AppResult.Success -> emit(fallbackResult)
                     is AppResult.Error -> emit(
                         AppResult.Error(
