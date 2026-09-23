@@ -1,8 +1,6 @@
 package com.libra.app.feature.home
 
 import androidx.lifecycle.ViewModel
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
 import androidx.lifecycle.viewModelScope
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
@@ -17,6 +15,7 @@ import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.PostRepository
+import com.libra.app.domain.repository.StoryRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +37,7 @@ class HomeViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
     private val bookRepository: BookRepository = ServiceLocator.bookRepository,
     private val postRepository: PostRepository = ServiceLocator.postRepository,
+    private val storyRepository: StoryRepository = ServiceLocator.storyRepository,
     private val storageRepository: com.libra.app.domain.repository.StorageRepository = ServiceLocator.storageRepository
 ) : ViewModel() {
 
@@ -188,20 +188,25 @@ class HomeViewModel(
             _isPosting.value = true
             _postError.value = null
             try {
-                val now = System.currentTimeMillis()
-                FirebaseFirestore.getInstance().collection("stories").add(
-                    mapOf(
-                        "authorId" to user.uid,
-                        "authorName" to (user.displayName ?: "Libra kullanıcısı"),
-                        "authorPhotoUrl" to authRepository.currentUser.value?.profileImageUrl.orEmpty(),
-                        "text" to text.trim(),
-                        "mediaUrl" to mediaUrl,
-                        "mediaType" to mediaType,
-                        "createdAt" to now,
-                        "expiresAt" to now + 24L * 60L * 60L * 1000L
+                when (
+                    val result = storyRepository.createStory(
+                        authorId = user.uid,
+                        authorName = user.displayName ?: "Libra kullanıcısı",
+                        authorPhotoUrl = authRepository.currentUser.value?.profileImageUrl.orEmpty(),
+                        text = text,
+                        mediaUrl = mediaUrl,
+                        mediaType = mediaType
                     )
-                ).await()
-                onComplete(true)
+                ) {
+                    is AppResult.Success -> onComplete(true)
+                    is AppResult.Error -> {
+                        _postError.value = result.error.message
+                        if (mediaUrl.isNotBlank()) {
+                            runCatching { storageRepository.deleteMedia(mediaUrl) }
+                        }
+                        onComplete(false)
+                    }
+                }
             } catch (e: Exception) {
                 _postError.value = "Hikâye paylaşılırken hata oluştu: ${e.localizedMessage ?: "Bilinmeyen hata."}"
                 onComplete(false)
