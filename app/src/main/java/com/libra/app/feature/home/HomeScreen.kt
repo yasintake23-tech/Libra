@@ -388,7 +388,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
             Spacer(Modifier.height(8.dp))
             Text(post.text, style = MaterialTheme.typography.bodyLarge)
 
-            if (post.mediaUrl.isNotBlank() && post.mediaType == "image") {
+            if (post.mediaUrl.isNotBlank() && (post.mediaType == "image" || post.mediaType.startsWith("image/"))) {
                 Spacer(Modifier.height(12.dp))
                 var mediaFailed by remember(post.mediaUrl) { mutableStateOf(false) }
                 if (mediaFailed) {
