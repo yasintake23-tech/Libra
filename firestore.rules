@@ -38,19 +38,48 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if request.auth != null
           && request.auth.uid in get(/databases/$(database)/documents/directConversations/$(conversationId)).data.participants;
+
         allow create: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/directConversations/$(conversationId)).data.participants
           && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderPhotoUrl is string
           && request.resource.data.recipientId is string
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 1000
           && request.resource.data.mediaUrl is string
           && request.resource.data.mediaType is string
-          && ((request.resource.data.text.size() > 0) || request.resource.data.mediaUrl.size() > 0)
-          && request.auth.uid in get(/databases/$(database)/documents/directConversations/$(conversationId)).data.participants;
-        allow update, delete: if false;
+          && request.resource.data.replyToMessageId is string
+          && request.resource.data.replyToText is string
+          && request.resource.data.replyToSenderId is string
+          && request.resource.data.replyToSenderName is string
+          && request.resource.data.reactions is map
+          && ((request.resource.data.text.size() > 0) || request.resource.data.mediaUrl.size() > 0);
+
+        allow update: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/directConversations/$(conversationId)).data.participants
+          && (
+            (
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["text", "editedAt"])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 1000
+              && request.resource.data.mediaUrl == resource.data.mediaUrl
+            )
+            ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"])
+              && request.resource.data.reactions is map
+              && resource.data.reactions is map
+              && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid])
+              && resource.data.reactions.diff(request.resource.data.reactions).affectedKeys().hasOnly([request.auth.uid])
+            )
+          );
+
+        allow delete: if request.auth != null
+          && resource.data.senderId == request.auth.uid;
       }
     }
-
 
     match /notifications/{notificationId} {
       allow read: if request.auth != null && resource.data.recipientId == request.auth.uid;
