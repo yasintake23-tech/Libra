@@ -165,6 +165,7 @@ fun DirectMessagesScreen(
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
+    var conversationSearch by remember { mutableStateOf("") }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
     val conversations by viewModel.conversations.collectAsState()
     val messages by viewModel.messages.collectAsState()
@@ -198,7 +199,20 @@ fun DirectMessagesScreen(
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text("DM", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
         Text("Arkadaşlarınla konuş, topluluklara katıl.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
+
+        if (section == MessageSection.MESSAGES) {
+            OutlinedTextField(
+                value = conversationSearch,
+                onValueChange = { conversationSearch = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Mesajlarda ara…") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp),
@@ -233,7 +247,22 @@ fun DirectMessagesScreen(
                             }
                         }
                     } else {
-                        items(conversations, key = { it.id }) { conversation ->
+                        val visibleConversations = conversations.filter { conversation ->
+                            conversationSearch.isBlank() ||
+                                conversation.otherUserName.contains(conversationSearch, ignoreCase = true) ||
+                                conversation.otherUserUsername.contains(conversationSearch, ignoreCase = true) ||
+                                conversation.lastMessage.contains(conversationSearch, ignoreCase = true)
+                        }
+                        if (visibleConversations.isEmpty()) {
+                            item {
+                                Text(
+                                    "Aramana uygun sohbet yok.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 28.dp)
+                                )
+                            }
+                        } else {
+                            items(visibleConversations, key = { it.id }) { conversation ->
                             Card(
                                 modifier = Modifier.fillMaxWidth().clickable {
                                     selectedUser = UserProfile(
