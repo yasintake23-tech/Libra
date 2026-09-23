@@ -287,9 +287,42 @@ class RealtimeChatRepositoryImpl(
         )
 
         return try {
-            (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı."))
-                .updateChildren(updates)
-                .await()
+            val root = database?.reference
+                ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+            // The actual message must not be rolled back just because a recipient
+            // conversation summary rule is stale or temporarily unavailable.
+            root.updateChildren(
+                mapOf(
+                    "directMessages/$conversation/\${messageRef.key}" to message,
+                    "directConversations/$\{sender.uid\}/$conversation" to summary(
+                        recipientId,
+                        recipientProfile.displayName,
+                        recipientProfile.username,
+                        recipientProfile.profileImageUrl,
+                        lastText,
+                        now,
+                        0
+                    )
+                )
+            ).await()
+
+            runCatching {
+                root.updateChildren(
+                    mapOf(
+                        "directConversations/$recipientId/$conversation" to summary(
+                            sender.uid,
+                            senderProfile.displayName,
+                            senderProfile.username,
+                            senderProfile.profileImageUrl,
+                            lastText,
+                            now,
+                            com.google.firebase.database.ServerValue.increment(1)
+                        )
+                    )
+                ).await()
+            }
+
             runCatching {
                 notificationRepository.create(
                     AppNotification(
