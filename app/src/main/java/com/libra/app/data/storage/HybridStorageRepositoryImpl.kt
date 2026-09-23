@@ -21,7 +21,15 @@ class HybridStorageRepositoryImpl(
             is AppResult.Error -> {
                 when (val fallbackResult = fallback.uploadMedia(request).first()) {
                     is AppResult.Success -> emit(fallbackResult)
-                    is AppResult.Error -> emit(fallbackResult)
+                    is AppResult.Error -> emit(
+                        AppResult.Error(
+                            com.libra.app.core.result.AppError.Storage(
+                                "R2 yüklemesi başarısız: ${r2Result.error.message}. " +
+                                    "Firebase Storage fallback de başarısız: ${fallbackResult.error.message}",
+                                fallbackResult.error
+                            )
+                        )
+                    )
                 }
             }
         }
