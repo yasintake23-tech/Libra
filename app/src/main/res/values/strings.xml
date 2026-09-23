@@ -6,5 +6,5 @@
     <string name="cloudflare_r2_bucket_name">libra-media</string>
     <string name="cloudflare_r2_access_key_id"></string>
     <string name="cloudflare_r2_secret_access_key"></string>
-    <string name="cloudflare_r2_public_base_url"></string>
+    <string name="cloudflare_r2_public_base_url">https://pub-6a68b6b4caa84c10ab277cd5ee1f9cc4.r2.dev</string>
 </resources>
