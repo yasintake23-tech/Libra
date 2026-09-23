@@ -16,6 +16,7 @@ import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.repository.ChatRepository
+import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -29,7 +30,7 @@ import kotlinx.coroutines.tasks.await
  */
 class RealtimeChatRepositoryImpl(
     private val userRepository: UserRepository,
-    private val delegate: ChatRepository,
+    private val communityRepository: CommunityRepository,
     private val storageRepository: StorageRepository
 ) : ChatRepository {
 
@@ -327,38 +328,6 @@ class RealtimeChatRepositoryImpl(
             ref("directConversations/$uid/$conversationId/unreadCount")?.setValue(0)?.await()
             AppResult.Success(Unit)
         } catch (e: Exception) { error("Sohbet okundu olarak işaretlenemedi.", e) }
-    }
-
-    override fun observeCommunityServers(): Flow<AppResult<List<com.libra.app.domain.model.CommunityServer>>> = delegate.observeCommunityServers()
-    override suspend fun createCommunityServer(name: String, description: String): AppResult<com.libra.app.domain.model.CommunityServer> = delegate.createCommunityServer(name, description)
-    override suspend fun updateCommunityServer(serverId: String, name: String, description: String): AppResult<Unit> = delegate.updateCommunityServer(serverId, name, description)
-
-    override suspend fun joinCommunityServer(serverId: String): AppResult<Unit> {
-        val result = delegate.joinCommunityServer(serverId)
-        val uid = requireUid()
-        if (result is AppResult.Success && uid != null) runCatching { ref("serverMessageMembers/$serverId/$uid")?.setValue(true)?.await() }
-        return result
-    }
-
-    override fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>> = delegate.observeServerMembers(serverId)
-
-    override suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit> {
-        val result = delegate.setServerMemberRole(serverId, memberId, role)
-        if (result is AppResult.Success) runCatching { ref("serverMessageMembers/$serverId/$memberId")?.setValue(true)?.await() }
-        return result
-    }
-
-    override suspend fun removeServerMember(serverId: String, memberId: String): AppResult<Unit> {
-        val result = delegate.removeServerMember(serverId, memberId)
-        if (result is AppResult.Success) runCatching { ref("serverMessageMembers/$serverId/$memberId")?.removeValue()?.await() }
-        return result
-    }
-
-    override suspend fun leaveCommunityServer(serverId: String): AppResult<Unit> {
-        val result = delegate.leaveCommunityServer(serverId)
-        val uid = requireUid()
-        if (result is AppResult.Success && uid != null) runCatching { ref("serverMessageMembers/$serverId/$uid")?.removeValue()?.await() }
-        return result
     }
 
     override fun observeServerMessages(serverId: String, limit: Long): Flow<AppResult<List<ServerMessage>>> = callbackFlow {
