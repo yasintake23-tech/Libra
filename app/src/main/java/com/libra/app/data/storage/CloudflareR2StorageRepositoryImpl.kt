@@ -145,12 +145,15 @@ class CloudflareR2StorageRepositoryImpl(
         }
 
     override fun getPublicCdnUrl(fileKey: String): String {
-        if (fileKey.isBlank()) return fileKey
-        if (fileKey.startsWith("http://") || fileKey.startsWith("https://")) return fileKey
+        val raw = fileKey.trim()
+        if (raw.isBlank()) return fileKey
 
-        val key = config.objectKeyFromValue(context, fileKey) ?: return fileKey
         val publicBase = config.publicBaseUrl(context)
-        if (publicBase.isBlank()) return fileKey
+        if (publicBase.isNotBlank() && raw == publicBase) return raw
+
+        val key = config.objectKeyFromValue(context, raw)
+        if (key == null) return raw
+        if (publicBase.isBlank()) return raw
 
         return publicBase + "/" + key
             .split("/")
