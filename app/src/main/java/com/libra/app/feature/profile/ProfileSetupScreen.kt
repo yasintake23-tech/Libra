@@ -40,8 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.libra.app.data.storage.CloudflareR2StorageConfig
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.AppButton
 import com.libra.app.ui.components.UserAvatar
@@ -139,17 +137,7 @@ fun ProfileSetupScreen(
                 val imageModel: Any = if (selectedUri != null) {
                     selectedUri
                 } else {
-                    ImageRequest.Builder(context)
-                        .data(state.profile.profileImageUrl)
-                        .apply {
-                            if (CloudflareR2StorageConfig.isObjectApiUrl(state.profile.profileImageUrl)) {
-                                val token = CloudflareR2StorageConfig.apiToken(context)
-                                if (token.isNotBlank()) {
-                                    addHeader("Authorization", "Bearer " + token)
-                                }
-                            }
-                        }
-                        .build()
+                    com.libra.app.core.di.ServiceLocator.storageRepository.getPublicCdnUrl(state.profile.profileImageUrl)
                 }
                 AsyncImage(
                     model = imageModel,
