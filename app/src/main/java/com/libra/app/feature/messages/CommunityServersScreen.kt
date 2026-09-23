@@ -2,6 +2,8 @@ package com.libra.app.feature.messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +22,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.IntOffset
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.di.ServiceLocator
@@ -27,9 +33,13 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @Composable
 fun CommunityServersScreen(
@@ -184,6 +194,15 @@ private fun ServerChatScreen(
     var messages by remember(server.id) { mutableStateOf<List<ServerMessage>>(emptyList()) }
     var error by remember(server.id) { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
+    var replyTarget by remember { mutableStateOf<ServerMessage?>(null) }
+    var actionMessage by remember { mutableStateOf<ServerMessage?>(null) }
+    var editingMessage by remember { mutableStateOf<ServerMessage?>(null) }
+    var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingUrl by remember { mutableStateOf("") }
+    var pendingType by remember { mutableStateOf("image/jpeg") }
+    var uploading by remember { mutableStateOf(false) }
+    var progress by remember { mutableIntStateOf(0) }
+    var mediaError by remember { mutableStateOf<String?>(null) }
     var showMembers by remember { mutableStateOf(false) }
     var showManage by remember { mutableStateOf(false) }
     var actionError by remember(server.id) { mutableStateOf<String?>(null) }
@@ -192,6 +211,39 @@ private fun ServerChatScreen(
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        pendingUri = uri
+        pendingUrl = ""
+        pendingType = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+        uploading = true
+        progress = 0
+        mediaError = null
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                } ?: throw IllegalStateException("Fotoğraf okunamadı.")
+                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
+                val ext = pendingType.substringAfter('/').ifBlank { "jpg" }.take(8)
+                val request = StorageUploadRequest(
+                    fileName = "server-" + System.currentTimeMillis() + "." + ext,
+                    bytes = bytes,
+                    contentType = pendingType,
+                    targetDirectory = "users/" + currentUid
+                )
+                when (val result = ServiceLocator.storageRepository.uploadMedia(request) { progress = it }.first()) {
+                    is AppResult.Success -> { pendingUrl = result.data; progress = 100 }
+                    is AppResult.Error -> mediaError = result.error.message
+                }
+            } catch (e: Exception) {
+                mediaError = e.localizedMessage ?: "Fotoğraf yüklenemedi."
+            } finally { uploading = false }
+        }
+    }
 
     LaunchedEffect(server.id) {
         repository.observeServerMembers(server.id).collect { result ->
@@ -234,6 +286,18 @@ private fun ServerChatScreen(
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
         actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
+        mediaError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
+
+        if (pendingUri != null) {
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(pendingUri, "Gönderilecek fotoğraf", Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(if (uploading) "Fotoğraf yükleniyor %" + progress else if (pendingUrl.isNotBlank()) "Fotoğraf hazır ✓" else "Fotoğraf hazırlanıyor…")
+                    if (uploading) LinearProgressIndicator({ progress / 100f }, Modifier.fillMaxWidth())
+                }
+                IconButton(onClick = { pendingUri = null; pendingUrl = ""; mediaError = null }) { Icon(Icons.Default.Close, "Kaldır") }
+            }
+        }
 
         LazyColumn(
             state = listState,
@@ -242,39 +306,64 @@ private fun ServerChatScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages, key = { it.id }) { message ->
+                var dragX by remember(message.id) { mutableFloatStateOf(0f) }
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth()
+                        .pointerInput(message.id + "-swipe") {
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, amount -> dragX = (dragX + amount).coerceIn(0f, 96f) },
+                                onDragEnd = { if (dragX >= 64f) replyTarget = message; dragX = 0f }
+                            )
+                        }
+                        .offset { IntOffset(dragX.roundToInt(), 0) },
                     horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
                     verticalAlignment = Alignment.Bottom
                 ) {
                     if (message.senderId != currentUid) {
-                        UserAvatar(
-                            message.senderPhotoUrl,
-                            message.senderName.take(1).uppercase(),
-                            size = 30.dp
-                        )
+                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp)
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
                         color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.pointerInput(message.id + "-tap") {
+                            detectTapGestures(
+                                onDoubleTap = { scope.launch { repository.toggleServerMessageReaction(server.id, message.id, "❤️") } },
+                                onLongPress = { actionMessage = message }
+                            )
+                        }
                     ) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                            if (message.senderId != currentUid) {
-                                Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(2.dp))
+                        Column(Modifier.widthIn(max = 320.dp).padding(6.dp)) {
+                            if (message.senderId != currentUid) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp, 4.dp))
+                            if (message.replyToMessageId.isNotBlank()) {
+                                Surface(color = androidx.compose.ui.graphics.Color(0xFFFFE8D5), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Text(message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" }, color = androidx.compose.ui.graphics.Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                        Text(message.replyToText.ifBlank { "📷 Fotoğraf" }, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                Spacer(Modifier.height(5.dp))
                             }
-                            Text(message.text)
+                            if (message.mediaUrl.isNotBlank()) AsyncImage(message.mediaUrl, "Gönderilen fotoğraf", Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                            if (message.text.isNotBlank()) Text(message.text, Modifier.padding(8.dp, 6.dp))
+                            if (message.editedAt != null) Text("düzenlendi", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+                            if (message.reactions.isNotEmpty()) Text(message.reactions.values.distinct().joinToString(" "), Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
                         }
                     }
                 }
             }
         }
 
+        replyTarget?.let { RichReplyBanner(it.senderName, it.text.ifBlank { "📷 Fotoğraf" }, { replyTarget = null }) }
+        editingMessage?.let { RichReplyBanner("Mesaj düzenleniyor", it.text, { editingMessage = null; draft = "" }) }
+
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(enabled = !uploading && editingMessage == null, onClick = { picker.launch("image/*") }) {
+                Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
+            }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 1000) draft = it },
@@ -283,20 +372,39 @@ private fun ServerChatScreen(
                 maxLines = 4
             )
             IconButton(
-                enabled = draft.isNotBlank(),
+                enabled = (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
                 onClick = {
-                    val text = draft
-                    draft = ""
-                    scope.launch {
-                        when (val result = repository.sendServerMessage(server.id, text)) {
-                            is AppResult.Success -> error = null
-                            is AppResult.Error -> error = result.error.message
-                        }
+                    val text = draft.trim()
+                    val edit = editingMessage
+                    if (edit != null) {
+                        scope.launch { repository.editServerMessage(server.id, edit.id, text) }
+                        editingMessage = null
+                    } else if (pendingUrl.isNotBlank()) {
+                        scope.launch { repository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget) }
+                        pendingUri = null
+                        pendingUrl = ""
+                        replyTarget = null
+                    } else {
+                        scope.launch { repository.sendServerMessage(server.id, text, replyTarget) }
+                        replyTarget = null
                     }
+                    draft = ""
                 }
             ) { Icon(Icons.Default.Send, "Gönder") }
         }
     }
+    actionMessage?.let { message ->
+        RichMessageActionSheet(
+            canEdit = message.senderId == currentUid && message.mediaUrl.isBlank(),
+            canDelete = message.senderId == currentUid,
+            onDismiss = { actionMessage = null },
+            onReply = { replyTarget = message; actionMessage = null },
+            onReaction = { emoji -> scope.launch { repository.toggleServerMessageReaction(server.id, message.id, emoji) }; actionMessage = null },
+            onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
+            onDelete = { scope.launch { repository.deleteServerMessage(server.id, message.id) }; actionMessage = null }
+        )
+    }
+
     if (showManage && server.ownerId == currentUid) {
         AlertDialog(
             onDismissRequest = { showManage = false },
