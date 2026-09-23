@@ -4,7 +4,7 @@
     <string name="google_web_client_id">705929327966-tgu51har6f4apcnvr36ov8isflvrpsc8.apps.googleusercontent.com</string>
     <string name="cloudflare_r2_account_id">e214c732894d106219c976c7db5bb8d2</string>
     <string name="cloudflare_r2_bucket_name">libra-media</string>
-    <string name="cloudflare_r2_endpoint">https://e214c732894d106219c976c7db5bb8d2.eu.r2.cloudflarestorage.com</string>
+    <string name="cloudflare_r2_endpoint">https://e214c732894d106219c976c7db5bb8d2.r2.cloudflarestorage.com</string>
     <string name="cloudflare_r2_access_key_id"></string>
     <string name="cloudflare_r2_secret_access_key"></string>
     <string name="cloudflare_r2_public_base_url">https://pub-6a68b6b4caa84c10ab277cd5ee1f9cc4.r2.dev</string>
