@@ -92,13 +92,13 @@ jobs:
       - name: Inject R2 Worker endpoint
         shell: bash
         env:
-          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT }}
+          R2_WORKER_ENDPOINT: ${{ secrets.R2_WORKER_ENDPOINT || vars.R2_WORKER_ENDPOINT }}
         run: |
           set -euo pipefail
 
           if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
-            echo "::error::R2_WORKER_ENDPOINT Actions secret eksik. Fotoğraf yükleme için Worker endpoint zorunludur."
-            exit 1
+            echo "::warning::R2_WORKER_ENDPOINT tanımlı değil. APK build devam edecek ve uygulamadaki Firebase Storage fallback kullanılacak."
+            exit 0
           fi
 
           python3 - <<'PY'
@@ -156,9 +156,14 @@ jobs:
           source "$RUNNER_TEMP/r2.env"
           set +a
 
-          if [[ -z "$R2_ENDPOINT" || -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
-            echo "::error::R2 doğrulaması için Worker endpoint ve CLOUDFLARE_R2_API_TOKEN zorunludur."
-            exit 1
+          if [[ -z "$R2_ENDPOINT" ]]; then
+            echo "::warning::R2 Worker endpoint yok. Direct R2 doğrulaması atlandı; uygulama Firebase Storage fallback ile derlenecek."
+            exit 0
+          fi
+
+          if [[ -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
+            echo "::warning::CLOUDFLARE_R2_API_TOKEN yok. Direct R2 doğrulaması atlandı; uygulama yine Firebase Storage fallback'i kullanabilir."
+            exit 0
           fi
 
           echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
