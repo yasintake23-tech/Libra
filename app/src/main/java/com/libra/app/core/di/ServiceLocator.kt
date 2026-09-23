@@ -23,7 +23,7 @@ object ServiceLocator {
     val authRepository: AuthRepository by lazy { FirebaseAuthRepositoryImpl(userRepository) }
     val bookRepository: BookRepository by lazy { BookRepositoryImpl() }
     private val firestoreChatRepository: ChatRepository by lazy { FirebaseChatRepositoryImpl(userRepository) }
-    val chatRepository: ChatRepository by lazy { RealtimeChatRepositoryImpl(userRepository, firestoreChatRepository) }
+    val chatRepository: ChatRepository by lazy { RealtimeChatRepositoryImpl(userRepository, firestoreChatRepository, storageRepository) }
     val postRepository: PostRepository by lazy { FirebasePostRepositoryImpl(userRepository) }
     val notificationRepository: NotificationRepository by lazy { FirebaseNotificationRepositoryImpl() }
 
