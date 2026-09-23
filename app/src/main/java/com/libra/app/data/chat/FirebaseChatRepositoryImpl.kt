@@ -190,10 +190,14 @@ class FirebaseChatRepositoryImpl(
     }
 
 
-    override suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String, replyTo: DirectMessage?): AppResult<Unit> {
+    override suspend fun sendDirectMediaMessage(recipientId: String, mediaUrl: String, mediaType: String, text: String, replyTo: DirectMessage?): AppResult<Unit> {
         val sender = auth.currentUser ?: return AppResult.Error(AppError.Auth("Medya göndermek için giriş yapmalısın."))
+        val cleanText = text.trim()
         if (recipientId.isBlank() || recipientId == sender.uid || mediaUrl.isBlank()) {
             return AppResult.Error(AppError.Validation("Geçersiz medya mesajı."))
+        }
+        if (cleanText.length > 1000) {
+            return AppResult.Error(AppError.Validation("Mesaj en fazla 1000 karakter olabilir."))
         }
         return try {
             val senderProfile = (userRepository.getUserProfileFresh(sender.uid) as? AppResult.Success)?.data
@@ -207,7 +211,9 @@ class FirebaseChatRepositoryImpl(
             val base = mapOf(
                 "participants" to ids,
                 "updatedAt" to now,
-                "lastMessage" to if (mediaType.startsWith("image/")) "📷 Fotoğraf" else "📎 Dosya",
+                "lastMessage" to if (cleanText.isBlank()) {
+                    if (mediaType.startsWith("image/")) "📷 Fotoğraf" else "📎 Dosya"
+                } else cleanText,
                 "otherUserName_" + sender.uid to recipientProfile.displayName,
                 "otherUserUsername_" + sender.uid to recipientProfile.username,
                 "otherUserPhotoUrl_" + sender.uid to recipientProfile.profileImageUrl,
@@ -225,7 +231,7 @@ class FirebaseChatRepositoryImpl(
                     senderId = sender.uid,
                     senderPhotoUrl = senderProfile.profileImageUrl,
                     recipientId = recipientId,
-                    text = "",
+                    text = cleanText,
                     mediaUrl = mediaUrl,
                     mediaType = mediaType,
                     createdAt = now,
@@ -245,7 +251,7 @@ class FirebaseChatRepositoryImpl(
                     actorPhotoUrl = senderProfile.profileImageUrl,
                     type = "MESSAGE",
                     title = "Yeni medya mesajı",
-                    body = senderProfile.displayName + " sana bir medya gönderdi.",
+                    body = senderProfile.displayName + if (cleanText.isBlank()) " sana bir medya gönderdi." else " sana bir fotoğraf ve mesaj gönderdi.",
                     referenceId = conversationId,
                     createdAt = now
                 )
