@@ -230,17 +230,41 @@ fun DirectMessagesScreen(
                     contentPadding = PaddingValues(bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    item { Text("Sohbetlerin", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
+                    item {
+                        Text(
+                            "Sohbetlerin",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+
                     if (conversations.isEmpty()) {
                         item {
-                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                                Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.ChatBubbleOutline, null, modifier = Modifier.size(42.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        Icons.Default.ChatBubbleOutline,
+                                        null,
+                                        modifier = Modifier.size(42.dp)
+                                    )
                                     Spacer(Modifier.height(10.dp))
                                     Text("Henüz bir sohbetin yok.", fontWeight = FontWeight.Bold)
-                                    Text("Birinin profiline girip Mesaj'a dokun.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        "Birinin profiline girip Mesaj'a dokun.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                     TextButton(onClick = onFindFriends) {
-                                        Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            Icons.Default.PersonAdd,
+                                            null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                         Text("  Arkadaş bul")
                                     }
                                 }
@@ -253,6 +277,7 @@ fun DirectMessagesScreen(
                                 conversation.otherUserUsername.contains(conversationSearch, ignoreCase = true) ||
                                 conversation.lastMessage.contains(conversationSearch, ignoreCase = true)
                         }
+
                         if (visibleConversations.isEmpty()) {
                             item {
                                 Text(
@@ -263,47 +288,80 @@ fun DirectMessagesScreen(
                             }
                         } else {
                             items(visibleConversations, key = { it.id }) { conversation ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    selectedUser = UserProfile(
-                                        uid = conversation.otherUserId,
-                                        displayName = conversation.otherUserName,
-                                        username = conversation.otherUserUsername,
-                                        profileImageUrl = conversation.otherUserPhotoUrl
-                                    )
-                                    viewModel.openConversation(conversation)
-                                },
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    UserAvatar(conversation.otherUserPhotoUrl, conversation.otherUserName.take(1).uppercase(), size = 48.dp)
-                                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                        Text(conversation.otherUserName, fontWeight = FontWeight.Bold)
-                                        Text("@"+conversation.otherUserUsername, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        if (conversation.lastMessage.isNotBlank()) Text(conversation.lastMessage, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    if (conversation.unreadCount > 0) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primary
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedUser = UserProfile(
+                                                uid = conversation.otherUserId,
+                                                displayName = conversation.otherUserName,
+                                                username = conversation.otherUserUsername,
+                                                profileImageUrl = conversation.otherUserPhotoUrl
+                                            )
+                                            viewModel.openConversation(conversation)
+                                        },
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        UserAvatar(
+                                            conversation.otherUserPhotoUrl,
+                                            conversation.otherUserName.take(1).uppercase(),
+                                            size = 48.dp
+                                        )
+                                        Column(
+                                            Modifier
+                                                .weight(1f)
+                                                .padding(horizontal = 12.dp)
                                         ) {
                                             Text(
-                                                conversation.unreadCount.coerceAtMost(99).toString(),
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                                conversation.otherUserName,
+                                                fontWeight = FontWeight.Bold
                                             )
+                                            Text(
+                                                "@" + conversation.otherUserUsername,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            if (conversation.lastMessage.isNotBlank()) {
+                                                Text(
+                                                    conversation.lastMessage,
+                                                    maxLines = 1,
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
                                         }
-                                        Spacer(Modifier.width(6.dp))
+                                        if (conversation.unreadCount > 0) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.primary
+                                            ) {
+                                                Text(
+                                                    conversation.unreadCount.coerceAtMost(99).toString(),
+                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(
+                                                        horizontal = 7.dp,
+                                                        vertical = 4.dp
+                                                    )
+                                                )
+                                            }
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Icon(Icons.Default.ChevronRight, null)
                                     }
-                                    Icon(Icons.Default.ChevronRight, null)
                                 }
                             }
                         }
                     }
                 }
             }
-            MessageSection.COMMUNITIES -> CommunityList(onGlobalChatClick, onServersClick)
+
+            MessageSection.COMMUNITIES -> {
+                CommunityList(onGlobalChatClick, onServersClick)
+            }
         }
     }
 }
