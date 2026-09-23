@@ -5,5 +5,4 @@
     <string name="r2_upload_endpoint"></string>
     <string name="cloudflare_r2_account_id">e214c732894d106219c976c7db5bb8d2</string>
     <string name="cloudflare_r2_bucket_name">libra-media</string>
-    <string name="cloudflare_r2_api_token"></string>
 </resources>
