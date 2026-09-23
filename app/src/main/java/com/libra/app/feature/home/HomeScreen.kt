@@ -404,7 +404,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     }
                 } else {
                     AsyncImage(
-                        model = post.mediaUrl,
+                        model = ServiceLocator.storageRepository.getPublicCdnUrl(post.mediaUrl),
                         contentDescription = "Gönderi fotoğrafı",
                         modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
                         contentScale = ContentScale.Crop,
