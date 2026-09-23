@@ -9,7 +9,10 @@
     },
     "books": {
       ".read": "auth != null && ((query.orderByChild === 'ownerId' && query.equalTo === auth.uid) || (query.orderByChild === 'status' && query.equalTo === 'PUBLISHED'))",
-      ".indexOn": ["ownerId", "status"],
+      ".indexOn": [
+        "ownerId",
+        "status"
+      ],
       "$bookId": {
         ".write": "auth != null && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
         ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()"
@@ -39,6 +42,70 @@
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "globalMessages": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "createdAt"
+      ],
+      "$messageId": {
+        ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('createdAt').isNumber()",
+        "reactions": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && data.parent().parent().child('senderId').exists()"
+          }
+        }
+      }
+    },
+    "directConversations": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null",
+        ".indexOn": [
+          "updatedAt"
+        ]
+      }
+    },
+    "directMessages": {
+      "$conversationId": {
+        ".read": "auth != null && root.child('directConversations').child(auth.uid).child($conversationId).exists()",
+        ".indexOn": [
+          "createdAt"
+        ],
+        "$messageId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('recipientId').isString() && newData.child('createdAt').isNumber()",
+          "reactions": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          }
+        }
+      }
+    },
+    "serverMessageMembers": {
+      "$serverId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "serverMessages": {
+      "$serverId": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "createdAt"
+        ],
+        "$messageId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('createdAt').isNumber()",
+          "reactions": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          }
+        }
       }
     }
   }
