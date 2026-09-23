@@ -272,7 +272,7 @@ class RealtimeChatRepositoryImpl(
 
         val updates = mutableMapOf<String, Any?>()
         updates["directMessages/" + conversation + "/" + messageRef.key] = message
-        updates["directConversations/$sender.uid/$conversation"] = summary(
+        updates["directConversations/" + sender.uid + "/" + conversation] = summary(
             recipientId, recipientProfile.displayName, recipientProfile.username, recipientProfile.profileImageUrl, lastText, now, 0
         )
         updates["directConversations/$recipientId/$conversation"] = summary(
