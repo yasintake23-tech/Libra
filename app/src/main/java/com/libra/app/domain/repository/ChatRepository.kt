@@ -4,12 +4,17 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
+import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
 import kotlinx.coroutines.flow.Flow
 
 interface ChatRepository {
     fun observeGlobalMessages(limit: Long = 100): Flow<AppResult<List<GlobalChatMessage>>>
-    suspend fun sendGlobalMessage(text: String): AppResult<Unit>
+    suspend fun sendGlobalMessage(text: String, replyTo: GlobalChatMessage? = null): AppResult<Unit>
+    suspend fun sendGlobalMediaMessage(mediaUrl: String, mediaType: String, text: String = "", replyTo: GlobalChatMessage? = null): AppResult<Unit>
+    suspend fun editGlobalMessage(messageId: String, text: String): AppResult<Unit>
+    suspend fun deleteGlobalMessage(messageId: String): AppResult<Unit>
+    suspend fun toggleGlobalMessageReaction(messageId: String, emoji: String): AppResult<Unit>
     fun observeDirectConversations(uid: String): Flow<AppResult<List<DirectConversation>>>
     fun observeDirectMessages(conversationId: String, limit: Long = 100): Flow<AppResult<List<DirectMessage>>>
     suspend fun sendDirectMessage(recipientId: String, text: String, replyTo: DirectMessage? = null): AppResult<Unit>
@@ -27,5 +32,9 @@ interface ChatRepository {
     suspend fun removeServerMember(serverId: String, memberId: String): AppResult<Unit>
     suspend fun leaveCommunityServer(serverId: String): AppResult<Unit>
     fun observeServerMessages(serverId: String, limit: Long = 100): Flow<AppResult<List<com.libra.app.domain.model.ServerMessage>>>
-    suspend fun sendServerMessage(serverId: String, text: String): AppResult<Unit>
+    suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null): AppResult<Unit>
+    suspend fun sendServerMediaMessage(serverId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: ServerMessage? = null): AppResult<Unit>
+    suspend fun editServerMessage(serverId: String, messageId: String, text: String): AppResult<Unit>
+    suspend fun deleteServerMessage(serverId: String, messageId: String): AppResult<Unit>
+    suspend fun toggleServerMessageReaction(serverId: String, messageId: String, emoji: String): AppResult<Unit>
 }
