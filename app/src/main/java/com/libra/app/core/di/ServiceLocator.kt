@@ -7,8 +7,6 @@ import com.libra.app.data.chat.FirebaseChatRepositoryImpl
 import com.libra.app.data.chat.RealtimeChatRepositoryImpl
 import com.libra.app.data.post.FirebasePostRepositoryImpl
 import com.libra.app.data.storage.CloudflareR2StorageRepositoryImpl
-import com.libra.app.data.storage.FirebaseStorageRepositoryImpl
-import com.libra.app.data.storage.HybridStorageRepositoryImpl
 import com.libra.app.data.user.FirebaseUserRepositoryImpl
 import com.libra.app.data.notification.FirebaseNotificationRepositoryImpl
 import com.libra.app.domain.repository.AiAssistantRepository
