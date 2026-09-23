@@ -176,7 +176,10 @@ class RealtimeChatRepositoryImpl(
         return try {
             messageRef.setValue(data).await()
             AppResult.Success(Unit)
-        } catch (e: Exception) { error("Mesaj gönderilemedi.", e) }
+        } catch (e: Exception) {
+            cleanupUploadedMedia(mediaUrl)
+            error("Mesaj gönderilemedi.", e)
+        }
     }
 
     override suspend fun editGlobalMessage(messageId: String, text: String): AppResult<Unit> =
@@ -284,9 +287,10 @@ class RealtimeChatRepositoryImpl(
         )
 
         return try {
-            (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")).updateChildren(updates).await()
-            runCatching {
-                notificationRepository.create(
+            (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı."))
+                .updateChildren(updates)
+                .await()
+            notificationRepository.create(
                     AppNotification(
                         recipientId = recipientId,
                         actorId = sender.uid,
@@ -302,7 +306,10 @@ class RealtimeChatRepositoryImpl(
                 )
             }
             AppResult.Success(Unit)
-        } catch (e: Exception) { error("Mesaj gönderilemedi.", e) }
+        } catch (e: Exception) {
+            cleanupUploadedMedia(mediaUrl)
+            error("Mesaj gönderilemedi.", e)
+        }
     }
 
     override suspend fun editDirectMessage(conversationId: String, messageId: String, text: String): AppResult<Unit> {
@@ -376,7 +383,10 @@ class RealtimeChatRepositoryImpl(
         return try {
             messageRef.setValue(data).await()
             AppResult.Success(Unit)
-        } catch (e: Exception) { error("Sunucu mesajı gönderilemedi.", e) }
+        } catch (e: Exception) {
+            cleanupUploadedMedia(mediaUrl)
+            error("Sunucu mesajı gönderilemedi.", e)
+        }
     }
 
     override suspend fun editServerMessage(serverId: String, messageId: String, text: String): AppResult<Unit> =
@@ -462,9 +472,11 @@ class RealtimeChatRepositoryImpl(
             val updates = mutableMapOf<String, Any?>()
 
             if (latest == null) {
-                if (mySummary.exists()) updates["directConversations/$uid/$conversationId"] = null
+                updates["directConversations/$uid/$conversationId/lastMessage"] = ""
+                updates["directConversations/$uid/$conversationId/updatedAt"] = 0L
                 if (otherSummaryRef.get().await().exists()) {
-                    updates["directConversations/$otherUid/$conversationId"] = null
+                    updates["directConversations/$otherUid/$conversationId/lastMessage"] = ""
+                    updates["directConversations/$otherUid/$conversationId/updatedAt"] = 0L
                 }
             } else {
                 val lastText = latest.text.ifBlank {
@@ -488,6 +500,11 @@ class RealtimeChatRepositoryImpl(
         } catch (e: Exception) {
             error("Sohbet özeti güncellenemedi.", e)
         }
+    }
+
+    private suspend fun cleanupUploadedMedia(mediaKey: String) {
+        if (mediaKey.isBlank()) return
+        runCatching { storageRepository.deleteMedia(mediaKey) }
     }
 
     private suspend fun toggleReaction(messageRef: DatabaseReference?, emoji: String): AppResult<Unit> {
