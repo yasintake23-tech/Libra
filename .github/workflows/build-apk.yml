@@ -99,9 +99,11 @@ jobs:
           set -euo pipefail
           [[ -n "$R2_KEY_ID" ]] || { echo "::error::R2_KEY_ID eksik."; exit 1; }
           [[ -n "$R2_SECRET" ]] || { echo "::error::R2_SECRET eksik."; exit 1; }
+          [[ -n "$R2_PUBLIC" ]] || { echo "::error::R2_PUBLIC eksik. Cloudflare R2 public URL gerekli."; exit 1; }
+          [[ "$R2_PUBLIC" == https://* ]] || { echo "::error::R2_PUBLIC HTTPS bir URL olmalı."; exit 1; }
           echo "::add-mask::$R2_KEY_ID"
           echo "::add-mask::$R2_SECRET"
-          [[ -z "$R2_PUBLIC" ]] || echo "::add-mask::$R2_PUBLIC"
+          echo "::add-mask::$R2_PUBLIC"
 
           python3 - <<'PY'
           from pathlib import Path
