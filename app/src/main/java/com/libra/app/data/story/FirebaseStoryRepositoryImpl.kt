@@ -49,10 +49,6 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
             ).await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
-            if (mediaUrl.isNotBlank()) {
-                // The repository owns the write boundary, but media cleanup belongs
-                // to the caller/storage lifecycle and is handled by HomeViewModel.
-            }
             AppResult.Error(AppError.Database("Hikâye paylaşılırken hata oluştu.", e))
         }
     }
