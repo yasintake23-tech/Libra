@@ -97,8 +97,8 @@ jobs:
           set -euo pipefail
 
           if [[ -z "$R2_WORKER_ENDPOINT" ]]; then
-            echo "::warning::R2_WORKER_ENDPOINT tanımlı değil. APK build devam edecek ve uygulamadaki Firebase Storage fallback kullanılacak."
-            exit 0
+            echo "::error::R2_WORKER_ENDPOINT tanımlı değil. Libra medya altyapısı R2-only olduğu için build durduruldu."
+            exit 1
           fi
 
           python3 - <<'PY'
@@ -157,14 +157,27 @@ jobs:
           set +a
 
           if [[ -z "$R2_ENDPOINT" ]]; then
-            echo "::warning::R2 Worker endpoint yok. Direct R2 doğrulaması atlandı; uygulama Firebase Storage fallback ile derlenecek."
-            exit 0
+            echo "::error::R2 Worker endpoint yapılandırması eksik. R2 doğrulaması zorunlu."
+            exit 1
           fi
 
           if [[ -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
-            echo "::warning::CLOUDFLARE_R2_API_TOKEN yok. Direct R2 doğrulaması atlandı; uygulama yine Firebase Storage fallback'i kullanabilir."
-            exit 0
+            echo "::error::CLOUDFLARE_R2_API_TOKEN eksik. R2 doğrulaması zorunlu."
+            exit 1
           fi
+
+          HEALTH_URL="${R2_ENDPOINT%/}/health"
+          curl --fail --silent --show-error "$HEALTH_URL" > "$RUNNER_TEMP/r2-health.json"
+
+          python3 - <<'PY' "$RUNNER_TEMP/r2-health.json"
+          import json
+          import sys
+
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if payload.get("ok") is not True or payload.get("storage") != "r2":
+              raise SystemExit("R2 Worker health doğrulaması başarısız: " + repr(payload))
+          print("R2 Worker health başarılı.")
+          PY
 
           echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
           API_BASE="https://api.cloudflare.com/client/v4/accounts/$R2_ACCOUNT/r2/buckets/$R2_BUCKET/objects"
