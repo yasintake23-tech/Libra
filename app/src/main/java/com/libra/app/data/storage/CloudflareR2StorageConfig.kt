@@ -44,8 +44,8 @@ object CloudflareR2StorageConfig {
             publicBaseUrl(context).startsWith("https://")
 
     /**
-     * Converts values from current and legacy storage formats into the canonical
-     * object key used by Firebase/RTDB: users/<uid>/...
+     * Converts current and legacy storage values into the canonical key:
+     * users/<uid>/...
      */
     fun objectKeyFromValue(context: Context, value: String): String? {
         val raw = value.trim()
@@ -53,22 +53,23 @@ object CloudflareR2StorageConfig {
 
         val publicBase = publicBaseUrl(context)
         if (raw.startsWith(publicBase + "/")) {
-            return canonicalKey(raw.removePrefix(publicBase + "/"))
+            return canonicalKey(context, raw.removePrefix(publicBase + "/"))
         }
 
         if (raw.startsWith("https://") && raw.contains(".r2.dev/")) {
-            return canonicalKey(raw.substringAfter(".r2.dev/"))
+            return canonicalKey(context, raw.substringAfter(".r2.dev/"))
         }
 
         val exactEndpointPrefix = endpoint(context).trimEnd('/') + "/"
         if (raw.startsWith(exactEndpointPrefix)) {
-            return canonicalKey(raw.removePrefix(exactEndpointPrefix))
+            return canonicalKey(context, raw.removePrefix(exactEndpointPrefix))
         }
 
         // Backward compatibility with older non-jurisdictional S3 URLs.
-        val accountEndpointPrefix = "https://${accountId(context)}.r2.cloudflarestorage.com/"
+        val accountEndpointPrefix =
+            "https://" + accountId(context) + ".r2.cloudflarestorage.com/"
         if (raw.startsWith(accountEndpointPrefix)) {
-            return canonicalKey(raw.removePrefix(accountEndpointPrefix))
+            return canonicalKey(context, raw.removePrefix(accountEndpointPrefix))
         }
 
         return objectKeyFromValue(raw)
@@ -80,23 +81,28 @@ object CloudflareR2StorageConfig {
 
         return when {
             raw.startsWith("http://") || raw.startsWith("https://") -> null
-            "/media/" in raw -> canonicalKey(raw.substringAfter("/media/"))
-            "/objects/" in raw -> canonicalKey(raw.substringAfter("/objects/"))
-            else -> canonicalKey(raw)
+            "/media/" in raw -> canonicalRawKey(raw.substringAfter("/media/"))
+            "/objects/" in raw -> canonicalRawKey(raw.substringAfter("/objects/"))
+            else -> canonicalRawKey(raw)
         }
     }
 
-    private fun canonicalKey(value: String): String? {
+    private fun canonicalKey(context: Context, value: String): String? {
         val decoded = Uri.decode(value).trim('/')
+        val bucket = context.getString(R.string.cloudflare_r2_bucket_name).trim()
         val withoutBucket = decoded
-            .removePrefix("/${DEFAULT_BUCKET_PREFIX}/")
-            .removePrefix("${DEFAULT_BUCKET_PREFIX}/")
+            .removePrefix(bucket + "/")
+            .removePrefix("/" + bucket + "/")
 
-        return withoutBucket
-            .takeIf { it.startsWith("users/") && it.length > "users/".length }
+        return canonicalRawKey(withoutBucket)
     }
 
-    private const val DEFAULT_BUCKET_PREFIX = "libra-media"
+    private fun canonicalRawKey(value: String): String? {
+        val decoded = Uri.decode(value).trim('/')
+        return decoded.takeIf {
+            it.startsWith("users/") && it.length > "users/".length
+        }
+    }
 
     private const val DEFAULT_PUBLIC_BASE_URL =
         "https://pub-6a68b6b4caa84c10ab277cd5ee1f9cc4.r2.dev"
