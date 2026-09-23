@@ -3,8 +3,8 @@ package com.libra.app.core.di
 import com.libra.app.data.ai.AiAssistantRepositoryImpl
 import com.libra.app.data.auth.FirebaseAuthRepositoryImpl
 import com.libra.app.data.book.BookRepositoryImpl
-import com.libra.app.data.chat.FirebaseChatRepositoryImpl
 import com.libra.app.data.chat.RealtimeChatRepositoryImpl
+import com.libra.app.data.community.FirebaseCommunityRepositoryImpl
 import com.libra.app.data.post.FirebasePostRepositoryImpl
 import com.libra.app.data.storage.CloudflareR2StorageRepositoryImpl
 import com.libra.app.data.user.FirebaseUserRepositoryImpl
@@ -13,6 +13,7 @@ import com.libra.app.domain.repository.AiAssistantRepository
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.ChatRepository
+import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.PostRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
@@ -22,8 +23,8 @@ object ServiceLocator {
     val userRepository: UserRepository by lazy { FirebaseUserRepositoryImpl() }
     val authRepository: AuthRepository by lazy { FirebaseAuthRepositoryImpl(userRepository) }
     val bookRepository: BookRepository by lazy { BookRepositoryImpl() }
-    private val firestoreChatRepository: ChatRepository by lazy { FirebaseChatRepositoryImpl(userRepository) }
-    val chatRepository: ChatRepository by lazy { RealtimeChatRepositoryImpl(userRepository, firestoreChatRepository, storageRepository) }
+    val communityRepository: CommunityRepository by lazy { FirebaseCommunityRepositoryImpl(userRepository) }
+    val chatRepository: ChatRepository by lazy { RealtimeChatRepositoryImpl(userRepository, storageRepository) }
     val postRepository: PostRepository by lazy { FirebasePostRepositoryImpl(userRepository) }
     val notificationRepository: NotificationRepository by lazy { FirebaseNotificationRepositoryImpl() }
 
