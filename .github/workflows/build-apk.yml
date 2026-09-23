@@ -134,6 +134,15 @@ jobs:
           path.write_text(content, encoding="utf-8")
           PY
 
+      - name: Deploy Realtime Database rules when Firebase token is configured
+        if: ${{ secrets.FIREBASE_TOKEN != '' }}
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest deploy --only database --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
+
       - name: Show toolchain
         shell: bash
         run: |
