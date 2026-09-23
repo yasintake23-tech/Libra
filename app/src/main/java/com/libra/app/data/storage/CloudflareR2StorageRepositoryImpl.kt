@@ -1,14 +1,13 @@
 package com.libra.app.data.storage
 
 import android.content.Context
-import com.amazonaws.HttpMethodName
+import android.net.Uri
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.regions.Region
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.S3ClientOptions
 import com.amazonaws.services.s3.model.DeleteObjectRequest
-import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
 import com.amazonaws.services.s3.model.ObjectMetadata
 import com.amazonaws.services.s3.model.PutObjectRequest
 import com.libra.app.core.result.AppError
@@ -21,8 +20,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
-import java.net.URLEncoder
-import java.util.Date
 import java.util.UUID
 
 class CloudflareR2StorageRepositoryImpl(
@@ -40,14 +37,18 @@ class CloudflareR2StorageRepositoryImpl(
         onProgress: (Int) -> Unit
     ): Flow<AppResult<String>> = flow {
         if (!isConfigured) {
-            emit(AppResult.Error(AppError.Storage("Cloudflare R2 S3 erişim bilgileri eksik.")))
+            emit(
+                AppResult.Error(
+                    AppError.Storage("Cloudflare R2 S3 ve public URL yapılandırması eksik.")
+                )
+            )
             return@flow
         }
         if (request.bytes.isEmpty()) {
             emit(AppResult.Error(AppError.Storage("Yüklenecek dosya boş.")))
             return@flow
         }
-        if (request.bytes.size > 8 * 1024 * 1024) {
+        if (request.bytes.size > MAX_UPLOAD_BYTES) {
             emit(AppResult.Error(AppError.Storage("Dosya 8 MB'dan büyük olamaz.")))
             return@flow
         }
@@ -61,54 +62,82 @@ class CloudflareR2StorageRepositoryImpl(
         val targetDirectory = request.targetDirectory.trim('/').ifBlank { "users/" + userId }
         val ownerDirectory = "users/" + userId
         if (targetDirectory != ownerDirectory) {
-            emit(AppResult.Error(AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")))
+            emit(
+                AppResult.Error(
+                    AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")
+                )
+            )
             return@flow
         }
 
-        val safeFileName = request.fileName.substringAfterLast('/').trim().ifBlank { "file" }
+        val safeFileName = request.fileName
+            .substringAfterLast('/')
+            .trim()
+            .ifBlank { "file" }
         val objectKey = targetDirectory + "/" + UUID.randomUUID() + "-" + safeFileName
 
         try {
             withContext(Dispatchers.IO) {
                 val s3 = createClient()
-                val metadata = ObjectMetadata().apply {
-                    contentType = request.contentType.ifBlank { "application/octet-stream" }
-                    contentLength = request.bytes.size.toLong()
-                    cacheControl = "public, max-age=31536000, immutable"
-                }
-                s3.putObject(
-                    PutObjectRequest(
-                        config.bucketName(context),
-                        objectKey,
-                        ByteArrayInputStream(request.bytes),
-                        metadata
+                try {
+                    val metadata = ObjectMetadata().apply {
+                        contentType = request.contentType.ifBlank { "application/octet-stream" }
+                        contentLength = request.bytes.size.toLong()
+                        cacheControl = "public, max-age=31536000, immutable"
+                    }
+
+                    s3.putObject(
+                        PutObjectRequest(
+                            config.bucketName(context),
+                            objectKey,
+                            ByteArrayInputStream(request.bytes),
+                            metadata
+                        )
                     )
-                )
+                } finally {
+                    s3.shutdown()
+                }
                 onProgress(100)
-                s3.shutdown()
             }
+
             emit(AppResult.Success(objectKey))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            emit(AppResult.Error(AppError.Storage(
-                "R2'ye doğrudan yükleme başarısız: " + (e.localizedMessage ?: "Bilinmeyen hata."),
-                e
-            )))
+            emit(
+                AppResult.Error(
+                    AppError.Storage(
+                        "R2'ye doğrudan yükleme başarısız: " +
+                            (e.localizedMessage ?: "Bilinmeyen hata."),
+                        e
+                    )
+                )
+            )
         }
     }
 
     override suspend fun deleteMedia(fileKey: String): AppResult<Unit> =
         withContext(Dispatchers.IO) {
             if (!isConfigured) {
-                return@withContext AppResult.Error(AppError.Storage("Cloudflare R2 S3 erişim bilgileri eksik."))
+                return@withContext AppResult.Error(
+                    AppError.Storage("Cloudflare R2 S3 ve public URL yapılandırması eksik.")
+                )
             }
-            val key = config.objectKeyFromValue(fileKey)
-                ?: return@withContext AppResult.Error(AppError.Storage("R2 nesne yolu çözümlenemedi."))
+
+            val key = config.objectKeyFromValue(context, fileKey)
+                ?: return@withContext AppResult.Error(
+                    AppError.Storage("R2 nesne yolu çözümlenemedi.")
+                )
+
             try {
                 val s3 = createClient()
-                s3.deleteObject(DeleteObjectRequest(config.bucketName(context), key))
-                s3.shutdown()
+                try {
+                    s3.deleteObject(
+                        DeleteObjectRequest(config.bucketName(context), key)
+                    )
+                } finally {
+                    s3.shutdown()
+                }
                 AppResult.Success(Unit)
             } catch (e: Exception) {
                 AppResult.Error(AppError.Storage("R2 medyası silinemedi.", e))
@@ -116,27 +145,16 @@ class CloudflareR2StorageRepositoryImpl(
         }
 
     override fun getPublicCdnUrl(fileKey: String): String {
-        val key = config.objectKeyFromValue(fileKey) ?: return fileKey
-        val publicBase = config.publicBaseUrl(context)
-        if (publicBase.isNotBlank()) {
-            return publicBase + "/" + key.split("/").joinToString("/") {
-                URLEncoder.encode(it, "UTF-8").replace("+", "%20")
-            }
-        }
-        if (!isConfigured) return fileKey
+        if (fileKey.isBlank()) return fileKey
+        if (fileKey.startsWith("http://") || fileKey.startsWith("https://")) return fileKey
 
-        return try {
-            val s3 = createClient()
-            val expiry = Date(System.currentTimeMillis() + 6L * 24L * 60L * 60L * 1000L)
-            val request = GeneratePresignedUrlRequest(config.bucketName(context), key)
-                .withMethod(HttpMethodName.GET)
-                .withExpiration(expiry)
-            val url = s3.generatePresignedUrl(request)
-            s3.shutdown()
-            url.toString()
-        } catch (_: Exception) {
-            fileKey
-        }
+        val key = config.objectKeyFromValue(context, fileKey) ?: return fileKey
+        val publicBase = config.publicBaseUrl(context)
+        if (publicBase.isBlank()) return fileKey
+
+        return publicBase + "/" + key
+            .split("/")
+            .joinToString("/") { Uri.encode(it) }
     }
 
     private fun createClient(): AmazonS3Client {
@@ -144,12 +162,22 @@ class CloudflareR2StorageRepositoryImpl(
             config.accessKeyId(context),
             config.secretAccessKey(context)
         )
-        val client = AmazonS3Client(credentials, Region.getRegion(Regions.US_EAST_1))
-        client.endpoint = config.endpoint(context)
-        client.s3ClientOptions = S3ClientOptions.builder()
-            .setPathStyleAccess(true)
-            .disableChunkedEncoding()
-            .build()
-        return client
+
+        return AmazonS3Client(
+            credentials,
+            Region.getRegion(Regions.US_EAST_1)
+        ).also { client ->
+            client.endpoint = config.endpoint(context)
+            client.setS3ClientOptions(
+                S3ClientOptions.builder()
+                    .setPathStyleAccess(true)
+                    .disableChunkedEncoding()
+                    .build()
+            )
+        }
+    }
+
+    private companion object {
+        const val MAX_UPLOAD_BYTES = 8 * 1024 * 1024
     }
 }
