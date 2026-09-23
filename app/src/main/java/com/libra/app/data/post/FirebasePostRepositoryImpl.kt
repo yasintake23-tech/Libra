@@ -165,7 +165,7 @@ class FirebasePostRepositoryImpl(
                 if (recipientId.isNotBlank() && recipientId != userId) {
                     val actor = (userRepository.getUserProfileFresh(userId) as? AppResult.Success)?.data
                     if (actor != null) {
-                        notificationRepository.create(
+                        runCatching { notificationRepository.create(
                             AppNotification(
                                 recipientId = recipientId,
                                 actorId = userId,
@@ -178,7 +178,8 @@ class FirebasePostRepositoryImpl(
                                 referenceId = postId,
                                 createdAt = System.currentTimeMillis()
                             )
-                        )
+                            }
+                        }
                     }
                 }
             }
@@ -254,7 +255,7 @@ class FirebasePostRepositoryImpl(
             val postSnapshot = postsRef.document(postId).get().await()
             val recipientId = postSnapshot.getString("authorId").orEmpty()
             if (recipientId.isNotBlank() && recipientId != authorId) {
-                ServiceLocator.notificationRepository.create(
+                runCatching { notificationRepository.create(
                     AppNotification(
                         recipientId = recipientId,
                         actorId = authorId,
@@ -267,7 +268,8 @@ class FirebasePostRepositoryImpl(
                         referenceId = postId,
                         createdAt = System.currentTimeMillis()
                     )
-                )
+                    )
+                }
             }
             AppResult.Success(comment)
         } catch (e: Exception) {
