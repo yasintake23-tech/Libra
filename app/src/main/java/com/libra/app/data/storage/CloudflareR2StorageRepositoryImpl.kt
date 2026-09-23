@@ -173,10 +173,14 @@ class CloudflareR2StorageRepositoryImpl(
             Region.getRegion(Regions.US_EAST_1)
         ).also { client ->
             client.endpoint = config.endpoint(context)
+            // R2 rejects the AWS SDK v1 streaming payload signature.
+            // Use the non-streaming S3 SigV4 mode explicitly.
+            client.setSignerRegionOverride("auto")
             client.setS3ClientOptions(
                 S3ClientOptions.builder()
                     .setPathStyleAccess(true)
                     .disableChunkedEncoding()
+                    .setPayloadSigningEnabled(false)
                     .build()
             )
         }
