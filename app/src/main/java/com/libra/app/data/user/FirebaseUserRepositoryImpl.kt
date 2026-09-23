@@ -297,19 +297,21 @@ class FirebaseUserRepositoryImpl : UserRepository {
 
                 val actor = (getUserProfileFresh(followerId) as? AppResult.Success)?.data
                 if (actor != null) {
-                    ServiceLocator.notificationRepository.create(
-                        AppNotification(
-                            recipientId = followingId,
-                            actorId = followerId,
-                            actorName = actor.displayName,
-                            actorUsername = actor.username,
-                            actorPhotoUrl = actor.profileImageUrl,
-                            type = "FOLLOW",
-                            title = "Yeni takipçi",
-                            body = actor.displayName + " seni takip etmeye başladı.",
-                            createdAt = System.currentTimeMillis()
+                    runCatching {
+                        ServiceLocator.notificationRepository.create(
+                            AppNotification(
+                                recipientId = followingId,
+                                actorId = followerId,
+                                actorName = actor.displayName,
+                                actorUsername = actor.username,
+                                actorPhotoUrl = actor.profileImageUrl,
+                                type = "FOLLOW",
+                                title = "Yeni takipçi",
+                                body = actor.displayName + " seni takip etmeye başladı.",
+                                createdAt = System.currentTimeMillis()
+                            )
                         )
-                    )
+                    }
                 }
             }
             AppResult.Success(Unit)
