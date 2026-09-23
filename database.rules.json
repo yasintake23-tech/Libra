@@ -74,7 +74,7 @@
     },
     "directMessages": {
       "$conversationId": {
-        ".read": "auth != null && root.child('directConversations').child(auth.uid).child($conversationId).exists()",
+        ".read": "auth != null && (root.child('directConversations').child(auth.uid).child($conversationId).exists() || $conversationId.beginsWith(auth.uid + '_') || $conversationId.endsWith('_' + auth.uid))",
         ".indexOn": [
           "createdAt"
         ],
