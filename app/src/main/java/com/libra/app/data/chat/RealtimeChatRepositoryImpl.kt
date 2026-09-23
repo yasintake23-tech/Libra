@@ -283,20 +283,25 @@ class RealtimeChatRepositoryImpl(
 
             // The actual message must not be rolled back just because a recipient
             // conversation summary rule is stale or temporarily unavailable.
-            root.updateChildren(
-                mapOf(
-                    "directMessages/$conversation/${messageRef.key}" to message,
-                    "directConversations/${sender.uid}/$conversation" to summary(
-                        recipientId,
-                        recipientProfile.displayName,
-                        recipientProfile.username,
-                        recipientProfile.profileImageUrl,
-                        lastText,
-                        now,
-                        0
+            // Write the message first. Conversation summaries are secondary metadata
+            // and must never make a valid message disappear from the chat.
+            messageRef.setValue(message).await()
+
+            runCatching {
+                root.updateChildren(
+                    mapOf(
+                        "directConversations/${sender.uid}/$conversation" to summary(
+                            recipientId,
+                            recipientProfile.displayName,
+                            recipientProfile.username,
+                            recipientProfile.profileImageUrl,
+                            lastText,
+                            now,
+                            0
+                        )
                     )
-                )
-            ).await()
+                ).await()
+            }
 
             runCatching {
                 root.updateChildren(
@@ -313,7 +318,6 @@ class RealtimeChatRepositoryImpl(
                     )
                 ).await()
             }
-
             runCatching {
                 notificationRepository.create(
                     AppNotification(
