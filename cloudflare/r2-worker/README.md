@@ -66,3 +66,6 @@ tanımlanmalıdır.
 Workflow, mevcut Firebase yapılandırmasından Web API Key'i çıkarıp Worker'a secret olarak yükler ve ardından Worker'ı deploy eder.
 
 R2 bucket binding'i `wrangler.toml` içinde `libra-media` olarak sabittir.
+
+
+<!-- R2-only Android integration is validated through the deployment workflow. -->
