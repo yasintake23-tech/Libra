@@ -83,7 +83,7 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = snapshot.child("reactions").children.associateNotNull { key to getValue(String::class.java) }
+                reactions = snapshot.child("reactions").children.associateNotNull { key.orEmpty() to getValue(String::class.java) }
             )
         }.getOrNull()
 
@@ -104,7 +104,7 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = snapshot.child("reactions").children.associateNotNull { key to getValue(String::class.java) }
+                reactions = snapshot.child("reactions").children.associateNotNull { key.orEmpty() to getValue(String::class.java) }
             )
         }.getOrNull()
 
@@ -115,7 +115,7 @@ class RealtimeChatRepositoryImpl(
         otherPhotoUrl: String,
         lastMessage: String,
         updatedAt: Long,
-        unreadCount: Long
+        unreadCount: Int
     ) = mapOf(
         "otherUserId" to otherUid,
         "otherUserName" to otherName,
@@ -127,7 +127,7 @@ class RealtimeChatRepositoryImpl(
     )
 
     override fun observeGlobalMessages(limit: Long): Flow<AppResult<List<GlobalChatMessage>>> = callbackFlow {
-        val query = ref("globalMessages")?.orderByChild("createdAt")?.limitToLast(limit)
+        val query = ref("globalMessages")?.orderByChild("createdAt")?.limitToLast(limit.toInt())
             ?: run { trySend(error("Realtime Database yapılandırması bulunamadı.")); close(); return@callbackFlow }
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -200,7 +200,7 @@ class RealtimeChatRepositoryImpl(
                         otherUserPhotoUrl = child.child("otherUserPhotoUrl").getValue(String::class.java).orEmpty(),
                         lastMessage = child.child("lastMessage").getValue(String::class.java).orEmpty(),
                         updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: 0L,
-                        unreadCount = child.child("unreadCount").getValue(Long::class.java) ?: 0L
+                        unreadCount = (child.child("unreadCount").getValue(Long::class.java) ?: 0L).toInt()
                     )
                 }.sortedByDescending { it.updatedAt }
                 trySend(AppResult.Success(items))
@@ -214,7 +214,7 @@ class RealtimeChatRepositoryImpl(
     }
 
     override fun observeDirectMessages(conversationId: String, limit: Long): Flow<AppResult<List<DirectMessage>>> = callbackFlow {
-        val query = ref("directMessages/$conversationId")?.orderByChild("createdAt")?.limitToLast(limit)
+        val query = ref("directMessages/$conversationId")?.orderByChild("createdAt")?.limitToLast(limit.toInt())
             ?: run { trySend(error("Realtime Database yapılandırması bulunamadı.")); close(); return@callbackFlow }
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -335,7 +335,7 @@ class RealtimeChatRepositoryImpl(
     }
 
     override fun observeServerMessages(serverId: String, limit: Long): Flow<AppResult<List<ServerMessage>>> = callbackFlow {
-        val query = ref("serverMessages/$serverId")?.orderByChild("createdAt")?.limitToLast(limit)
+        val query = ref("serverMessages/$serverId")?.orderByChild("createdAt")?.limitToLast(limit.toInt())
             ?: run { trySend(error("Realtime Database yapılandırması bulunamadı.")); close(); return@callbackFlow }
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
