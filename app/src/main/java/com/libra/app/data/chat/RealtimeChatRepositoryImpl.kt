@@ -14,9 +14,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
-import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.repository.ChatRepository
-import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -25,12 +23,11 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 /**
- * Live messaging is stored in Firebase Realtime Database.
- * Firestore remains the source for social/server metadata.
+ * All live messaging is stored in Firebase Realtime Database.
+ * Community metadata is provided by a separate CommunityRepository.
  */
 class RealtimeChatRepositoryImpl(
     private val userRepository: UserRepository,
-    private val communityRepository: CommunityRepository,
     private val storageRepository: StorageRepository
 ) : ChatRepository {
 
@@ -282,7 +279,7 @@ class RealtimeChatRepositoryImpl(
             recipientId, recipientProfile.displayName, recipientProfile.username, recipientProfile.profileImageUrl, lastText, now, 0
         )
         updates["directConversations/$recipientId/$conversation"] = summary(
-            sender.uid, senderProfile.displayName, senderProfile.username, senderProfile.profileImageUrl, lastText, now, existingUnread + 1
+            sender.uid, senderProfile.displayName, senderProfile.username, senderProfile.profileImageUrl, lastText, now, com.google.firebase.database.ServerValue.increment(1)
         )
 
         return try {
