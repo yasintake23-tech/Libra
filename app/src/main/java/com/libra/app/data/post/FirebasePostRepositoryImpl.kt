@@ -132,60 +132,55 @@ class FirebasePostRepositoryImpl(
         }
     }
 
-    override suspend fun toggleLike(postId: String, userId: String): AppResult<Boolean> {
-        if (postId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+    override suspend fun toggleLike(postId: String): AppResult<Boolean> {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: return AppResult.Error(AppError.Auth("Beğenmek için giriş yapmalısın."))
 
         return try {
-            val postRef = postsRef.document(postId)
-            val likeRef = postRef.collection("likes").document(userId)
-            var liked = false
+            val ref = postsRef.document(postId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) {
+                return AppResult.Error(AppError.Validation("Gönderi bulunamadı."))
+            }
 
-            firestore.runTransaction { transaction ->
-                val postSnapshot = transaction.get(postRef)
-                if (!postSnapshot.exists()) throw IllegalStateException("Gönderi bulunamadı.")
+            val likes = snapshot.get("likedBy") as? List<*> ?: emptyList<Any>()
+            val liked = user.uid in likes
+            val updatedLikes = if (liked) {
+                likes.filterIsInstance<String>().filter { it != user.uid }
+            } else {
+                likes.filterIsInstance<String>() + user.uid
+            }
 
-                val likeSnapshot = transaction.get(likeRef)
-                val currentCount = (postSnapshot.getLong("likesCount") ?: 0L).coerceAtLeast(0L)
+            ref.update("likedBy", updatedLikes).await()
 
-                if (likeSnapshot.exists()) {
-                    transaction.delete(likeRef)
-                    transaction.update(postRef, "likesCount", (currentCount - 1L).coerceAtLeast(0L))
-                    liked = false
-                } else {
-                    transaction.set(likeRef, mapOf("userId" to userId, "createdAt" to System.currentTimeMillis()))
-                    transaction.update(postRef, "likesCount", currentCount + 1L)
-                    liked = true
-                }
-                null
-            }.await()
-
-            if (liked) {
-                val postSnapshot = postsRef.document(postId).get().await()
-                val recipientId = postSnapshot.getString("authorId").orEmpty()
-                if (recipientId.isNotBlank() && recipientId != userId) {
-                    val actor = (userRepository.getUserProfileFresh(userId) as? AppResult.Success)?.data
+            if (!liked) {
+                val recipientId = snapshot.getString("authorId").orEmpty()
+                if (recipientId.isNotBlank() && recipientId != user.uid) {
+                    val actor = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
                     if (actor != null) {
-                        runCatching { notificationRepository.create(
-                            AppNotification(
-                                recipientId = recipientId,
-                                actorId = userId,
-                                actorName = actor.displayName,
-                                actorUsername = actor.username,
-                                actorPhotoUrl = actor.profileImageUrl,
-                                type = "LIKE",
-                                title = "Yeni beğeni",
-                                body = actor.displayName + " gönderini beğendi.",
-                                referenceId = postId,
-                                createdAt = System.currentTimeMillis()
+                        runCatching {
+                            notificationRepository.create(
+                                AppNotification(
+                                    recipientId = recipientId,
+                                    actorId = user.uid,
+                                    actorName = actor.displayName,
+                                    actorUsername = actor.username,
+                                    actorPhotoUrl = actor.profileImageUrl,
+                                    type = "LIKE",
+                                    title = "Yeni beğeni",
+                                    body = actor.displayName + " gönderini beğendi.",
+                                    referenceId = postId,
+                                    createdAt = System.currentTimeMillis()
+                                )
                             )
-                            }
                         }
                     }
                 }
             }
-            AppResult.Success(liked)
+
+            AppResult.Success(!liked)
         } catch (e: Exception) {
-            AppResult.Error(AppError.Database("Beğeni işlemi tamamlanamadı.", e))
+            AppResult.Error(AppError.Database("Beğeni işlemi başarısız.", e))
         }
     }
 
