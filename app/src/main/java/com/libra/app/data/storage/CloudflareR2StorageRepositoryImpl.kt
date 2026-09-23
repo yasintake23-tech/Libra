@@ -1,8 +1,16 @@
 package com.libra.app.data.storage
 
 import android.content.Context
-import android.net.Uri
-import com.google.firebase.auth.FirebaseAuth
+import com.amazonaws.HttpMethodName
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.regions.Region
+import com.amazonaws.regions.Regions
+import com.amazonaws.services.s3.AmazonS3Client
+import com.amazonaws.services.s3.S3ClientOptions
+import com.amazonaws.services.s3.model.DeleteObjectRequest
+import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest
+import com.amazonaws.services.s3.model.ObjectMetadata
+import com.amazonaws.services.s3.model.PutObjectRequest
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.StorageUploadRequest
@@ -11,11 +19,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.ByteArrayInputStream
+import java.net.URLEncoder
+import java.util.Date
 import java.util.UUID
 
 class CloudflareR2StorageRepositoryImpl(
@@ -26,230 +33,123 @@ class CloudflareR2StorageRepositoryImpl(
         get() = CloudflareR2StorageConfig
 
     val isConfigured: Boolean
-        get() = runCatching {
-            config.uploadEndpoint(context).isNotBlank()
-        }.getOrDefault(false)
+        get() = config.isConfigured(context)
 
-    override fun uploadMedia(request: StorageUploadRequest, onProgress: (Int) -> Unit): Flow<AppResult<String>> = flow {
+    override fun uploadMedia(
+        request: StorageUploadRequest,
+        onProgress: (Int) -> Unit
+    ): Flow<AppResult<String>> = flow {
         if (!isConfigured) {
-            emit(AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik.")))
+            emit(AppResult.Error(AppError.Storage("Cloudflare R2 S3 erişim bilgileri eksik.")))
             return@flow
         }
-
         if (request.bytes.isEmpty()) {
             emit(AppResult.Error(AppError.Storage("Yüklenecek dosya boş.")))
             return@flow
         }
-
         if (request.bytes.size > 8 * 1024 * 1024) {
             emit(AppResult.Error(AppError.Storage("Dosya 8 MB'dan büyük olamaz.")))
             return@flow
         }
 
-        val user = FirebaseAuth.getInstance().currentUser
+        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
             ?: run {
                 emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
                 return@flow
             }
 
-        val safeFileName = request.fileName
-            .substringAfterLast('/')
-            .trim()
-            .ifBlank { "file" }
-
-        val targetDirectory = request.targetDirectory
-            .trim('/')
-            .ifBlank { "uploads" }
-
-        val ownerDirectory = "users/" + user.uid
+        val targetDirectory = request.targetDirectory.trim('/').ifBlank { "users/" + userId }
+        val ownerDirectory = "users/" + userId
         if (targetDirectory != ownerDirectory) {
             emit(AppResult.Error(AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")))
             return@flow
         }
 
-        val objectKey = targetDirectory + "/" + UUID.randomUUID().toString() + "-" + safeFileName
-        val idToken = try {
-            user.getIdToken(false).await().token
-        } catch (e: Exception) {
-            emit(AppResult.Error(AppError.Auth("Medya yükleme oturumu doğrulanamadı.", cause = e)))
-            return@flow
-        }
+        val safeFileName = request.fileName.substringAfterLast('/').trim().ifBlank { "file" }
+        val objectKey = targetDirectory + "/" + UUID.randomUUID() + "-" + safeFileName
 
-        if (idToken.isNullOrBlank()) {
-            emit(AppResult.Error(AppError.Auth("Firebase oturum anahtarı alınamadı.")))
-            return@flow
-        }
-
-        val response = try {
+        try {
             withContext(Dispatchers.IO) {
-                putBytes(
-                    url = config.uploadEndpoint(context) + "/upload?path=" +
-                        java.net.URLEncoder.encode(objectKey, "UTF-8").replace("+", "%20"),
-                    bearerToken = idToken,
-                    bytes = request.bytes,
-                    contentType = request.contentType.ifBlank { "application/octet-stream" },
-                    onProgress = onProgress
+                val s3 = createClient()
+                val metadata = ObjectMetadata().apply {
+                    contentType = request.contentType.ifBlank { "application/octet-stream" }
+                    contentLength = request.bytes.size.toLong()
+                    cacheControl = "public, max-age=31536000, immutable"
+                }
+                s3.putObject(
+                    PutObjectRequest(
+                        config.bucketName(context),
+                        objectKey,
+                        ByteArrayInputStream(request.bytes),
+                        metadata
+                    )
                 )
+                onProgress(100)
+                s3.shutdown()
             }
+            emit(AppResult.Success(objectKey))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             emit(AppResult.Error(AppError.Storage(
-                "Medya yüklenemedi: " + (e.localizedMessage ?: "Bilinmeyen hata."), e
+                "R2'ye doğrudan yükleme başarısız: " + (e.localizedMessage ?: "Bilinmeyen hata."),
+                e
             )))
-            return@flow
         }
-
-        if (response.code !in 200..299) {
-            emit(AppResult.Error(AppError.Storage(
-                "Medya yüklenemedi: " + response.body.ifBlank { "Sunucu yüklemeyi reddetti." }
-            )))
-            return@flow
-        }
-
-        val publicUrl = runCatching { JSONObject(response.body).optString("url") }.getOrNull().orEmpty()
-        if (publicUrl.isBlank()) {
-            emit(AppResult.Error(AppError.Storage("Yükleme tamamlandı ancak herkese açık medya adresi alınamadı.")))
-            return@flow
-        }
-
-        emit(AppResult.Success(publicUrl))
     }
 
-    override suspend fun deleteMedia(fileKey: String): AppResult<Unit> {
-        if (!isConfigured) {
-            return AppResult.Error(AppError.Storage("Cloudflare R2 Worker yapılandırması eksik."))
-        }
-
-        return try {
-            val user = FirebaseAuth.getInstance().currentUser
-                ?: return AppResult.Error(AppError.Auth("Medya silmek için giriş yapmalısın."))
-            val idToken = user.getIdToken(false).await().token
-                ?: return AppResult.Error(AppError.Auth("Firebase oturum anahtarı alınamadı."))
-
-            val key = extractObjectKey(fileKey)
-                ?: return AppResult.Error(AppError.Storage("Medya yolu çözümlenemedi."))
-
-            val response = withContext(Dispatchers.IO) {
-                request(
-                    method = "DELETE",
-                    url = config.uploadEndpoint(context) + "/delete?path=" +
-                        java.net.URLEncoder.encode(key, "UTF-8").replace("+", "%20"),
-                    bearerToken = idToken
-                )
+    override suspend fun deleteMedia(fileKey: String): AppResult<Unit> =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured) {
+                return@withContext AppResult.Error(AppError.Storage("Cloudflare R2 S3 erişim bilgileri eksik."))
             }
-
-            if (response.code in 200..299) AppResult.Success(Unit)
-            else AppResult.Error(AppError.Storage(response.body.ifBlank { "Medya silinemedi." }))
-        } catch (e: Exception) {
-            AppResult.Error(AppError.Storage("Medya silinemedi.", e))
+            val key = config.objectKeyFromValue(fileKey)
+                ?: return@withContext AppResult.Error(AppError.Storage("R2 nesne yolu çözümlenemedi."))
+            try {
+                val s3 = createClient()
+                s3.deleteObject(DeleteObjectRequest(config.bucketName(context), key))
+                s3.shutdown()
+                AppResult.Success(Unit)
+            } catch (e: Exception) {
+                AppResult.Error(AppError.Storage("R2 medyası silinemedi.", e))
+            }
         }
-    }
 
     override fun getPublicCdnUrl(fileKey: String): String {
-        if (fileKey.startsWith("http://") || fileKey.startsWith("https://")) {
-            val key = extractObjectKey(fileKey)
-            if (key != null && isConfigured) {
-                return config.uploadEndpoint(context) + "/media/" +
-                    key.split("/").joinToString("/") { android.net.Uri.encode(it) }
+        val key = config.objectKeyFromValue(fileKey) ?: return fileKey
+        val publicBase = config.publicBaseUrl(context)
+        if (publicBase.isNotBlank()) {
+            return publicBase + "/" + key.split("/").joinToString("/") {
+                URLEncoder.encode(it, "UTF-8").replace("+", "%20")
             }
-            return fileKey
         }
-
         if (!isConfigured) return fileKey
 
-        return config.uploadEndpoint(context) + "/media/" +
-            fileKey.trim('/').split("/").joinToString("/") { android.net.Uri.encode(it) }
-    }
-
-    private fun extractObjectKey(fileKey: String): String? {
-        val value = fileKey.trim()
-        if (value.isBlank()) return null
-
-        return when {
-            CloudflareR2StorageConfig.isObjectApiUrl(value) -> {
-                value.substringAfter("/objects/", missingDelimiterValue = "")
-                    .takeIf { it.isNotBlank() }
-                    ?.let(Uri::decode)
-            }
-
-            "/media/" in value -> {
-                value.substringAfter("/media/")
-                    .trim('/')
-                    .takeIf { it.isNotBlank() }
-            }
-
-            else -> value.trim('/')
-                .takeIf { it.startsWith("users/") }
-        }
-    }
-
-    private fun putBytes(
-        url: String,
-        bearerToken: String,
-        bytes: ByteArray,
-        contentType: String,
-        onProgress: (Int) -> Unit
-    ): HttpResponse {
-        val connection = URL(url).openConnection() as HttpURLConnection
         return try {
-            connection.requestMethod = "PUT"
-            connection.doOutput = true
-            connection.setFixedLengthStreamingMode(bytes.size)
-            connection.connectTimeout = 20_000
-            connection.readTimeout = 60_000
-            connection.setRequestProperty("Authorization", "Bearer " + bearerToken)
-            connection.setRequestProperty("Content-Type", contentType)
-            connection.setRequestProperty("Accept", "application/json")
-            connection.outputStream.use { output ->
-                val buffer = ByteArray(32 * 1024)
-                var offset = 0
-                while (offset < bytes.size) {
-                    val count = minOf(buffer.size, bytes.size - offset)
-                    System.arraycopy(bytes, offset, buffer, 0, count)
-                    output.write(buffer, 0, count)
-                    offset += count
-                    onProgress(((offset.toDouble() / bytes.size) * 100).toInt().coerceIn(0, 100))
-                }
-                output.flush()
-            }
-
-            HttpResponse(connection.responseCode, readResponse(connection))
-        } finally {
-            connection.disconnect()
+            val s3 = createClient()
+            val expiry = Date(System.currentTimeMillis() + 6L * 24L * 60L * 60L * 1000L)
+            val request = GeneratePresignedUrlRequest(config.bucketName(context), key)
+                .withMethod(HttpMethodName.GET)
+                .withExpiration(expiry)
+            val url = s3.generatePresignedUrl(request)
+            s3.shutdown()
+            url.toString()
+        } catch (_: Exception) {
+            fileKey
         }
     }
 
-    private fun request(
-        method: String,
-        url: String,
-        bearerToken: String
-    ): HttpResponse {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        return try {
-            connection.requestMethod = method
-            connection.connectTimeout = 20_000
-            connection.readTimeout = 30_000
-            connection.setRequestProperty("Authorization", "Bearer " + bearerToken)
-            connection.setRequestProperty("Accept", "application/json")
-            HttpResponse(connection.responseCode, readResponse(connection))
-        } finally {
-            connection.disconnect()
-        }
+    private fun createClient(): AmazonS3Client {
+        val credentials = BasicAWSCredentials(
+            config.accessKeyId(context),
+            config.secretAccessKey(context)
+        )
+        val client = AmazonS3Client(credentials, Region.getRegion(Regions.US_EAST_1))
+        client.endpoint = config.endpoint(context)
+        client.s3ClientOptions = S3ClientOptions.builder()
+            .setPathStyleAccess(true)
+            .disableChunkedEncoding()
+            .build()
+        return client
     }
-
-    private fun readResponse(connection: HttpURLConnection): String {
-        val stream = if (connection.responseCode in 200..299) {
-            connection.inputStream
-        } else {
-            connection.errorStream ?: connection.inputStream
-        }
-
-        return stream.bufferedReader().use { it.readText() }
-    }
-
-    private data class HttpResponse(
-        val code: Int,
-        val body: String
-    )
 }
