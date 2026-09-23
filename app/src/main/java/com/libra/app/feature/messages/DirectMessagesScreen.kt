@@ -64,10 +64,11 @@ class DirectMessagesViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
     private var conversationJob: kotlinx.coroutines.Job? = null
+    private val pendingMessages = linkedMapOf<String, DirectMessage>()
 
     init {
-        val uid = auth.currentUser.value?.uid.orEmpty()
-        if (uid.isNotBlank()) viewModelScope.launch {
+        viewModelScope.launch {
+            val uid = auth.currentUser.filterNotNull().first().uid
             repository.observeDirectConversations(uid).collect { result ->
                 when (result) {
                     is AppResult.Success -> _conversations.value = result.data
@@ -94,30 +95,114 @@ class DirectMessagesViewModel : ViewModel() {
 
     private fun observeConversation(id: String) {
         conversationJob?.cancel()
+        pendingMessages.clear()
+        _messages.value = emptyList()
+        _error.value = null
         conversationJob = viewModelScope.launch {
             repository.observeDirectMessages(id).collect { result ->
                 when (result) {
-                    is AppResult.Success -> { _messages.value = result.data; _error.value = null }
+                    is AppResult.Success -> mergeMessages(result.data)
                     is AppResult.Error -> _error.value = result.error.message
                 }
             }
         }
     }
 
-    fun send(recipientId: String, text: String, replyTo: DirectMessage? = null) {
+    private fun mergeMessages(serverMessages: List<DirectMessage>) {
+        val matchedPendingIds = pendingMessages.filter { (_, pending) ->
+            serverMessages.any { server ->
+                server.senderId == pending.senderId &&
+                    server.recipientId == pending.recipientId &&
+                    server.text == pending.text &&
+                    server.mediaUrl == pending.mediaUrl &&
+                    kotlin.math.abs(server.createdAt - pending.createdAt) <= 15_000L
+            }
+        }.keys
+        matchedPendingIds.forEach(pendingMessages::remove)
+        _messages.value = (serverMessages + pendingMessages.values)
+            .distinctBy { it.id }
+            .sortedBy { it.createdAt }
+    }
+
+    private fun addOptimisticMessage(
+        recipientId: String,
+        text: String,
+        mediaUrl: String,
+        mediaType: String,
+        replyTo: DirectMessage?
+    ): String? {
+        val sender = auth.currentUser.value ?: return null
+        val now = System.currentTimeMillis()
+        val localId = "local-" + now + "-" + java.util.UUID.randomUUID()
+        pendingMessages[localId] = DirectMessage(
+            id = localId,
+            senderId = sender.uid,
+            senderPhotoUrl = sender.profileImageUrl,
+            recipientId = recipientId,
+            text = text.trim(),
+            mediaUrl = mediaUrl,
+            mediaType = mediaType,
+            createdAt = now,
+            replyToMessageId = replyTo?.id.orEmpty(),
+            replyToText = replyTo?.text?.ifBlank {
+                if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else ""
+            }.orEmpty(),
+            replyToSenderId = replyTo?.senderId.orEmpty(),
+            replyToSenderName = replyTo?.replyToSenderName.orEmpty()
+                .ifBlank { if (replyTo?.senderId == sender.uid) sender.displayName else "" }
+        )
+        mergeMessages(_messages.value)
+        return localId
+    }
+
+    fun send(
+        recipientId: String,
+        text: String,
+        replyTo: DirectMessage? = null,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val localId = addOptimisticMessage(recipientId, text, "", "", replyTo)
+        if (localId == null) {
+            _error.value = "Oturum bulunamadı."
+            onComplete(false)
+            return
+        }
         viewModelScope.launch {
             when (val result = repository.sendDirectMessage(recipientId, text, replyTo)) {
-                is AppResult.Success -> _error.value = null
-                is AppResult.Error -> _error.value = result.error.message
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> {
+                    pendingMessages.remove(localId)
+                    mergeMessages(_messages.value)
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
             }
         }
     }
 
-    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null) {
+    fun sendMedia(
+        recipientId: String,
+        mediaUrl: String,
+        mediaType: String,
+        text: String = "",
+        replyTo: DirectMessage? = null,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val localId = addOptimisticMessage(recipientId, text, mediaUrl, mediaType, replyTo)
+        if (localId == null) {
+            _error.value = "Oturum bulunamadı."
+            onComplete(false)
+            return
+        }
         viewModelScope.launch {
             when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType, text, replyTo)) {
-                is AppResult.Success -> _error.value = null
-                is AppResult.Error -> _error.value = result.error.message
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> {
+                    pendingMessages.remove(localId)
+                    mergeMessages(_messages.value)
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
             }
         }
     }
