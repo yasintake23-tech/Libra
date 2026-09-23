@@ -243,8 +243,17 @@ private fun ServerChatScreen(
             items(messages, key = { it.id }) { message ->
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start
+                    horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.Bottom
                 ) {
+                    if (message.senderId != currentUid) {
+                        UserAvatar(
+                            message.senderPhotoUrl,
+                            message.senderName.take(1).uppercase(),
+                            size = 30.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Surface(
                         color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(16.dp)
@@ -346,6 +355,8 @@ private fun ServerChatScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(members, key = { it.uid }) { member ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            UserAvatar(member.photoUrl, member.displayName.take(1).uppercase(), size = 38.dp)
+                            Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(member.displayName.ifBlank { member.uid }, fontWeight = FontWeight.Bold)
                                 Text(member.role, style = MaterialTheme.typography.labelSmall)
