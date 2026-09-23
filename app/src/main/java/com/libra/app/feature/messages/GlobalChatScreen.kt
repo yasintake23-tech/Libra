@@ -212,7 +212,7 @@ fun GlobalChatScreen(
                                 }
                                 Spacer(Modifier.height(5.dp))
                             }
-                            if (message.mediaUrl.isNotBlank()) AsyncImage(message.mediaUrl, "Gönderilen fotoğraf", Modifier.width(220.dp).heightIn(max=280.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                            if (message.mediaUrl.isNotBlank()) AsyncImage(ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl), "Gönderilen fotoğraf", Modifier.width(220.dp).heightIn(max=280.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
                             if (message.text.isNotBlank()) Text(message.text, Modifier.padding(8.dp, 6.dp))
                             if (message.editedAt != null) Text("düzenlendi", Modifier.padding(horizontal=8.dp), style=MaterialTheme.typography.labelSmall)
                             if (message.reactions.isNotEmpty()) Text(message.reactions.values.distinct().joinToString(" "), Modifier.padding(horizontal=8.dp, vertical=2.dp))
