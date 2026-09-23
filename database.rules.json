@@ -51,7 +51,7 @@
       ],
       "$messageId": {
         ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
-        ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('createdAt').isNumber()",
+        ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 1000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
         "reactions": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && data.parent().parent().child('senderId').exists()"
@@ -67,7 +67,7 @@
           "updatedAt"
         ],
         "$conversationId": {
-          ".validate": "newData.hasChildren(['otherUserId','lastMessage','updatedAt','unreadCount']) && newData.child('otherUserId').isString() && newData.child('otherUserId').val() !== $uid && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0"
+          ".validate": "newData.hasChildren(['otherUserId','lastMessage','updatedAt','unreadCount']) && newData.child('otherUserId').isString() && newData.child('otherUserId').val() !== $uid && ($conversationId === ($uid + '_' + newData.child('otherUserId').val()) || $conversationId === (newData.child('otherUserId').val() + '_' + $uid)) && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0"
         }
       }
     },
@@ -78,8 +78,8 @@
           "createdAt"
         ],
         "$messageId": {
-          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
-          ".validate": "newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('recipientId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && newData.child('mediaType').isString() && newData.child('createdAt').isNumber() && newData.child('senderId').val() !== newData.child('recipientId').val()",
+          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + auth.uid))) || (data.exists() && data.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + data.child('recipientId').val()) || $conversationId === (data.child('recipientId').val() + '_' + auth.uid))))",
+          ".validate": "newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('recipientId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber() && newData.child('senderId').val() !== newData.child('recipientId').val() && ($conversationId === (newData.child('senderId').val() + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + newData.child('senderId').val()))",
           "reactions": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
@@ -102,7 +102,7 @@
         ],
         "$messageId": {
           ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
-          ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
+          ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
           "reactions": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
