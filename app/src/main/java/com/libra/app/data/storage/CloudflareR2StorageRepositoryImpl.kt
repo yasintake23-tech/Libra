@@ -19,10 +19,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Date
-import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
+/**
+ * The only media backend used by Libra.
+ *
+ * Firebase stores the object key, while R2 serves the public object URL.
+ * Upload/delete authentication uses the R2 S3-compatible API.
+ */
 class CloudflareR2StorageRepositoryImpl(
     private val context: Context
 ) : StorageRepository {
@@ -30,116 +36,43 @@ class CloudflareR2StorageRepositoryImpl(
     private val config: CloudflareR2StorageConfig
         get() = CloudflareR2StorageConfig
 
-    val isConfigured: Boolean
-        get() = config.isConfigured(context)
-
     override fun uploadMedia(
         request: StorageUploadRequest,
         onProgress: (Int) -> Unit
     ): Flow<AppResult<String>> = flow {
-        if (!isConfigured) {
-            emit(
-                AppResult.Error(
-                    AppError.Storage("Cloudflare R2 S3 ve public URL yapılandırması eksik.")
-                )
-            )
-            return@flow
-        }
-        if (request.bytes.isEmpty()) {
-            emit(AppResult.Error(AppError.Storage("Yüklenecek dosya boş.")))
-            return@flow
-        }
-        if (request.bytes.size > MAX_UPLOAD_BYTES) {
-            emit(AppResult.Error(AppError.Storage("Dosya 8 MB'dan büyük olamaz.")))
+        val validation = validateRequest(request)
+        if (validation != null) {
+            emit(AppResult.Error(AppError.Storage(validation)))
             return@flow
         }
 
-        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-            ?: run {
-                emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
-                return@flow
-            }
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        if (uid.isNullOrBlank()) {
+            emit(AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın.")))
+            return@flow
+        }
 
-        val targetDirectory = request.targetDirectory.trim('/').ifBlank { "users/" + userId }
-        val ownerDirectory = "users/" + userId
+        val ownerDirectory = "users/" + uid
+        val targetDirectory = request.targetDirectory.trim('/').ifBlank { ownerDirectory }
         if (targetDirectory != ownerDirectory) {
-            emit(
-                AppResult.Error(
-                    AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")
-                )
-            )
+            emit(AppResult.Error(AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")))
             return@flow
         }
 
-        val safeFileName = request.fileName
-            .substringAfterLast('/')
-            .trim()
-            .ifBlank { "file" }
-        val objectKey = targetDirectory + "/" + UUID.randomUUID() + "-" + safeFileName
+        val fileName = sanitizeFileName(request.fileName)
+        val objectKey = ownerDirectory + "/" + UUID.randomUUID() + "-" + fileName
 
         try {
             withContext(Dispatchers.IO) {
-                val s3 = createClient()
-                try {
-                    // AWS Android SDK v1 can still fall back to aws-chunked streaming
-                    // for PutObject on some Android builds. R2 rejects that payload mode.
-                    // Generate a normal presigned PUT URL with SigV4, then upload the
-                    // fixed-length bytes through HttpURLConnection.
-                    val expiration = Date(System.currentTimeMillis() + 15L * 60L * 1000L)
-                    val presignedUrl = s3.generatePresignedUrl(
-                        config.bucketName(context),
-                        objectKey,
-                        expiration,
-                        HttpMethod.PUT
-                    )
-
-                    val connection = (presignedUrl.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "PUT"
-                        doOutput = true
-                        doInput = true
-                        useCaches = false
-                        connectTimeout = 30_000
-                        readTimeout = 30_000
-                        setFixedLengthStreamingMode(request.bytes.size)
-                        setRequestProperty(
-                            "Content-Type",
-                            request.contentType.ifBlank { "application/octet-stream" }
-                        )
-                    }
-
-                    try {
-                        connection.connect()
-                        connection.outputStream.use { output ->
-                            val chunkSize = 64 * 1024
-                            var offset = 0
-                            while (offset < request.bytes.size) {
-                                val count = minOf(chunkSize, request.bytes.size - offset)
-                                output.write(request.bytes, offset, count)
-                                offset += count
-                                onProgress((offset * 100 / request.bytes.size).coerceIn(1, 100))
-                            }
-                            output.flush()
-                        }
-
-                        val responseCode = connection.responseCode
-                        if (responseCode !in 200..299) {
-                            val responseBody = runCatching {
-                                connection.errorStream?.bufferedReader()?.use { it.readText() }
-                            }.getOrNull().orEmpty().take(400)
-                            throw IllegalStateException(
-                                "R2 HTTP $responseCode" +
-                                    responseBody.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
-                            )
-                        }
-                    } finally {
-                        connection.disconnect()
-                    }
-                } finally {
-                    s3.shutdown()
-                }
+                onProgress(0)
+                uploadWithRetry(
+                    objectKey = objectKey,
+                    bytes = request.bytes,
+                    contentType = request.contentType.ifBlank { "application/octet-stream" },
+                    onProgress = onProgress
+                )
                 onProgress(100)
             }
-
             emit(AppResult.Success(objectKey))
         } catch (e: CancellationException) {
             throw e
@@ -147,7 +80,7 @@ class CloudflareR2StorageRepositoryImpl(
             emit(
                 AppResult.Error(
                     AppError.Storage(
-                        "R2'ye doğrudan yükleme başarısız: " +
+                        "R2'ye yükleme başarısız: " +
                             (e.localizedMessage ?: "Bilinmeyen hata."),
                         e
                     )
@@ -158,9 +91,9 @@ class CloudflareR2StorageRepositoryImpl(
 
     override suspend fun deleteMedia(fileKey: String): AppResult<Unit> =
         withContext(Dispatchers.IO) {
-            if (!isConfigured) {
+            if (!config.isConfigured(context)) {
                 return@withContext AppResult.Error(
-                    AppError.Storage("Cloudflare R2 S3 ve public URL yapılandırması eksik.")
+                    AppError.Storage("Cloudflare R2 yapılandırması eksik.")
                 )
             }
 
@@ -170,13 +103,10 @@ class CloudflareR2StorageRepositoryImpl(
                 )
 
             try {
-                val s3 = createClient()
-                try {
-                    s3.deleteObject(
+                createClient().useS3 { client ->
+                    client.deleteObject(
                         DeleteObjectRequest(config.bucketName(context), key)
                     )
-                } finally {
-                    s3.shutdown()
                 }
                 AppResult.Success(Unit)
             } catch (e: Exception) {
@@ -186,25 +116,124 @@ class CloudflareR2StorageRepositoryImpl(
 
     override fun getPublicCdnUrl(fileKey: String): String {
         val raw = fileKey.trim()
-        if (raw.isBlank()) return fileKey
+        if (raw.isBlank()) return raw
 
-        // Libra is a social app, so media is intentionally public-read.
-        // R2_PUBLIC must point to the bucket's public r2.dev URL or a public
-        // custom domain. The app stores the object key and always resolves it
-        // to this stable public URL.
-        val publicBase = config.publicBaseUrl(context).trimEnd('/')
-        if (publicBase.isBlank()) return raw
+        val publicBase = config.publicBaseUrl(context)
+        if (raw.startsWith(publicBase + "/")) return raw
 
-        // A public URL is already usable. Keep it stable instead of trying to
-        // parse/re-encode it again, which can double-encode existing URLs.
-        if (raw.startsWith(publicBase + "/") || (raw.startsWith("https://") && raw.contains(".r2.dev/"))) {
-            return raw
+        val key = config.objectKeyFromValue(context, raw)
+        if (key != null) {
+            return publicBase + "/" +
+                key.split("/").joinToString("/") { Uri.encode(it) }
         }
 
-        val key = config.objectKeyFromValue(context, raw) ?: return raw
-        return publicBase + "/" + key
-            .split("/")
-            .joinToString("/") { Uri.encode(it) }
+        // Preserve public custom-domain URLs from older data.
+        if (raw.startsWith("https://") || raw.startsWith("http://")) return raw
+        return raw
+    }
+
+    private fun validateRequest(request: StorageUploadRequest): String? {
+        if (!config.isConfigured(context)) return "Cloudflare R2 yapılandırması eksik."
+        if (request.bytes.isEmpty()) return "Yüklenecek dosya boş."
+        if (request.bytes.size > MAX_UPLOAD_BYTES) return "Dosya 8 MB'dan büyük olamaz."
+        if (request.fileName.isBlank()) return "Dosya adı boş olamaz."
+        if (request.contentType.isBlank()) return "Dosya türü belirlenemedi."
+        return null
+    }
+
+    private fun sanitizeFileName(value: String): String {
+        val cleaned = value
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .replace(Regex("[\\/\\u0000-\\u001F]"), "_")
+            .trim()
+
+        return cleaned
+            .ifBlank { "file" }
+            .take(120)
+    }
+
+    private fun uploadWithRetry(
+        objectKey: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit
+    ) {
+        var lastError: Exception? = null
+
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                val expiration = Date(System.currentTimeMillis() + PRESIGNED_URL_LIFETIME_MS)
+                val presignedUrl = createClient().useS3 { client ->
+                    client.generatePresignedUrl(
+                        config.bucketName(context),
+                        objectKey,
+                        expiration,
+                        HttpMethod.PUT
+                    )
+                }
+
+                putFixedLength(presignedUrl, bytes, contentType, onProgress)
+                return
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < MAX_ATTEMPTS - 1) {
+                    Thread.sleep(RETRY_DELAYS_MS[attempt])
+                }
+            }
+        }
+
+        throw lastError ?: IllegalStateException("R2 yükleme başarısız.")
+    }
+
+    private fun putFixedLength(
+        url: URL,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit
+    ) {
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"
+            doOutput = true
+            doInput = true
+            useCaches = false
+            instanceFollowRedirects = true
+            connectTimeout = HTTP_TIMEOUT_MS
+            readTimeout = HTTP_TIMEOUT_MS
+            setFixedLengthStreamingMode(bytes.size)
+            setRequestProperty("Content-Type", contentType)
+        }
+
+        try {
+            connection.connect()
+
+            connection.outputStream.use { output ->
+                val bufferSize = 64 * 1024
+                var offset = 0
+
+                while (offset < bytes.size) {
+                    val count = minOf(bufferSize, bytes.size - offset)
+                    output.write(bytes, offset, count)
+                    offset += count
+                    onProgress((offset * 100 / bytes.size).coerceIn(1, 99))
+                }
+                output.flush()
+            }
+
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val body = runCatching {
+                    connection.errorStream?.bufferedReader()?.use { it.readText() }
+                }.getOrNull().orEmpty().take(500)
+
+                throw R2UploadException(
+                    code,
+                    body.ifBlank { "HTTP " + code }
+                )
+            }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun createClient(): AmazonS3Client {
@@ -217,9 +246,9 @@ class CloudflareR2StorageRepositoryImpl(
             credentials,
             Region.getRegion(Regions.US_EAST_1)
         ).also { client ->
+            // R2 uses the "auto" signing region. The exact jurisdictional
+            // endpoint comes from app configuration.
             client.endpoint = config.endpoint(context)
-            // R2 rejects the AWS SDK v1 streaming payload signature.
-            // Use the non-streaming S3 SigV4 mode explicitly.
             client.setSignerRegionOverride("auto")
             client.setS3ClientOptions(
                 S3ClientOptions.builder()
@@ -231,7 +260,24 @@ class CloudflareR2StorageRepositoryImpl(
         }
     }
 
+    private inline fun <T> AmazonS3Client.useS3(block: (AmazonS3Client) -> T): T {
+        try {
+            return block(this)
+        } finally {
+            shutdown()
+        }
+    }
+
+    private class R2UploadException(
+        val statusCode: Int,
+        message: String
+    ) : IllegalStateException("R2 HTTP " + statusCode + ": " + message)
+
     private companion object {
         const val MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+        const val MAX_ATTEMPTS = 3
+        const val HTTP_TIMEOUT_MS = 30_000
+        const val PRESIGNED_URL_LIFETIME_MS = 10L * 60L * 1000L
+        val RETRY_DELAYS_MS = longArrayOf(750L, 1750L)
     }
 }
