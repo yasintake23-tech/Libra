@@ -26,14 +26,32 @@ object CloudflareR2StorageConfig {
         accountId(context).isNotBlank() &&
             bucketName(context).isNotBlank() &&
             accessKeyId(context).isNotBlank() &&
-            secretAccessKey(context).isNotBlank()
+            secretAccessKey(context).isNotBlank() &&
+            publicBaseUrl(context).isNotBlank()
+
+    /**
+     * Accept the canonical object key as well as URLs left by older storage paths.
+     * A public R2 URL is converted back to its object key so delete operations keep
+     * working if an old document stores the public URL instead of the key.
+     */
+    fun objectKeyFromValue(context: Context, value: String): String? {
+        val raw = value.trim()
+        if (raw.isBlank()) return null
+
+        val publicBase = publicBaseUrl(context)
+        if (publicBase.isNotBlank() && raw.startsWith(publicBase + "/")) {
+            return raw.removePrefix(publicBase + "/").trim('/').takeIf { it.startsWith("users/") }
+        }
+
+        return objectKeyFromValue(raw)
+    }
 
     fun objectKeyFromValue(value: String): String? {
         val raw = value.trim()
         if (raw.isBlank()) return null
         return when {
-            "/media/" in raw -> raw.substringAfter("/media/").trim('/').takeIf { it.isNotBlank() }
-            "/objects/" in raw -> raw.substringAfter("/objects/").trim('/').takeIf { it.isNotBlank() }
+            "/media/" in raw -> raw.substringAfter("/media/").trim('/').takeIf { it.startsWith("users/") }
+            "/objects/" in raw -> raw.substringAfter("/objects/").trim('/').takeIf { it.startsWith("users/") }
             raw.startsWith("http://") || raw.startsWith("https://") -> null
             else -> raw.trim('/').takeIf { it.startsWith("users/") }
         }
