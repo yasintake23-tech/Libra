@@ -109,9 +109,9 @@ class DirectMessagesViewModel : ViewModel() {
         }
     }
 
-    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String, replyTo: DirectMessage? = null) {
+    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null) {
         viewModelScope.launch {
-            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType, replyTo)) {
+            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType, text, replyTo)) {
                 is AppResult.Success -> _error.value = null
                 is AppResult.Error -> _error.value = result.error.message
             }
@@ -182,7 +182,7 @@ fun DirectMessagesScreen(
             error = error,
             onBack = { selectedUser = null },
             onSend = { text, reply -> viewModel.send(user.uid, text, reply) },
-            onSendMedia = { url, type, reply -> viewModel.sendMedia(user.uid, url, type, reply) },
+            onSendMedia = { url, type, text, reply -> viewModel.sendMedia(user.uid, url, type, text, reply) },
             onEdit = { id, text -> viewModel.edit(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, text) },
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
@@ -282,7 +282,7 @@ private fun DirectConversationScreen(
     error: String?,
     onBack: () -> Unit,
     onSend: (String, DirectMessage?) -> Unit,
-    onSendMedia: (String, String, DirectMessage?) -> Unit,
+    onSendMedia: (String, String, String, DirectMessage?) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
@@ -296,37 +296,49 @@ private fun DirectConversationScreen(
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var mediaUploading by remember { mutableStateOf(false) }
+    var mediaProgress by remember { mutableIntStateOf(0) }
     var mediaError by remember { mutableStateOf<String?>(null) }
+    var pendingMediaUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingMediaUrl by remember { mutableStateOf("") }
+    var pendingMediaType by remember { mutableStateOf("image/jpeg") }
+    var mediaUploadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val conversationId = remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
 
-    val mediaLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            mediaUploading = true
-            mediaError = null
+        mediaUploadJob?.cancel()
+        pendingMediaUri = uri
+        pendingMediaUrl = ""
+        mediaProgress = 0
+        mediaError = null
+        mediaUploading = true
+        pendingMediaType = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+        mediaUploadJob = scope.launch {
             try {
-                val bytes = context.contentResolver.openInputStream(uri)
-                    ?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Fotoğraf okunamadı.")
+                val bytes = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                } ?: throw IllegalStateException("Fotoğraf okunamadı.")
                 if (bytes.isEmpty()) throw IllegalStateException("Fotoğraf boş.")
                 if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
-                val type = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
-                val extension = type.substringAfter('/').ifBlank { "jpg" }.take(8)
+                val extension = pendingMediaType.substringAfter('/').ifBlank { "jpg" }.take(8)
                 val upload = StorageUploadRequest(
                     fileName = "dm-" + System.currentTimeMillis() + "." + extension,
                     bytes = bytes,
-                    contentType = type,
+                    contentType = pendingMediaType,
                     targetDirectory = "users/" + currentUid
                 )
-                when (val result = ServiceLocator.storageRepository.uploadMedia(upload).first()) {
-                    is AppResult.Success -> onSendMedia(result.data, type, replyTarget)
+                when (val result = ServiceLocator.storageRepository.uploadMedia(upload) { mediaProgress = it }.first()) {
+                    is AppResult.Success -> {
+                        pendingMediaUrl = result.data
+                        mediaProgress = 100
+                    }
                     is AppResult.Error -> mediaError = result.error.message
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                mediaError = e.localizedMessage ?: "Fotoğraf gönderilemedi."
+                mediaError = e.localizedMessage ?: "Fotoğraf yüklenemedi."
             } finally {
                 mediaUploading = false
             }
@@ -352,6 +364,52 @@ private fun DirectConversationScreen(
 
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
         mediaError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
+
+        if (pendingMediaUri != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = pendingMediaUri,
+                        contentDescription = "Gönderilecek fotoğraf",
+                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                mediaError != null -> "Yükleme başarısız"
+                                mediaUploading -> "Fotoğraf yükleniyor %$mediaProgress"
+                                pendingMediaUrl.isNotBlank() -> "Fotoğraf hazır ✓"
+                                else -> "Fotoğraf hazırlanıyor…"
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        if (mediaUploading) {
+                            LinearProgressIndicator(
+                                progress = { mediaProgress / 100f },
+                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                            )
+                        }
+                    }
+                    IconButton(onClick = {
+                        mediaUploadJob?.cancel()
+                        pendingMediaUri = null
+                        pendingMediaUrl = ""
+                        mediaError = null
+                        mediaUploading = false
+                        mediaProgress = 0
+                    }) {
+                        Icon(Icons.Default.Close, "Fotoğrafı kaldır")
+                    }
+                }
+            }
+        }
 
         LazyColumn(
             state = listState,
@@ -533,13 +591,20 @@ private fun DirectConversationScreen(
                 maxLines = 4
             )
             IconButton(
-                enabled = draft.isNotBlank() && !mediaUploading,
+                enabled = (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) && !mediaUploading,
                 onClick = {
                     val text = draft.trim()
                     val editing = editingMessage
                     if (editing != null) {
                         onEdit(editing.id, text)
                         editingMessage = null
+                    } else if (pendingMediaUrl.isNotBlank()) {
+                        onSendMedia(pendingMediaUrl, pendingMediaType, text, replyTarget)
+                        pendingMediaUri = null
+                        pendingMediaUrl = ""
+                        mediaError = null
+                        mediaProgress = 0
+                        replyTarget = null
                     } else {
                         onSend(text, replyTarget)
                         replyTarget = null
