@@ -131,9 +131,8 @@ class HomeViewModel(
             title = "",
             text = text,
             tags = emptyList(),
-            imageBytes = null,
-            imageFileName = "",
-            imageContentType = ""
+            mediaUrl = "",
+            mediaType = ""
         )
     }
 
@@ -141,9 +140,8 @@ class HomeViewModel(
         title: String,
         text: String,
         tags: List<String>,
-        imageBytes: ByteArray?,
-        imageFileName: String,
-        imageContentType: String,
+        mediaUrl: String,
+        mediaType: String,
         onComplete: (Boolean) -> Unit = {}
     ) {
         val userId = authRepository.currentUser.value?.uid ?: return
@@ -151,18 +149,7 @@ class HomeViewModel(
             _isPosting.value = true
             _postError.value = null
             try {
-                var mediaUrl = ""
-                var mediaType = ""
-                if (imageBytes != null && imageBytes.isNotEmpty()) {
-                    val upload = storageRepository.uploadMedia(
-                        StorageUploadRequest(
-                            fileName = imageFileName.ifBlank { "post.jpg" },
-                            bytes = imageBytes,
-                            contentType = imageContentType.ifBlank { "image/jpeg" },
-                            targetDirectory = "users/$userId"
-                        )
-                    ).first()
-                    when (upload) {
+                when (upload) {
                         is AppResult.Success -> {
                             mediaUrl = upload.data
                             mediaType = "image"
@@ -215,25 +202,6 @@ class HomeViewModel(
             _isPosting.value = true
             _postError.value = null
             try {
-                var mediaUrl = ""
-                if (imageBytes != null && imageBytes.isNotEmpty()) {
-                    when (val upload = storageRepository.uploadMedia(
-                        StorageUploadRequest(
-                            fileName = imageFileName.ifBlank { "story.jpg" },
-                            bytes = imageBytes,
-                            contentType = imageContentType.ifBlank { "image/jpeg" },
-                            targetDirectory = "users/${user.uid}"
-                        )
-                    ).first()) {
-                        is AppResult.Success -> mediaUrl = upload.data
-                        is AppResult.Error -> {
-                            _postError.value = upload.error.message
-                            onComplete(false)
-                            return@launch
-                        }
-                    }
-                }
-
                 val now = System.currentTimeMillis()
                 FirebaseFirestore.getInstance().collection("stories").add(
                     mapOf(
@@ -242,7 +210,7 @@ class HomeViewModel(
                         "authorPhotoUrl" to authRepository.currentUser.value?.profileImageUrl.orEmpty(),
                         "text" to text.trim(),
                         "mediaUrl" to mediaUrl,
-                        "mediaType" to if (mediaUrl.isBlank()) "" else "image",
+                        "mediaType" to mediaType,
                         "createdAt" to now,
                         "expiresAt" to now + 24L * 60L * 60L * 1000L
                     )
