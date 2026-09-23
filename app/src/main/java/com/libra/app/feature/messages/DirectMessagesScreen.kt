@@ -9,8 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.round
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -116,7 +116,9 @@ class DirectMessagesViewModel : ViewModel() {
                 is AppResult.Error -> _error.value = result.error.message
             }
         }
-    }\n    fun edit(conversationId: String, messageId: String, text: String) {
+    }
+
+    fun edit(conversationId: String, messageId: String, text: String) {
         viewModelScope.launch {
             when (val result = repository.editDirectMessage(conversationId, messageId, text)) {
                 is AppResult.Success -> _error.value = null
@@ -142,7 +144,9 @@ class DirectMessagesViewModel : ViewModel() {
             }
         }
     }
-}\n\nprivate fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+}
+
+private fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
 
 private enum class MessageSection { MESSAGES, COMMUNITIES }
 
