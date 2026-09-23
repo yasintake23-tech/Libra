@@ -27,6 +27,7 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
+import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
