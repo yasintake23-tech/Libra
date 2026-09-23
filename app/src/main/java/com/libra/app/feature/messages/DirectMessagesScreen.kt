@@ -6,6 +6,12 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.round
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -94,26 +100,49 @@ class DirectMessagesViewModel : ViewModel() {
         }
     }
 
-    fun send(recipientId: String, text: String) {
+    fun send(recipientId: String, text: String, replyTo: DirectMessage? = null) {
         viewModelScope.launch {
-            when (val result = repository.sendDirectMessage(recipientId, text)) {
+            when (val result = repository.sendDirectMessage(recipientId, text, replyTo)) {
                 is AppResult.Success -> _error.value = null
                 is AppResult.Error -> _error.value = result.error.message
             }
         }
     }
 
-    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String) {
+    fun sendMedia(recipientId: String, mediaUrl: String, mediaType: String, replyTo: DirectMessage? = null) {
         viewModelScope.launch {
-            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType)) {
+            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType, replyTo)) {
+                is AppResult.Success -> _error.value = null
+                is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }\n    fun edit(conversationId: String, messageId: String, text: String) {
+        viewModelScope.launch {
+            when (val result = repository.editDirectMessage(conversationId, messageId, text)) {
                 is AppResult.Success -> _error.value = null
                 is AppResult.Error -> _error.value = result.error.message
             }
         }
     }
-}
 
-private fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+    fun delete(conversationId: String, messageId: String) {
+        viewModelScope.launch {
+            when (val result = repository.deleteDirectMessage(conversationId, messageId)) {
+                is AppResult.Success -> _error.value = null
+                is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }
+
+    fun react(conversationId: String, messageId: String, emoji: String) {
+        viewModelScope.launch {
+            when (val result = repository.toggleDirectMessageReaction(conversationId, messageId, emoji)) {
+                is AppResult.Success -> _error.value = null
+                is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }
+}\n\nprivate fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
 
 private enum class MessageSection { MESSAGES, COMMUNITIES }
 
@@ -148,8 +177,11 @@ fun DirectMessagesScreen(
             messages = messages,
             error = error,
             onBack = { selectedUser = null },
-            onSend = { viewModel.send(user.uid, it) },
-            onSendMedia = { url, type -> viewModel.sendMedia(user.uid, url, type) },
+            onSend = { text, reply -> viewModel.send(user.uid, text, reply) },
+            onSendMedia = { url, type, reply -> viewModel.sendMedia(user.uid, url, type, reply) },
+            onEdit = { id, text -> viewModel.edit(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, text) },
+            onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
+            onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
             modifier = modifier
         )
         return
@@ -245,16 +277,24 @@ private fun DirectConversationScreen(
     messages: List<DirectMessage>,
     error: String?,
     onBack: () -> Unit,
-    onSend: (String) -> Unit,
-    onSendMedia: (String, String) -> Unit,
+    onSend: (String, DirectMessage?) -> Unit,
+    onSendMedia: (String, String, DirectMessage?) -> Unit,
+    onEdit: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onReaction: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
+    var replyTarget by remember { mutableStateOf<DirectMessage?>(null) }
+    var editingMessage by remember { mutableStateOf<DirectMessage?>(null) }
+    var actionMessage by remember { mutableStateOf<DirectMessage?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var mediaUploading by remember { mutableStateOf(false) }
     var mediaError by remember { mutableStateOf<String?>(null) }
+    val conversationId = remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
+    val currentUid = authUserId()
 
     val mediaLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -267,28 +307,18 @@ private fun DirectConversationScreen(
                 val bytes = context.contentResolver.openInputStream(uri)
                     ?.use { it.readBytes() }
                     ?: throw IllegalStateException("Fotoğraf okunamadı.")
-
-                if (bytes.isEmpty()) {
-                    throw IllegalStateException("Fotoğraf boş.")
-                }
-                if (bytes.size > 8 * 1024 * 1024) {
-                    throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
-                }
-
-                val type = context.contentResolver.getType(uri)
-                    .orEmpty()
-                    .ifBlank { "image/jpeg" }
+                if (bytes.isEmpty()) throw IllegalStateException("Fotoğraf boş.")
+                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
+                val type = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
                 val extension = type.substringAfter('/').ifBlank { "jpg" }.take(8)
-
                 val upload = StorageUploadRequest(
                     fileName = "dm-" + System.currentTimeMillis() + "." + extension,
                     bytes = bytes,
                     contentType = type,
-                    targetDirectory = "users/" + ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+                    targetDirectory = "users/" + currentUid
                 )
-
                 when (val result = ServiceLocator.storageRepository.uploadMedia(upload).first()) {
-                    is AppResult.Success -> onSendMedia(result.data, type)
+                    is AppResult.Success -> onSendMedia(result.data, type, replyTarget)
                     is AppResult.Error -> mediaError = result.error.message
                 }
             } catch (e: Exception) {
@@ -298,7 +328,6 @@ private fun DirectConversationScreen(
             }
         }
     }
-    val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -316,10 +345,10 @@ private fun DirectConversationScreen(
                 Text(user.handle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
-        mediaError?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-        }
+        mediaError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
+
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -327,63 +356,216 @@ private fun DirectConversationScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages, key = { it.id }) { message ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start) {
-                    Surface(
-                        color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(16.dp)
+                var dragX by remember(message.id) { mutableFloatStateOf(0f) }
+                val mine = message.senderId == currentUid
+                val replyPreview = message.replyToMessageId.isNotBlank()
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .pointerInput(message.id) {
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, amount ->
+                                    dragX = (dragX + amount).coerceIn(-96f, 0f)
+                                },
+                                onDragEnd = {
+                                    if (dragX <= -64f) replyTarget = message
+                                    dragX = 0f
+                                }
+                            )
+                        },
+                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .offset { IntOffset(dragX.roundToInt(), 0) }
+                            .widthIn(max = 320.dp)
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { actionMessage = message }
+                            )
                     ) {
-                        Column(Modifier.padding(6.dp)) {
-                            if (message.mediaUrl.isNotBlank()) {
-                                var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
-                                if (mediaFailed) {
+                        Surface(
+                            color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(Modifier.padding(6.dp)) {
+                                if (replyPreview) {
                                     Surface(
-                                        modifier = Modifier.width(220.dp).height(120.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)),
+                                        color = Color(0xFFFFE8D5)
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
+                                        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
                                             Text(
-                                                "Fotoğraf yüklenemedi",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" },
+                                                color = Color(0xFFB45309),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                message.replyToText.ifBlank { "📷 Fotoğraf" },
+                                                maxLines = 2,
+                                                color = Color(0xFF7C2D12),
+                                                style = MaterialTheme.typography.bodySmall
                                             )
                                         }
                                     }
-                                } else {
-                                    AsyncImage(
-                                        model = message.mediaUrl,
-                                        contentDescription = "Gönderilen fotoğraf",
-                                        modifier = Modifier
-                                            .width(220.dp)
-                                            .heightIn(max = 280.dp)
-                                            .clip(RoundedCornerShape(12.dp)),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                        onError = { mediaFailed = true }
+                                    Spacer(Modifier.height(5.dp))
+                                }
+
+                                if (message.mediaUrl.isNotBlank()) {
+                                    var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
+                                    if (mediaFailed) {
+                                        Surface(
+                                            modifier = Modifier.width(220.dp).height(120.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text("Fotoğraf yüklenemedi", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    } else {
+                                        AsyncImage(
+                                            model = message.mediaUrl,
+                                            contentDescription = "Gönderilen fotoğraf",
+                                            modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            onError = { mediaFailed = true }
+                                        )
+                                    }
+                                }
+
+                                if (message.text.isNotBlank()) {
+                                    Text(message.text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+                                }
+
+                                if (message.editedAt != null) {
+                                    Text(
+                                        "düzenlendi",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
-                            if (message.text.isNotBlank()) {
-                                Text(message.text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+                        }
+
+                        if (message.reactions.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.padding(start = if (mine) 0.dp else 8.dp, top = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                message.reactions.values.distinct().forEach { emoji ->
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Text(emoji, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(enabled = !mediaUploading, onClick = { mediaLauncher.launch("image/*") }) {
+
+        replyTarget?.let { target ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+                color = Color(0xFFFFF3E8),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Yanıtlanıyor: " + target.replyToSenderName.ifBlank {
+                            if (target.senderId == currentUid) "Sen" else user.displayName
+                        }, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text(target.text.ifBlank { "📷 Fotoğraf" }, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { replyTarget = null }) { Text("İptal") }
+                }
+            }
+        }
+
+        editingMessage?.let {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Mesaj düzenleniyor", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text(it.text, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { editingMessage = null; draft = "" }) { Text("İptal") }
+                }
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(enabled = !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Mesaj yaz…") },
+                placeholder = { Text(if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
-            IconButton(enabled = draft.isNotBlank(), onClick = { onSend(draft); draft = "" }) {
-                Icon(Icons.Default.Send, "Gönder")
-            }
+            IconButton(
+                enabled = draft.isNotBlank() && !mediaUploading,
+                onClick = {
+                    val text = draft.trim()
+                    val editing = editingMessage
+                    if (editing != null) {
+                        onEdit(editing.id, text)
+                        editingMessage = null
+                    } else {
+                        onSend(text, replyTarget)
+                        replyTarget = null
+                    }
+                    draft = ""
+                }
+            ) { Icon(Icons.Default.Send, "Gönder") }
         }
+    }
+
+    actionMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { actionMessage = null },
+            title = { Text("Mesaj") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { replyTarget = message; actionMessage = null }, modifier = Modifier.fillMaxWidth()) { Text("↩ Yanıtla") }
+                    Text("Tepki bırak", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        listOf("❤️", "😂", "😮", "😢", "😡", "👍").forEach { emoji ->
+                            TextButton(onClick = { onReaction(message.id, emoji); actionMessage = null }) { Text(emoji) }
+                        }
+                    }
+                    if (message.senderId == currentUid && message.mediaUrl.isBlank()) {
+                        TextButton(onClick = {
+                            editingMessage = message
+                            draft = message.text
+                            replyTarget = null
+                            actionMessage = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Düzenle") }
+                        TextButton(onClick = {
+                            onDelete(message.id)
+                            actionMessage = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Sil", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { actionMessage = null }) { Text("Kapat") } }
+        )
     }
 }
 
