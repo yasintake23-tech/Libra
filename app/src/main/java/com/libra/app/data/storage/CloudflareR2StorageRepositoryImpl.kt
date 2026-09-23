@@ -30,7 +30,7 @@ class CloudflareR2StorageRepositoryImpl(
             config.uploadEndpoint(context).isNotBlank()
         }.getOrDefault(false)
 
-    override fun uploadMedia(request: StorageUploadRequest): Flow<AppResult<String>> = flow {
+    override fun uploadMedia(request: StorageUploadRequest, onProgress: (Int) -> Unit): Flow<AppResult<String>> = flow {
         if (!isConfigured) {
             emit(AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik.")))
             return@flow
@@ -87,7 +87,8 @@ class CloudflareR2StorageRepositoryImpl(
                         java.net.URLEncoder.encode(objectKey, "UTF-8").replace("+", "%20"),
                     bearerToken = idToken,
                     bytes = request.bytes,
-                    contentType = request.contentType.ifBlank { "application/octet-stream" }
+                    contentType = request.contentType.ifBlank { "application/octet-stream" },
+                    onProgress = onProgress
                 )
             }
         } catch (e: CancellationException) {
@@ -187,7 +188,8 @@ class CloudflareR2StorageRepositoryImpl(
         url: String,
         bearerToken: String,
         bytes: ByteArray,
-        contentType: String
+        contentType: String,
+        onProgress: (Int) -> Unit
     ): HttpResponse {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {
@@ -199,7 +201,18 @@ class CloudflareR2StorageRepositoryImpl(
             connection.setRequestProperty("Authorization", "Bearer " + bearerToken)
             connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept", "application/json")
-            connection.outputStream.use { it.write(bytes) }
+            connection.outputStream.use { output ->
+                val buffer = ByteArray(32 * 1024)
+                var offset = 0
+                while (offset < bytes.size) {
+                    val count = minOf(buffer.size, bytes.size - offset)
+                    System.arraycopy(bytes, offset, buffer, 0, count)
+                    output.write(buffer, 0, count)
+                    offset += count
+                    onProgress(((offset.toDouble() / bytes.size) * 100).toInt().coerceIn(0, 100))
+                }
+                output.flush()
+            }
 
             HttpResponse(connection.responseCode, readResponse(connection))
         } finally {
