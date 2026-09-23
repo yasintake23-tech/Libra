@@ -20,7 +20,10 @@ object CloudflareR2StorageConfig {
         "https://" + accountId(context) + ".r2.cloudflarestorage.com"
 
     fun publicBaseUrl(context: Context): String =
-        context.getString(R.string.cloudflare_r2_public_base_url).trim().trimEnd('/')
+        context.getString(R.string.cloudflare_r2_public_base_url)
+            .trim()
+            .trimEnd('/')
+            .ifBlank { DEFAULT_PUBLIC_BASE_URL }
 
     fun isConfigured(context: Context): Boolean =
         accountId(context).isNotBlank() &&
@@ -39,8 +42,17 @@ object CloudflareR2StorageConfig {
         if (raw.isBlank()) return null
 
         val publicBase = publicBaseUrl(context)
-        if (publicBase.isNotBlank() && raw.startsWith(publicBase + "/")) {
-            return raw.removePrefix(publicBase + "/").trim('/').takeIf { it.startsWith("users/") }
+        if (raw.startsWith(publicBase + "/")) {
+            val path = raw.removePrefix(publicBase + "/").trim('/')
+            val withoutBucket = path.removePrefix(bucketName(context) + "/")
+            return withoutBucket.takeIf { it.startsWith("users/") }
+        }
+
+        // Accept any Cloudflare public r2.dev URL saved by an older/manual build.
+        if (raw.startsWith("https://") && raw.contains(".r2.dev/")) {
+            val path = raw.substringAfter(".r2.dev/").trim('/')
+            val withoutBucket = path.removePrefix(bucketName(context) + "/")
+            return withoutBucket.takeIf { it.startsWith("users/") }
         }
 
         // Accept direct R2 S3 endpoint URLs saved by older/manual uploads:
@@ -54,6 +66,9 @@ object CloudflareR2StorageConfig {
 
         return objectKeyFromValue(raw)
     }
+
+    private const val DEFAULT_PUBLIC_BASE_URL =
+        "https://pub-6a68b6b4caa84c10ab277cd5ee1f9cc4.r2.dev"
 
     fun objectKeyFromValue(value: String): String? {
         val raw = value.trim()
