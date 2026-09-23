@@ -195,6 +195,12 @@ class CloudflareR2StorageRepositoryImpl(
         val publicBase = config.publicBaseUrl(context).trimEnd('/')
         if (publicBase.isBlank()) return raw
 
+        // A public URL is already usable. Keep it stable instead of trying to
+        // parse/re-encode it again, which can double-encode existing URLs.
+        if (raw.startsWith(publicBase + "/") || (raw.startsWith("https://") && raw.contains(".r2.dev/"))) {
+            return raw
+        }
+
         val key = config.objectKeyFromValue(context, raw) ?: return raw
         return publicBase + "/" + key
             .split("/")
