@@ -158,6 +158,7 @@ class FirebaseChatRepositoryImpl(
             conversation.collection("messages").add(
                 com.libra.app.domain.model.DirectMessage(
                     senderId = sender.uid,
+                    senderPhotoUrl = senderProfile.profileImageUrl,
                     recipientId = recipientId,
                     text = clean,
                     createdAt = now,
@@ -222,6 +223,7 @@ class FirebaseChatRepositoryImpl(
             conversation.collection("messages").add(
                 DirectMessage(
                     senderId = sender.uid,
+                    senderPhotoUrl = senderProfile.profileImageUrl,
                     recipientId = recipientId,
                     text = "",
                     mediaUrl = mediaUrl,
