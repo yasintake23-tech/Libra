@@ -216,7 +216,7 @@ class ProfileSetupViewModel(
                     }
                 }
             } catch (e: Exception) {
-                uploadedPhotoUrl?.let { runCatching { r2StorageRepository.deleteMedia(it) } }
+                uploadedPhotoUrl?.let { runCatching { storageRepository.deleteMedia(it) } }
                 _state.value = _state.value.copy(
                     isSaving = false,
                     errorMessage = "Profil oluşturulurken beklenmeyen bir hata oluştu: " +
