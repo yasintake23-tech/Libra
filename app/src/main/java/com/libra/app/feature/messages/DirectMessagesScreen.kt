@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
@@ -432,10 +433,10 @@ private fun DirectConversationScreen(
                         .pointerInput(message.id) {
                             detectHorizontalDragGestures(
                                 onHorizontalDrag = { _, amount ->
-                                    dragX = (dragX + amount).coerceIn(-96f, 0f)
+                                    dragX = (dragX + amount).coerceIn(0f, 96f)
                                 },
                                 onDragEnd = {
-                                    if (dragX <= -64f) replyTarget = message
+                                    if (dragX >= 64f) replyTarget = message
                                     dragX = 0f
                                 }
                             )
@@ -455,10 +456,12 @@ private fun DirectConversationScreen(
                         modifier = Modifier
                             .offset { IntOffset(dragX.roundToInt(), 0) }
                             .widthIn(max = 320.dp)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = { actionMessage = message }
-                            )
+                            .pointerInput(message.id + "-tap") {
+                                detectTapGestures(
+                                    onDoubleTap = { onReaction(message.id, "❤️") },
+                                    onLongPress = { actionMessage = message }
+                                )
+                            }
                     ) {
                         Surface(
                             color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -620,33 +623,28 @@ private fun DirectConversationScreen(
     }
 
     actionMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = { actionMessage = null },
-            title = { Text("Mesaj") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { replyTarget = message; actionMessage = null }, modifier = Modifier.fillMaxWidth()) { Text("↩ Yanıtla") }
-                    Text("Tepki bırak", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        listOf("❤️", "😂", "😮", "😢", "😡", "👍").forEach { emoji ->
-                            TextButton(onClick = { onReaction(message.id, emoji); actionMessage = null }) { Text(emoji) }
-                        }
-                    }
-                    if (message.senderId == currentUid && message.mediaUrl.isBlank()) {
-                        TextButton(onClick = {
-                            editingMessage = message
-                            draft = message.text
-                            replyTarget = null
-                            actionMessage = null
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Düzenle") }
-                        TextButton(onClick = {
-                            onDelete(message.id)
-                            actionMessage = null
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Sil", color = MaterialTheme.colorScheme.error) }
-                    }
-                }
+        RichMessageActionSheet(
+            canEdit = message.senderId == currentUid && message.mediaUrl.isBlank(),
+            canDelete = message.senderId == currentUid,
+            onDismiss = { actionMessage = null },
+            onReply = {
+                replyTarget = message
+                actionMessage = null
             },
-            confirmButton = { TextButton(onClick = { actionMessage = null }) { Text("Kapat") } }
+            onReaction = { emoji ->
+                onReaction(message.id, emoji)
+                actionMessage = null
+            },
+            onEdit = {
+                editingMessage = message
+                draft = message.text
+                replyTarget = null
+                actionMessage = null
+            },
+            onDelete = {
+                onDelete(message.id)
+                actionMessage = null
+            }
         )
     }
 }
