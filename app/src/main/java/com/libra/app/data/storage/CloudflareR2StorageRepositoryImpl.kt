@@ -2,14 +2,13 @@ package com.libra.app.data.storage
 
 import android.content.Context
 import android.net.Uri
+import com.amazonaws.HttpMethod
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.regions.Region
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.S3ClientOptions
 import com.amazonaws.services.s3.model.DeleteObjectRequest
-import com.amazonaws.services.s3.model.ObjectMetadata
-import com.amazonaws.services.s3.model.PutObjectRequest
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.StorageUploadRequest
@@ -19,7 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.util.Date
 import java.util.UUID
 
 class CloudflareR2StorageRepositoryImpl(
@@ -80,20 +80,59 @@ class CloudflareR2StorageRepositoryImpl(
             withContext(Dispatchers.IO) {
                 val s3 = createClient()
                 try {
-                    val metadata = ObjectMetadata().apply {
-                        contentType = request.contentType.ifBlank { "application/octet-stream" }
-                        contentLength = request.bytes.size.toLong()
-                        cacheControl = "public, max-age=31536000, immutable"
+                    // AWS Android SDK v1 can still fall back to aws-chunked streaming
+                    // for PutObject on some Android builds. R2 rejects that payload mode.
+                    // Generate a normal presigned PUT URL with SigV4, then upload the
+                    // fixed-length bytes through HttpURLConnection.
+                    val expiration = Date(System.currentTimeMillis() + 15L * 60L * 1000L)
+                    val presignedUrl = s3.generatePresignedUrl(
+                        config.bucketName(context),
+                        objectKey,
+                        expiration,
+                        HttpMethod.PUT
+                    )
+
+                    val connection = (presignedUrl.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "PUT"
+                        doOutput = true
+                        doInput = true
+                        useCaches = false
+                        connectTimeout = 30_000
+                        readTimeout = 30_000
+                        setFixedLengthStreamingMode(request.bytes.size)
+                        setRequestProperty(
+                            "Content-Type",
+                            request.contentType.ifBlank { "application/octet-stream" }
+                        )
                     }
 
-                    s3.putObject(
-                        PutObjectRequest(
-                            config.bucketName(context),
-                            objectKey,
-                            ByteArrayInputStream(request.bytes),
-                            metadata
-                        )
-                    )
+                    try {
+                        connection.connect()
+                        connection.outputStream.use { output ->
+                            val chunkSize = 64 * 1024
+                            var offset = 0
+                            while (offset < request.bytes.size) {
+                                val count = minOf(chunkSize, request.bytes.size - offset)
+                                output.write(request.bytes, offset, count)
+                                offset += count
+                                onProgress((offset * 100 / request.bytes.size).coerceIn(1, 100))
+                            }
+                            output.flush()
+                        }
+
+                        val responseCode = connection.responseCode
+                        if (responseCode !in 200..299) {
+                            val responseBody = runCatching {
+                                connection.errorStream?.bufferedReader()?.use { it.readText() }
+                            }.getOrNull().orEmpty().take(400)
+                            throw IllegalStateException(
+                                "R2 HTTP $responseCode" +
+                                    responseBody.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+                            )
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
                 } finally {
                     s3.shutdown()
                 }
