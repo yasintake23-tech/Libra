@@ -8,9 +8,10 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.repository.PostRepository
+import com.libra.app.domain.repository.NotificationRepository
+import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import com.libra.app.domain.model.AppNotification
-import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
@@ -18,7 +19,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 class FirebasePostRepositoryImpl(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val storageRepository: StorageRepository,
+    private val notificationRepository: NotificationRepository
 ) : PostRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
@@ -122,6 +125,9 @@ class FirebasePostRepositoryImpl(
 
             AppResult.Success(post)
         } catch (e: Exception) {
+            if (mediaUrl.isNotBlank()) {
+                runCatching { storageRepository.deleteMedia(mediaUrl) }
+            }
             AppResult.Error(AppError.Database("Gönderi paylaşılamadı.", e))
         }
     }
@@ -159,7 +165,7 @@ class FirebasePostRepositoryImpl(
                 if (recipientId.isNotBlank() && recipientId != userId) {
                     val actor = (userRepository.getUserProfileFresh(userId) as? AppResult.Success)?.data
                     if (actor != null) {
-                        ServiceLocator.notificationRepository.create(
+                        notificationRepository.create(
                             AppNotification(
                                 recipientId = recipientId,
                                 actorId = userId,
@@ -191,6 +197,11 @@ class FirebasePostRepositoryImpl(
                 return AppResult.Error(AppError.Auth("Bu gönderiyi silme yetkin yok."))
             }
             ref.delete().await()
+            runCatching {
+                snapshot.getString("mediaUrl").orEmpty().takeIf { it.isNotBlank() }?.let {
+                    storageRepository.deleteMedia(it)
+                }
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Gönderi silinemedi.", e))
