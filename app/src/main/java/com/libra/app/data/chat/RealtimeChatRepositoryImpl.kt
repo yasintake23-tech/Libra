@@ -290,7 +290,8 @@ class RealtimeChatRepositoryImpl(
             (database?.reference ?: return error("Realtime Database yapılandırması bulunamadı."))
                 .updateChildren(updates)
                 .await()
-            notificationRepository.create(
+            runCatching {
+                notificationRepository.create(
                     AppNotification(
                         recipientId = recipientId,
                         actorId = sender.uid,
