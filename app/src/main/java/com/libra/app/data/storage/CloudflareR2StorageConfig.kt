@@ -12,6 +12,13 @@ object CloudflareR2StorageConfig {
     fun bucketName(context: Context): String =
         context.getString(R.string.cloudflare_r2_bucket_name).trim()
 
+    /**
+     * Compatibility shim for older callers.
+     * Android must never contain a Cloudflare API credential.
+     */
+    @Deprecated("Cloudflare API tokens must stay on the Worker/server side.")
+    fun apiToken(context: Context): String = ""
+
     fun uploadEndpoint(context: Context): String =
         context.getString(R.string.r2_upload_endpoint).trim().trimEnd('/')
 
