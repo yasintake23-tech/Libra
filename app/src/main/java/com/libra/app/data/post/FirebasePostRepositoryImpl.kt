@@ -1,5 +1,6 @@
 package com.libra.app.data.post
 
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -132,9 +133,10 @@ class FirebasePostRepositoryImpl(
         }
     }
 
-    override suspend fun toggleLike(postId: String): AppResult<Boolean> {
+    override suspend fun toggleLike(postId: String, userId: String): AppResult<Boolean> {
         val user = FirebaseAuth.getInstance().currentUser
             ?: return AppResult.Error(AppError.Auth("Beğenmek için giriş yapmalısın."))
+        if (user.uid != userId) return AppResult.Error(AppError.Auth("Oturum bilgisi geçersiz."))
 
         return try {
             val ref = postsRef.document(postId)
