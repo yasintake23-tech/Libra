@@ -62,6 +62,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -405,13 +406,34 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                         }
                     }
                 } else {
-                    AsyncImage(
-                        model = ServiceLocator.storageRepository.getPublicCdnUrl(post.mediaUrl),
-                        contentDescription = "Gönderi fotoğrafı",
-                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
-                        contentScale = ContentScale.Crop,
-                        onError = { mediaFailed = true }
-                    )
+                    var mediaUrl by remember(post.mediaUrl) { mutableStateOf<String?>(null) }
+                    LaunchedEffect(post.mediaUrl) {
+                        mediaUrl = ServiceLocator.storageRepository.getSignedMediaUrl(post.mediaUrl)
+                    }
+
+                    if (mediaUrl == null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Fotoğraf hazırlanıyor…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        AsyncImage(
+                            model = mediaUrl,
+                            contentDescription = "Gönderi fotoğrafı",
+                            modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
+                            contentScale = ContentScale.Crop,
+                            onError = { mediaFailed = true }
+                        )
+                    }
                 }
             }
 
