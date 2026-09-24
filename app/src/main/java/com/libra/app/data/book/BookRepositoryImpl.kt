@@ -31,7 +31,9 @@ import kotlinx.coroutines.tasks.await
 class BookRepositoryImpl : BookRepository {
 
     private val database: FirebaseDatabase? by lazy {
-        runCatching { FirebaseDatabase.getInstance("https://libra-3bfb9-default-rtdb.firebaseio.com") }.getOrNull()
+        // Use the database URL from google-services.json. Hard-coding a
+        // firebaseio.com host can point the app at a different region/database.
+        runCatching { FirebaseDatabase.getInstance() }.getOrNull()
     }
 
     private val booksRef: DatabaseReference? by lazy {
