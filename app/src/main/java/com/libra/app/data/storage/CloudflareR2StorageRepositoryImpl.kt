@@ -22,6 +22,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Date
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The only media backend used by Libra.
@@ -113,6 +114,36 @@ class CloudflareR2StorageRepositoryImpl(
                 AppResult.Error(AppError.Storage("R2 medyası silinemedi.", e))
             }
         }
+
+    override suspend fun getSignedMediaUrl(fileKey: String): String = withContext(Dispatchers.IO) {
+        val raw = fileKey.trim()
+        if (raw.isBlank()) return@withContext raw
+        if (raw.startsWith("https://") && !raw.contains(".r2.dev/")) return@withContext raw
+
+        val key = config.objectKeyFromValue(context, raw)
+            ?: return@withContext getPublicCdnUrl(raw)
+
+        val now = System.currentTimeMillis()
+        signedGetCache[key]?.takeIf { it.expiresAtMs > now }?.let {
+            return@withContext it.url
+        }
+
+        return@withContext runCatching {
+            val expiration = Date(now + SIGNED_GET_LIFETIME_MS)
+            val url = createClient().useS3 { client ->
+                client.generatePresignedUrl(
+                    config.bucketName(context),
+                    key,
+                    expiration,
+                    HttpMethod.GET
+                ).toString()
+            }
+            signedGetCache[key] = SignedUrl(url, expiration.time - SIGNED_GET_REFRESH_SAFETY_MS)
+            url
+        }.getOrElse {
+            getPublicCdnUrl(raw)
+        }
+    }
 
     override fun getPublicCdnUrl(fileKey: String): String {
         val raw = fileKey.trim()
@@ -273,11 +304,17 @@ class CloudflareR2StorageRepositoryImpl(
         message: String
     ) : IllegalStateException("R2 HTTP " + statusCode + ": " + message)
 
+    private data class SignedUrl(val url: String, val expiresAtMs: Long)
+
+    private val signedGetCache = ConcurrentHashMap<String, SignedUrl>()
+
     private companion object {
         const val MAX_UPLOAD_BYTES = 8 * 1024 * 1024
         const val MAX_ATTEMPTS = 3
         const val HTTP_TIMEOUT_MS = 30_000
         const val PRESIGNED_URL_LIFETIME_MS = 10L * 60L * 1000L
+        const val SIGNED_GET_LIFETIME_MS = 10L * 60L * 1000L
+        const val SIGNED_GET_REFRESH_SAFETY_MS = 60L * 1000L
         val RETRY_DELAYS_MS = longArrayOf(750L, 1750L)
     }
 }
