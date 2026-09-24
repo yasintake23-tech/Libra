@@ -33,7 +33,6 @@ object CloudflareR2StorageConfig {
         context.getString(R.string.cloudflare_r2_public_base_url)
             .trim()
             .trimEnd('/')
-            .ifBlank { DEFAULT_PUBLIC_BASE_URL }
 
     fun isConfigured(context: Context): Boolean =
         accountId(context).isNotBlank() &&
@@ -104,6 +103,4 @@ object CloudflareR2StorageConfig {
         }
     }
 
-    private const val DEFAULT_PUBLIC_BASE_URL =
-        "https://pub-6a68b6b4caa84c10ab277cd5ee1f9cc4.r2.dev"
 }
