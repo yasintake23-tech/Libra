@@ -143,6 +143,17 @@ jobs:
           set -euo pipefail
           npx --yes firebase-tools@latest deploy --only database --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
 
+      - name: Verify backend architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d cloudflare/r2-worker
+          ! grep -R --line-number --exclude-dir=.git -E 'FirebaseStorageRepositoryImpl|HybridStorageRepositoryImpl|FirebaseStorage|getInstance\\(.*firebase.*storage|libra-r2-worker' app cloudflare 2>/dev/null
+          grep -q 'class RealtimeChatRepositoryImpl' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
+          grep -q 'FirebaseDatabase.getInstance' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
+          grep -q 'aws-android-sdk-s3' gradle/libs.versions.toml
+          echo "Backend architecture: Firebase Auth/Firestore + RTDB chat + direct Cloudflare R2."
+
       - name: Show toolchain
         shell: bash
         run: |
