@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +87,12 @@ fun AppNavHost(
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
 
+    LaunchedEffect(currentUser?.uid, selectedTab) {
+        if (selectedTab == BottomNavTab.DISCOVER && currentUser?.uid?.isNotBlank() == true) {
+            friendsVm.loadSocialData()
+        }
+    }
+
     if (!authenticated) {
         when (authState) {
             is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -134,14 +141,13 @@ fun AppNavHost(
             user = profile,
             isPosting = vm.isPosting.collectAsState().value,
             error = vm.postError.collectAsState().value,
-            onPublishPost = { title, text, tags, imageBytes, imageFileName, imageContentType ->
+            onPublishPost = { title, text, tags, mediaUrl, mediaType ->
                 vm.createRichPost(
                     title = title,
                     text = text,
                     tags = tags,
-                    imageBytes = imageBytes,
-                    imageFileName = imageFileName,
-                    imageContentType = imageContentType,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     onComplete = { success ->
                         if (success && mode == CreateContentMode.POST) {
                             createContentMode = null
@@ -150,12 +156,11 @@ fun AppNavHost(
                     }
                 )
             },
-            onPublishStory = { text, imageBytes, imageFileName, imageContentType ->
+            onPublishStory = { text, mediaUrl, mediaType ->
                 vm.createStory(
                     text = text,
-                    imageBytes = imageBytes,
-                    imageFileName = imageFileName,
-                    imageContentType = imageContentType,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     onComplete = { success ->
                         if (success) {
                             createContentMode = null

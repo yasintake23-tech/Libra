@@ -38,7 +38,7 @@ data class ProfileSetupState(
 class ProfileSetupViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
     private val userRepository: UserRepository = ServiceLocator.userRepository,
-    private val r2StorageRepository: StorageRepository = ServiceLocator.r2StorageRepository
+    private val storageRepository: StorageRepository = ServiceLocator.storageRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow(ProfileSetupState())
     val state: StateFlow<ProfileSetupState> = _state.asStateFlow()
@@ -165,7 +165,7 @@ class ProfileSetupViewModel(
                         targetDirectory = "users/$uid"
                     )
 
-                    when (val upload = r2StorageRepository.uploadMedia(request).first()) {
+                    when (val upload = storageRepository.uploadMedia(request).first()) {
                         is AppResult.Success -> uploadedPhotoUrl = upload.data
                         is AppResult.Error -> {
                             _state.value = _state.value.copy(
@@ -192,7 +192,7 @@ class ProfileSetupViewModel(
 
                 when (val profileResult = userRepository.completeProfile(baseProfile)) {
                     is AppResult.Error -> {
-                        uploadedPhotoUrl?.let { runCatching { r2StorageRepository.deleteMedia(it) } }
+                        uploadedPhotoUrl?.let { runCatching { storageRepository.deleteMedia(it) } }
                         _state.value = _state.value.copy(
                             isSaving = false,
                             errorMessage = profileResult.error.message
@@ -216,7 +216,7 @@ class ProfileSetupViewModel(
                     }
                 }
             } catch (e: Exception) {
-                uploadedPhotoUrl?.let { runCatching { r2StorageRepository.deleteMedia(it) } }
+                uploadedPhotoUrl?.let { runCatching { storageRepository.deleteMedia(it) } }
                 _state.value = _state.value.copy(
                     isSaving = false,
                     errorMessage = "Profil oluşturulurken beklenmeyen bir hata oluştu: " +

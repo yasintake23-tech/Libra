@@ -1,5 +1,7 @@
 package com.libra.app.feature.home
 
+import com.libra.app.core.di.ServiceLocator
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -386,7 +388,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
             Spacer(Modifier.height(8.dp))
             Text(post.text, style = MaterialTheme.typography.bodyLarge)
 
-            if (post.mediaUrl.isNotBlank() && post.mediaType == "image") {
+            if (post.mediaUrl.isNotBlank() && (post.mediaType == "image" || post.mediaType.startsWith("image/"))) {
                 Spacer(Modifier.height(12.dp))
                 var mediaFailed by remember(post.mediaUrl) { mutableStateOf(false) }
                 if (mediaFailed) {
@@ -404,7 +406,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     }
                 } else {
                     AsyncImage(
-                        model = post.mediaUrl,
+                        model = ServiceLocator.storageRepository.getPublicCdnUrl(post.mediaUrl),
                         contentDescription = "Gönderi fotoğrafı",
                         modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
                         contentScale = ContentScale.Crop,

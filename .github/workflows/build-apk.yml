@@ -89,74 +89,59 @@ jobs:
           grep -q '"project_id": "libra-3bfb9"' app/google-services.json
           grep -q '"package_name": "com.libra.app"' app/google-services.json
 
-      - name: Verify direct Cloudflare R2 access
+      - name: Inject direct R2 S3 configuration
         shell: bash
         env:
-          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+          R2_KEY_ID: ${{ secrets.R2_KEY_ID || vars.R2_KEY_ID }}
+          R2_SECRET: ${{ secrets.R2_SECRET || vars.R2_SECRET }}
+          R2_PUBLIC: ${{ secrets.R2_PUBLIC || vars.R2_PUBLIC }}
         run: |
           set -euo pipefail
+          [[ -n "$R2_KEY_ID" ]] || { echo "::error::R2_KEY_ID eksik."; exit 1; }
+          [[ -n "$R2_SECRET" ]] || { echo "::error::R2_SECRET eksik."; exit 1; }
+          [[ -n "$R2_PUBLIC" ]] || { echo "::error::R2_PUBLIC eksik. Cloudflare R2 public URL gerekli."; exit 1; }
+          [[ "$R2_PUBLIC" == https://* ]] || { echo "::error::R2_PUBLIC HTTPS bir URL olmalı."; exit 1; }
+          echo "::add-mask::$R2_KEY_ID"
+          echo "::add-mask::$R2_SECRET"
+          echo "::add-mask::$R2_PUBLIC"
 
-          python3 - <<'PY' > "$RUNNER_TEMP/r2.env"
+          python3 - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as ET
+          from xml.sax.saxutils import escape
+          import os
+          import re
 
-          root = ET.parse("app/src/main/res/values/strings.xml").getroot()
+          path = Path("app/src/main/res/values/strings.xml")
+          content = path.read_text(encoding="utf-8")
           values = {
-              node.attrib["name"]: (node.text or "").strip()
-              for node in root.findall("string")
+              "cloudflare_r2_access_key_id": os.environ["R2_KEY_ID"].strip(),
+              "cloudflare_r2_secret_access_key": os.environ["R2_SECRET"].strip(),
+              "cloudflare_r2_public_base_url": os.environ.get("R2_PUBLIC", "").strip().rstrip("/"),
           }
 
-          endpoint = values.get("r2_upload_endpoint", "")
-          account = values.get("cloudflare_r2_account_id", "")
-          bucket = values.get("cloudflare_r2_bucket_name", "")
-          print("R2_ENDPOINT=" + endpoint)
-          print("R2_ACCOUNT=" + account)
-          print("R2_BUCKET=" + bucket)
+          for name, value in values.items():
+              pattern = r'(<string name="' + re.escape(name) + r'">)(.*?)(</string>)'
+              content, count = re.subn(
+                  pattern,
+                  lambda m: m.group(1) + escape(value) + m.group(3),
+                  content,
+                  count=1,
+                  flags=re.DOTALL,
+              )
+              if count != 1:
+                  raise SystemExit(name + " bulunamadı.")
+
+          path.write_text(content, encoding="utf-8")
           PY
 
-          set -a
-          source "$RUNNER_TEMP/r2.env"
-          set +a
-
-          if [[ -z "$R2_ENDPOINT" || -z "$CLOUDFLARE_R2_API_TOKEN" ]]; then
-            echo "Direct R2 doğrulaması atlandı: Worker endpoint veya Actions secret yapılandırılmamış. Uygulama Firebase Storage fallback kullanacak."
-            exit 0
-          fi
-
-          echo "::add-mask::$CLOUDFLARE_R2_API_TOKEN"
-          API_BASE="https://api.cloudflare.com/client/v4/accounts/$R2_ACCOUNT/r2/buckets/$R2_BUCKET/objects"
-          TEST_KEY="_ci/libra-$GITHUB_RUN_ID.txt"
-          printf '%s\n' 'libra-r2-ci' > "$RUNNER_TEMP/r2-test.txt"
-
-          curl --fail --silent --show-error             --request PUT             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             --header "Content-Type: text/plain"             --data-binary @"$RUNNER_TEMP/r2-test.txt"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-put.json"
-
-          python3 - <<'PY' "$RUNNER_TEMP/r2-put.json"
-          import json
-          import sys
-          payload = json.load(open(sys.argv[1], encoding="utf-8"))
-          if payload.get("success") is not True:
-              raise SystemExit("R2 PUT başarısız: " + repr(payload))
-          print("Direct R2 PUT başarılı.")
-          PY
-
-          curl --fail --silent --show-error             --request GET             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-get.txt"
-
-          cmp "$RUNNER_TEMP/r2-test.txt" "$RUNNER_TEMP/r2-get.txt" || {
-            echo "::error::R2 GET doğrulaması PUT edilen içerikle eşleşmiyor."
-            exit 1
-          }
-          echo "Direct R2 GET başarılı."
-
-          curl --fail --silent --show-error             --request DELETE             --header "Authorization: Bearer $CLOUDFLARE_R2_API_TOKEN"             "$API_BASE/$TEST_KEY" > "$RUNNER_TEMP/r2-delete.json"
-
-          python3 - <<'PY' "$RUNNER_TEMP/r2-delete.json"
-          import json
-          import sys
-          payload = json.load(open(sys.argv[1], encoding="utf-8"))
-          if payload.get("success") is not True:
-              raise SystemExit("R2 DELETE başarısız: " + repr(payload))
-          print("Direct R2 DELETE başarılı.")
-          PY
+      - name: Deploy Realtime Database rules when Firebase token is configured
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        if: ${{ env.FIREBASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest deploy --only database --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
 
       - name: Show toolchain
         shell: bash
