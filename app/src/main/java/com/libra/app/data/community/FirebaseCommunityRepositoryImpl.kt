@@ -2,6 +2,7 @@ package com.libra.app.data.community
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
@@ -89,6 +90,21 @@ class FirebaseCommunityRepositoryImpl(
                 )
             )
             batch.commit().await()
+
+            try {
+                FirebaseDatabase.getInstance()
+                    .getReference("serverMessageMembers/${server.id}/${user.uid}")
+                    .setValue(true)
+                    .await()
+            } catch (membershipError: Exception) {
+                runCatching {
+                    firestore.batch().apply {
+                        delete(serverRef)
+                        delete(serverRef.collection("members").document(user.uid))
+                    }.commit().await()
+                }
+                throw membershipError
+            }
 
             AppResult.Success(server)
         } catch (e: Exception) {
@@ -188,6 +204,16 @@ class FirebaseCommunityRepositoryImpl(
                 ).await()
             }
 
+            try {
+                FirebaseDatabase.getInstance()
+                    .getReference("serverMessageMembers/${serverId}/${user.uid}")
+                    .setValue(true)
+                    .await()
+            } catch (membershipError: Exception) {
+                runCatching { memberRef.delete().await() }
+                throw membershipError
+            }
+
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucuya katılınamadı.", e))
@@ -272,6 +298,12 @@ class FirebaseCommunityRepositoryImpl(
             }
 
             serverRef.collection("members").document(memberId).delete().await()
+            runCatching {
+                FirebaseDatabase.getInstance()
+                    .getReference("serverMessageMembers/${serverId}/${memberId}")
+                    .removeValue()
+                    .await()
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Üye çıkarılamadı.", e))
@@ -288,6 +320,13 @@ class FirebaseCommunityRepositoryImpl(
                 .document(user.uid)
                 .delete()
                 .await()
+
+            runCatching {
+                FirebaseDatabase.getInstance()
+                    .getReference("serverMessageMembers/${serverId}/${user.uid}")
+                    .removeValue()
+                    .await()
+            }
 
             AppResult.Success(Unit)
         } catch (e: Exception) {
