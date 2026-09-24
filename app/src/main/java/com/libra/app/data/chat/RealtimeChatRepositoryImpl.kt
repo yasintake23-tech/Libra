@@ -1,5 +1,6 @@
 package com.libra.app.data.chat
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -34,6 +35,10 @@ import kotlinx.coroutines.tasks.await
  * summaries and notifications). A summary/notification failure must never
  * make a successfully written message disappear.
  */
+private const val LIBRA_RTDB_TAG = "LibraRTDB"
+private const val LIBRA_RTDB_URL =
+    "https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app"
+
 class RealtimeChatRepositoryImpl(
     private val userRepository: UserRepository,
     private val storageRepository: StorageRepository,
@@ -43,7 +48,15 @@ class RealtimeChatRepositoryImpl(
     private val auth = FirebaseAuth.getInstance()
 
     private fun database(): FirebaseDatabase? =
-        runCatching { FirebaseDatabase.getInstance() }.getOrNull()
+        runCatching {
+            // Pin the database host to the actual regional RTDB shown in the
+            // Firebase project configuration. This avoids a silent null when
+            // the default FirebaseDatabase instance has no database URL in
+            // FirebaseOptions on a particular build/device combination.
+            FirebaseDatabase.getInstance(LIBRA_RTDB_URL)
+        }.onFailure { throwable ->
+            Log.e(LIBRA_RTDB_TAG, "Realtime Database initialization failed", throwable)
+        }.getOrNull()
 
     private fun ref(path: String): DatabaseReference? =
         database()?.getReference(path)

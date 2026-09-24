@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
 /**
@@ -118,19 +119,49 @@ class CloudflareR2StorageRepositoryImpl(
         val raw = fileKey.trim()
         if (raw.isBlank()) return raw
 
+        val key = config.objectKeyFromValue(context, raw)
+        if (key != null && config.isConfigured(context)) {
+            // Do not depend on the Cloudflare-managed r2.dev development URL
+            // for app media. It is intentionally rate-limited and lacks the
+            // caching controls available on a custom domain. A short-lived
+            // signed GET also makes image access consistent across Android
+            // devices and mobile networks.
+            return cachedPresignedGetUrl(key) ?: publicUrlForKey(key)
+        }
+
         val publicBase = config.publicBaseUrl(context)
         if (raw.startsWith(publicBase + "/")) return raw
-
-        val key = config.objectKeyFromValue(context, raw)
-        if (key != null) {
-            return publicBase + "/" +
-                key.split("/").joinToString("/") { Uri.encode(it) }
-        }
 
         // Preserve public custom-domain URLs from older data.
         if (raw.startsWith("https://") || raw.startsWith("http://")) return raw
         return raw
     }
+
+    private fun cachedPresignedGetUrl(key: String): String? {
+        val now = System.currentTimeMillis()
+        signedUrlCache[key]?.let { cached ->
+            if (cached.expiresAt > now) return cached.url
+            signedUrlCache.remove(key, cached)
+        }
+
+        return runCatching {
+            val expiresAt = now + SIGNED_GET_CACHE_MS
+            val url = createClient().useS3 { client ->
+                client.generatePresignedUrl(
+                    config.bucketName(context),
+                    key,
+                    Date(expiresAt),
+                    HttpMethod.GET
+                ).toString()
+            }
+            signedUrlCache[key] = CachedSignedUrl(url, expiresAt - SIGNED_URL_SAFETY_MS)
+            url
+        }.getOrNull()
+    }
+
+    private fun publicUrlForKey(key: String): String =
+        config.publicBaseUrl(context) + "/" +
+            key.split("/").joinToString("/") { Uri.encode(it) }
 
     private fun validateRequest(request: StorageUploadRequest): String? {
         if (!config.isConfigured(context)) return "Cloudflare R2 yapılandırması eksik."
@@ -273,11 +304,17 @@ class CloudflareR2StorageRepositoryImpl(
         message: String
     ) : IllegalStateException("R2 HTTP " + statusCode + ": " + message)
 
+    private data class CachedSignedUrl(val url: String, val expiresAt: Long)
+
+    private val signedUrlCache = ConcurrentHashMap<String, CachedSignedUrl>()
+
     private companion object {
         const val MAX_UPLOAD_BYTES = 8 * 1024 * 1024
         const val MAX_ATTEMPTS = 3
         const val HTTP_TIMEOUT_MS = 30_000
         const val PRESIGNED_URL_LIFETIME_MS = 10L * 60L * 1000L
+        const val SIGNED_GET_CACHE_MS = 8L * 60L * 1000L
+        const val SIGNED_URL_SAFETY_MS = 30_000L
         val RETRY_DELAYS_MS = longArrayOf(750L, 1750L)
     }
 }
