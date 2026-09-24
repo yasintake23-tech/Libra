@@ -29,46 +29,75 @@ class FirebasePostRepositoryImpl(
     private val postsRef get() = firestore.collection("posts")
 
     override fun observeFeed(currentUserId: String, limit: Long): Flow<AppResult<List<Post>>> = callbackFlow {
-        val query = postsRef.orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
-        val registration: ListenerRegistration = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                trySend(AppResult.Error(AppError.Database("Ana akış yüklenemedi.", error)))
-                return@addSnapshotListener
-            }
+        if (currentUserId.isBlank()) {
+            trySend(AppResult.Error(AppError.Auth("Oturum bulunamadı.")))
+            close()
+            return@callbackFlow
+        }
 
-            val documents = snapshot?.documents.orEmpty()
-            launch {
-                try {
-                    val followingIds = (userRepository.getFollowingIds(currentUserId) as? AppResult.Success)?.data.orEmpty() + currentUserId
-                    val posts = documents.filter { it.getString("authorId") in followingIds }.mapNotNull { document ->
-                        val data = document.data ?: return@mapNotNull null
-                        Post(
-                            id = document.id,
-                            authorId = data["authorId"] as? String ?: "",
-                            authorName = data["authorName"] as? String ?: "",
-                            authorUsername = data["authorUsername"] as? String ?: "",
-                            authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
-                            title = data["title"] as? String ?: "",
-                            text = data["text"] as? String ?: "",
-                            mediaUrl = data["mediaUrl"] as? String ?: "",
-                            mediaType = data["mediaType"] as? String ?: "",
-                            tags = (data["tags"] as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
-                            likesCount = (data["likesCount"] as? Number)?.toInt() ?: 0,
-                            likedByCurrentUser = runCatching {
-                                document.reference.collection("likes").document(currentUserId).get().await().exists()
-                            }.getOrDefault(false),
-                            savedByCurrentUser = runCatching {
-                                firestore.collection("savedPosts").document(currentUserId).collection("posts").document(document.id).get().await().exists()
-                            }.getOrDefault(false),
-                            createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
-                        )
+        val safeLimit = limit.coerceIn(1L, 100L)
+        val registration = postsRef
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(safeLimit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Ana akış yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+
+                launch {
+                    try {
+                        // The home feed is a public social feed. Do not re-filter it by
+                        // follows on the client, otherwise a new user can only see
+                        // their own posts. Like/save state is loaded separately so a
+                        // single broken secondary query cannot hide the whole feed.
+                        val likedIds = runCatching {
+                            firestore.collectionGroup("likes")
+                                .whereEqualTo("userId", currentUserId)
+                                .get()
+                                .await()
+                                .documents
+                                .mapNotNull { it.reference.parent.parent?.id }
+                                .toSet()
+                        }.getOrDefault(emptySet())
+
+                        val savedIds = runCatching {
+                            firestore.collection("savedPosts")
+                                .document(currentUserId)
+                                .collection("posts")
+                                .get()
+                                .await()
+                                .documents
+                                .mapNotNull { it.getString("postId") ?: it.id }
+                                .toSet()
+                        }.getOrDefault(emptySet())
+
+                        val posts = snapshot?.documents.orEmpty().mapNotNull { document ->
+                            val data = document.data ?: return@mapNotNull null
+                            Post(
+                                id = document.id,
+                                authorId = data["authorId"] as? String ?: "",
+                                authorName = data["authorName"] as? String ?: "",
+                                authorUsername = data["authorUsername"] as? String ?: "",
+                                authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
+                                title = data["title"] as? String ?: "",
+                                text = data["text"] as? String ?: "",
+                                mediaUrl = data["mediaUrl"] as? String ?: "",
+                                mediaType = data["mediaType"] as? String ?: "",
+                                tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                                likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                likedByCurrentUser = document.id in likedIds,
+                                savedByCurrentUser = document.id in savedIds,
+                                createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
+                            )
+                        }
+                        trySend(AppResult.Success(posts))
+                    } catch (e: Exception) {
+                        trySend(AppResult.Error(AppError.Database("Gönderiler çözümlenemedi.", e)))
                     }
-                    trySend(AppResult.Success(posts))
-                } catch (e: Exception) {
-                    trySend(AppResult.Error(AppError.Database("Gönderiler çözümlenemedi.", e)))
                 }
             }
-        }
+
         awaitClose { registration.remove() }
     }
 
@@ -136,31 +165,48 @@ class FirebasePostRepositoryImpl(
     override suspend fun toggleLike(postId: String, userId: String): AppResult<Boolean> {
         val user = FirebaseAuth.getInstance().currentUser
             ?: return AppResult.Error(AppError.Auth("Beğenmek için giriş yapmalısın."))
-        if (user.uid != userId) return AppResult.Error(AppError.Auth("Oturum bilgisi geçersiz."))
+        if (postId.isBlank() || user.uid != userId) {
+            return AppResult.Error(AppError.Auth("Oturum bilgisi geçersiz."))
+        }
 
         return try {
-            val ref = postsRef.document(postId)
-            val snapshot = ref.get().await()
-            if (!snapshot.exists()) {
-                return AppResult.Error(AppError.Validation("Gönderi bulunamadı."))
-            }
+            val postRef = postsRef.document(postId)
+            val likeRef = postRef.collection("likes").document(user.uid)
 
-            val likes = snapshot.get("likedBy") as? List<*> ?: emptyList<Any>()
-            val liked = user.uid in likes
-            val updatedLikes = if (liked) {
-                likes.filterIsInstance<String>().filter { it != user.uid }
-            } else {
-                likes.filterIsInstance<String>() + user.uid
-            }
+            var nowLiked = false
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+                if (!postSnapshot.exists()) {
+                    throw IllegalStateException("Gönderi bulunamadı.")
+                }
 
-            ref.update("likedBy", updatedLikes).await()
+                val likeSnapshot = transaction.get(likeRef)
+                val currentCount = (postSnapshot.getLong("likesCount") ?: 0L).coerceAtLeast(0L)
 
-            if (!liked) {
-                val recipientId = snapshot.getString("authorId").orEmpty()
+                if (likeSnapshot.exists()) {
+                    transaction.delete(likeRef)
+                    transaction.update(postRef, "likesCount", (currentCount - 1L).coerceAtLeast(0L))
+                    nowLiked = false
+                } else {
+                    transaction.set(
+                        likeRef,
+                        mapOf(
+                            "userId" to user.uid,
+                            "createdAt" to System.currentTimeMillis()
+                        )
+                    )
+                    transaction.update(postRef, "likesCount", currentCount + 1L)
+                    nowLiked = true
+                }
+                null
+            }.await()
+
+            if (nowLiked) {
+                val recipientId = postsRef.document(postId).get().await().getString("authorId").orEmpty()
                 if (recipientId.isNotBlank() && recipientId != user.uid) {
-                    val actor = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
-                    if (actor != null) {
-                        runCatching {
+                    runCatching {
+                        val actor = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
+                        if (actor != null) {
                             notificationRepository.create(
                                 AppNotification(
                                     recipientId = recipientId,
@@ -180,7 +226,7 @@ class FirebasePostRepositoryImpl(
                 }
             }
 
-            AppResult.Success(!liked)
+            AppResult.Success(nowLiked)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Beğeni işlemi başarısız.", e))
         }
