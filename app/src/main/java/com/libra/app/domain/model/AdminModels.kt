@@ -26,6 +26,7 @@ data class CosmeticRole(
     val id: String = "",
     val name: String = "",
     val icon: String = "✦",
+    val imageUrl: String = "",
     val color: Long = 0xFF76AAFF,
     val description: String = "",
     val animationStyle: String = "LIGHTNING",
