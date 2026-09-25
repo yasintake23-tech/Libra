@@ -325,7 +325,24 @@ fun AppNavHost(
                         onCloseComments = vm::closeComments,
                         isPosting = vm.isPosting.collectAsState().value,
                         postError = vm.postError.collectAsState().value,
-                        onClearPostError = vm::clearPostError
+                        onClearPostError = vm::clearPostError,
+                        onStoryReply = { story ->
+                            scope.launch {
+                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
+                                    is com.libra.app.core.result.AppResult.Success -> {
+                                        result.data?.let {
+                                            selectedDirectUser = it
+                                            selectedTab = BottomNavTab.DM
+                                        }
+                                    }
+                                    is com.libra.app.core.result.AppResult.Error -> {
+                                        Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        },
+                        onStoryLike = vm::toggleStoryLike,
+                        onStoriesRefresh = vm::refreshStories
                     )
                 }
 
