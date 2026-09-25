@@ -236,6 +236,7 @@ fun AppNavHost(
     if (showNotifications) {
         NotificationsScreen(
             onBack = { showNotifications = false },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
