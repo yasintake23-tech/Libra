@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
@@ -133,7 +132,7 @@ private fun ProfileContent(
                         )
                     ) {
                         Icon(
-                            Icons.Default.AdminPanelSettings,
+                            Icons.Default.Settings,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp)
                         )
