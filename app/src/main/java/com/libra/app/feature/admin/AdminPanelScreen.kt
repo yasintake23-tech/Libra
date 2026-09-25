@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
@@ -32,6 +33,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 
 private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri")
@@ -389,7 +391,11 @@ private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit
         Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("Yeni kozmetik rol / rozet oluştur") }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(roles, key = { it.id }) { role ->
             Row(Modifier.fillMaxWidth().background(Color(0xFFF7F7F7), RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (role.imageUrl.isNotBlank()) AsyncImage(model = runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }.getOrNull(), contentDescription = role.name, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop) else Text(role.icon, modifier = Modifier.size(44.dp))
+                if (role.imageUrl.isNotBlank()) {
+                    var roleImage by remember(role.id) { mutableStateOf<String?>(null) }
+                    LaunchedEffect(role.id, role.imageUrl) { roleImage = ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }
+                    AsyncImage(model = roleImage, contentDescription = role.name, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                } else Text(role.icon, modifier = Modifier.size(44.dp))
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(role.name, fontWeight = FontWeight.SemiBold); if (role.description.isNotBlank()) Text(role.description, color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
                 Switch(checked = role.id in assignedIds, onCheckedChange = { checked -> assignedIds = if (checked) assignedIds + role.id else assignedIds - role.id; vm.assignCosmetic(p.uid, role.id, checked) })
             }
