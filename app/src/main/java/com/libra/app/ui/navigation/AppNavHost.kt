@@ -34,6 +34,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.AdminPermissionSet
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
@@ -159,9 +160,10 @@ fun AppNavHost(
     }
 
     var hasAdminAccess by remember(profile.uid) { mutableStateOf(profile.uid == LIBRA_ADMIN_UID) }
+    var adminPermissions by remember(profile.uid) { mutableStateOf(AdminPermissionSet()) }
     LaunchedEffect(profile.uid) {
-        if (profile.uid == LIBRA_ADMIN_UID) hasAdminAccess = true
-        else hasAdminAccess = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data != null
+        if (profile.uid == LIBRA_ADMIN_UID) { hasAdminAccess = true; adminPermissions = AdminPermissionSet(true,true,true,true,true,true,true,true,true,true,true) }
+        else { val role = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data; hasAdminAccess = role != null; adminPermissions = role?.permissions ?: AdminPermissionSet() }
     }
 
     createContentMode?.let { mode ->
@@ -275,6 +277,7 @@ fun AppNavHost(
         if (hasAdminAccess) {
             AdminPanelScreen(
                 onBack = { showAdminPanel = false },
+                permissions = adminPermissions,
                 modifier = modifier.fillMaxSize()
             )
         } else {
