@@ -21,7 +21,7 @@ import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.launch
 
 @Composable
-fun NotificationsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val repo = ServiceLocator.notificationRepository
     val uid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val scope = rememberCoroutineScope()
@@ -84,7 +84,7 @@ private fun NotificationRow(notification: AppNotification, onClick: () -> Unit) 
         color = if (notification.read) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            UserAvatar(notification.actorPhotoUrl, notification.actorName.take(1).uppercase(), size = 46.dp)
+            UserAvatar(notification.actorPhotoUrl, notification.actorName.take(1).uppercase(), size = 46.dp, onClick = { onOpenProfile(notification.actorId) })
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(notification.title, fontWeight = FontWeight.Bold)
                 Text(notification.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
