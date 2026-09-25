@@ -13,6 +13,7 @@ import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.NotificationRepository
@@ -77,7 +78,8 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = reactions(snapshot.child("reactions"))
+                reactions = reactions(snapshot.child("reactions")),
+                sharedContent = sharedContent(snapshot.child("sharedContent"))
             )
         }.getOrNull()
 
@@ -122,6 +124,38 @@ class RealtimeChatRepositoryImpl(
                 reactions = reactions(snapshot.child("reactions"))
             )
         }.getOrNull()
+
+
+    private fun sharedContent(snapshot: DataSnapshot): SharedContent? {
+        if (!snapshot.exists()) return null
+        val type = snapshot.child("type").getValue(String::class.java).orEmpty()
+        val id = snapshot.child("id").getValue(String::class.java).orEmpty()
+        if (type.isBlank() || id.isBlank()) return null
+        return SharedContent(
+            type = type,
+            id = id,
+            title = snapshot.child("title").getValue(String::class.java).orEmpty(),
+            text = snapshot.child("text").getValue(String::class.java).orEmpty(),
+            authorId = snapshot.child("authorId").getValue(String::class.java).orEmpty(),
+            authorName = snapshot.child("authorName").getValue(String::class.java).orEmpty(),
+            mediaUrl = snapshot.child("mediaUrl").getValue(String::class.java).orEmpty(),
+            url = snapshot.child("url").getValue(String::class.java).orEmpty()
+        )
+    }
+
+    private fun sharedContentData(content: SharedContent?): Map<String, Any>? =
+        content?.let {
+            mapOf(
+                "type" to it.type,
+                "id" to it.id,
+                "title" to it.title,
+                "text" to it.text,
+                "authorId" to it.authorId,
+                "authorName" to it.authorName,
+                "mediaUrl" to it.mediaUrl,
+                "url" to it.url
+            )
+        }
 
     private fun reactions(snapshot: DataSnapshot): Map<String, String> =
         buildMap {
