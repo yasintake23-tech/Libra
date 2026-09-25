@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.libra.app.domain.model.AppUpdate
 import java.io.File
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val UPDATE_ADMIN_PASSWORD = "Libra+8369#"
@@ -52,6 +51,7 @@ fun AppUpdatePrompt(
     var adminPassword by remember { mutableStateOf("") }
     var adminPasswordError by remember { mutableStateOf(false) }
     var holdStarted by remember { mutableStateOf(false) }
+    var adminHoldTriggered by remember { mutableStateOf(false) }
 
     fun openInstaller(file: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
@@ -115,25 +115,31 @@ fun AppUpdatePrompt(
                 downloading -> Unit
                 else -> {
                     Button(
-                        onClick = onDownload,
+                        onClick = {
+                            if (adminHoldTriggered) {
+                                adminHoldTriggered = false
+                            } else {
+                                onDownload()
+                            }
+                        },
                         modifier = Modifier.pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 if (!down.pressed) return@awaitEachGesture
 
                                 holdStarted = true
-                                val reachedTenSeconds = withTimeoutOrNull(ADMIN_HOLD_MILLIS) {
+                                val reachedTenSeconds = withTimeoutOrNull<Boolean>(ADMIN_HOLD_MILLIS) {
                                     while (true) {
                                         val event = awaitPointerEvent()
                                         if (event.changes.none { it.pressed }) {
                                             return@withTimeoutOrNull false
                                         }
-                                        delay(16)
                                     }
                                 } ?: true
 
                                 holdStarted = false
                                 if (reachedTenSeconds) {
+                                    adminHoldTriggered = true
                                     adminPassword = ""
                                     adminPasswordError = false
                                     showAdminLogin = true
