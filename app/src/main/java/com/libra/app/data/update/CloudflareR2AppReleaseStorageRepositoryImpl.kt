@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.io.InputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.net.URL
 import java.util.Date
 import java.util.UUID
@@ -121,33 +123,63 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
         } else {
             PackageManager.GET_SIGNATURES
         }
-        val info = pm.getPackageArchiveInfo(uri.toString(), flags)
-            ?: return ApkValidation.Invalid("Seçilen dosya geçerli bir APK değil.")
-        if (info.packageName != context.packageName) {
-            return ApkValidation.Invalid("Bu APK Libra uygulamasına ait değil.")
-        }
 
-        val installed = runCatching {
-            val pi = pm.getPackageInfo(context.packageName, flags)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                pi.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-            } else {
-                pi.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+        // OpenDocument normally returns a content:// URI. PackageManager
+        // requires a real APK filesystem path for getPackageArchiveInfo().
+        // Materialize only for validation, then remove the temporary copy.
+        val validationDir = File(context.cacheDir, "updates-validation").apply { mkdirs() }
+        val validationFile = File(validationDir, "validate-${UUID.randomUUID()}.apk")
+
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(validationFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        if (copied > MAX_APK_BYTES) {
+                            return ApkValidation.Invalid("APK dosyası 200 MB'dan büyük olamaz.")
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                    output.flush()
+                }
+            } ?: return ApkValidation.Invalid("Seçilen APK dosyası okunamadı.")
+
+            val info = pm.getPackageArchiveInfo(validationFile.absolutePath, flags)
+                ?: return ApkValidation.Invalid("Seçilen dosya geçerli bir APK değil.")
+            if (info.packageName != context.packageName) {
+                return ApkValidation.Invalid("Bu APK Libra uygulamasına ait değil.")
             }
-        }.getOrElse {
-            return ApkValidation.Invalid("Mevcut Libra imza bilgisi okunamadı.")
-        }
 
-        val uploaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-        } else {
-            info.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-        }
+            val installed = runCatching {
+                val pi = pm.getPackageInfo(context.packageName, flags)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    pi.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                } else {
+                    pi.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                }
+            }.getOrElse {
+                return ApkValidation.Invalid("Mevcut Libra imza bilgisi okunamadı.")
+            }
 
-        if (installed.isEmpty() || uploaded.isEmpty() || installed.intersect(uploaded).isEmpty()) {
-            return ApkValidation.Invalid("APK, yüklü Libra sürümüyle aynı imzalama anahtarını kullanmıyor.")
+            val uploaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+            } else {
+                info.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+            }
+
+            if (installed.isEmpty() || uploaded.isEmpty() || installed.intersect(uploaded).isEmpty()) {
+                return ApkValidation.Invalid("APK, yüklü Libra sürümüyle aynı imzalama anahtarını kullanmıyor.")
+            }
+            ApkValidation.Valid
+        } catch (e: Exception) {
+            ApkValidation.Invalid("APK doğrulanırken dosya okunamadı.")
+        } finally {
+            validationFile.delete()
         }
-        return ApkValidation.Valid
     }
 
     private fun sha256(bytes: ByteArray): String =
