@@ -99,7 +99,17 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
 
 @Composable private fun MemberAdminScreen(member: UserProfile, vm: AdminViewModel, onBack: () -> Unit, permissions: AdminPermissionSet, modifier: Modifier) {
     var current by remember(member) { mutableStateOf(member) }
-    var dialog by remember { mutableStateOf<String?>(null) }
+    var page by remember { mutableStateOf<String?>(null) }
+
+    if (page == "Ban ve erişim işlemleri") {
+        ModerationPage(current, { page = null }) {
+            current = current.copy(moderation = it)
+            vm.saveModeration(current.uid, it)
+            page = null
+        }
+        return
+    }
+
     Surface(modifier.fillMaxSize(), color = Color.White) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -110,21 +120,84 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
                 }
             }
             Spacer(Modifier.height(18.dp))
-            listOf("Ban ve erişim işlemleri" to permissions.manageBans,"Hesap ve üyelik işlemleri" to permissions.editProfiles,"Kitap işlemleri" to permissions.manageBooks,"Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,"Kozmetik rol" to permissions.manageCosmetics,"Kullanıcıya geri bildirim / DM" to permissions.sendFeedback).filter { it.second }.forEach { (title, allowed) ->
-                Row(Modifier.fillMaxWidth().padding(bottom=10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable { dialog=title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Text(title, fontWeight=FontWeight.SemiBold)
-                    Icon(Icons.Default.Settings,null,tint=Color.Gray)
+            listOf(
+                "Ban ve erişim işlemleri" to permissions.manageBans,
+                "Hesap ve üyelik işlemleri" to permissions.editProfiles,
+                "Kitap işlemleri" to permissions.manageBooks,
+                "Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,
+                "Kozmetik rol" to permissions.manageCosmetics,
+                "Kullanıcıya geri bildirim / DM" to permissions.sendFeedback
+            ).filter { it.second }.forEach { (title, _) ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                        .background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp))
+                        .clickable { page = title }
+                        .padding(18.dp),
+                    Arrangement.SpaceBetween, Alignment.CenterVertically
+                ) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.Settings, null, tint = Color.Gray)
                 }
             }
         }
     }
-    when(dialog) {
-        "Ban ve erişim işlemleri" -> ModerationDialog(current.moderation,{dialog=null}) { m -> current=current.copy(moderation=m); vm.saveModeration(current.uid,m) }
-        "Hesap ve üyelik işlemleri" -> ProfileDialog(current,{dialog=null}) { p -> current=p; vm.saveProfile(p) }
-        "Kitap işlemleri" -> InfoDialog("Kitap işlemleri","Yakında... Kitap mekaniği hazır olduğunda bağlanacak.",{dialog=null})
-        "Yönetici rolü verme işlemleri" -> AdminRoleDialog(current.uid,vm,{dialog=null})
-        "Kozmetik rol" -> CosmeticDialog(current,vm,{dialog=null})
-        "Kullanıcıya geri bildirim / DM" -> ContactDialog(current,{dialog=null})
+
+    when (page) {
+        "Hesap ve üyelik işlemleri" -> ProfileDialog(current, { page = null }) { current = it; vm.saveProfile(it) }
+        "Kitap işlemleri" -> InfoDialog("Kitap işlemleri", "Yakında... Kitap mekaniği hazır olduğunda bağlanacak.", { page = null })
+        "Yönetici rolü verme işlemleri" -> AdminRoleDialog(current.uid, vm, { page = null })
+        "Kozmetik rol" -> CosmeticDialog(current, vm, { page = null })
+        "Kullanıcıya geri bildirim / DM" -> ContactDialog(current, { page = null })
+    }
+}
+
+@Composable
+private fun ModerationPage(member: UserProfile, onBack: () -> Unit, onSave: (UserModeration) -> Unit) {
+    var value by remember(member.uid) { mutableStateOf(member.moderation) }
+    var reason by remember(member.uid) { mutableStateOf(member.moderation.banReason) }
+    var duration by remember(member.uid) { mutableStateOf("Kalıcı") }
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
+            Column {
+                Text("Ban ve erişim işlemleri", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                Text(member.displayName.ifBlank { "Üye" }, color = Color.Gray)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            item {
+                OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth(), label = { Text("Ban sebebi") }, minLines = 2)
+                Spacer(Modifier.height(10.dp))
+                Text("Ban süresi", fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                    listOf("1 saat", "1 gün", "7 gün", "Kalıcı").forEach {
+                        FilterChip(duration == it, { duration = it }, label = { Text(it) })
+                    }
+                }
+            }
+            item { SwitchRow("Ban", value.banned) { value = value.copy(banned = it) } }
+            item { SwitchRow("Gönderi paylaşma engeli", value.postingDisabled) { value = value.copy(postingDisabled = it) } }
+            item { SwitchRow("Mesaj atma engeli", value.messagingDisabled) { value = value.copy(messagingDisabled = it) } }
+            item { SwitchRow("Hikâye paylaşma engeli", value.storyDisabled) { value = value.copy(storyDisabled = it) } }
+            item { SwitchRow("Yorum yapma engeli", value.commentingDisabled) { value = value.copy(commentingDisabled = it) } }
+            item { SwitchRow("Kitap paylaşma engeli", value.bookPublishingDisabled) { value = value.copy(bookPublishingDisabled = it) } }
+            item { SwitchRow("Sunucu oluşturma engeli", value.serverCreationDisabled) { value = value.copy(serverCreationDisabled = it) } }
+            item { SwitchRow("Sunucu/genel chat mesaj engeli", value.serverMessagingDisabled) { value = value.copy(serverMessagingDisabled = it) } }
+            item {
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = {
+                    val until = when (duration) {
+                        "1 saat" -> System.currentTimeMillis() + 3_600_000L
+                        "1 gün" -> System.currentTimeMillis() + 86_400_000L
+                        "7 gün" -> System.currentTimeMillis() + 7L * 86_400_000L
+                        else -> 0L
+                    }
+                    onSave(value.copy(banReason = reason.trim(), banUntil = if (value.banned) until else 0L))
+                }, modifier = Modifier.fillMaxWidth()) { Text("Değişiklikleri kaydet") }
+            }
+        }
     }
 }
 
