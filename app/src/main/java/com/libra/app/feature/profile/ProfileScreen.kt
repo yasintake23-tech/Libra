@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
@@ -48,6 +49,7 @@ fun ProfileScreen(
     onSignOutClick: () -> Unit,
     onRetry: () -> Unit,
     onSettingsClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
@@ -70,6 +72,7 @@ fun ProfileScreen(
             uiState.data,
             onSignOutClick,
             onSettingsClick,
+            onAdminClick,
             modifier
         )
     }
@@ -80,6 +83,7 @@ private fun ProfileContent(
     profile: UserProfile,
     onSignOut: () -> Unit,
     onSettingsClick: () -> Unit,
+    onAdminClick: () -> Unit,
     modifier: Modifier
 ) {
     var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
@@ -116,12 +120,35 @@ private fun ProfileContent(
                     fontWeight = FontWeight.Bold
                 )
             )
-            androidx.compose.material3.IconButton(onClick = onSettingsClick) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = "Ayarlar",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                androidx.compose.material3.Button(
+                    onClick = onAdminClick,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 14.dp,
+                        vertical = 8.dp
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.AdminPanelSettings,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        "Yönetim",
+                        modifier = Modifier.padding(start = 6.dp),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                androidx.compose.material3.IconButton(onClick = onSettingsClick) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Ayarlar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
