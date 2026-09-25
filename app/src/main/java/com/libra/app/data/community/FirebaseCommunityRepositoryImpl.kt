@@ -7,6 +7,8 @@ import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.ServerCategory
+import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -88,6 +90,33 @@ class FirebaseCommunityRepositoryImpl(
                     "joinedAt" to now
                 )
             )
+
+            // Every new server starts with a small Discord-style structure.
+            val generalCategory = serverRef.collection("categories").document("general")
+            val communityCategory = serverRef.collection("categories").document("community")
+            batch.set(generalCategory, ServerCategory("general", "GENEL", 0))
+            batch.set(communityCategory, ServerCategory("community", "TOPLULUK", 1))
+
+            val defaultChannels = listOf(
+                Triple("general-chat", generalCategory.id, "genel"),
+                Triple("chat", generalCategory.id, "sohbet"),
+                Triple("announcements", communityCategory.id, "duyurular")
+            )
+            defaultChannels.forEachIndexed { index, (id, categoryId, name) ->
+                val categoryName = if (categoryId == "general") "GENEL" else "TOPLULUK"
+                batch.set(
+                    serverRef.collection("channels").document(id),
+                    ServerChannel(
+                        id = id,
+                        categoryId = categoryId,
+                        categoryName = categoryName,
+                        name = name,
+                        type = "TEXT",
+                        position = index
+                    )
+                )
+            }
+
             batch.commit().await()
 
             AppResult.Success(server)
@@ -193,6 +222,55 @@ class FirebaseCommunityRepositoryImpl(
             AppResult.Error(AppError.Database("Sunucuya katılınamadı.", e))
         }
     }
+
+    override suspend fun isServerMember(serverId: String): AppResult<Boolean> {
+        val user = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (serverId.isBlank()) return AppResult.Success(false)
+        return try {
+            AppResult.Success(
+                serversRef.document(serverId).collection("members").document(user.uid).get().await().exists()
+            )
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu üyeliği kontrol edilemedi.", e))
+        }
+    }
+
+    override fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>> =
+        callbackFlow {
+            val registration = serversRef.document(serverId)
+                .collection("categories")
+                .orderBy("position", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(AppResult.Error(AppError.Database("Kategoriler yüklenemedi.", error)))
+                        return@addSnapshotListener
+                    }
+                    val categories = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                        runCatching { doc.toObject(ServerCategory::class.java)?.copy(id = doc.id) }.getOrNull()
+                    }
+                    trySend(AppResult.Success(categories))
+                }
+            awaitClose { registration.remove() }
+        }
+
+    override fun observeServerChannels(serverId: String): Flow<AppResult<List<ServerChannel>>> =
+        callbackFlow {
+            val registration = serversRef.document(serverId)
+                .collection("channels")
+                .orderBy("position", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(AppResult.Error(AppError.Database("Kanallar yüklenemedi.", error)))
+                        return@addSnapshotListener
+                    }
+                    val channels = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                        runCatching { doc.toObject(ServerChannel::class.java)?.copy(id = doc.id) }.getOrNull()
+                    }
+                    trySend(AppResult.Success(channels))
+                }
+            awaitClose { registration.remove() }
+        }
 
     override fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>> =
         callbackFlow {
