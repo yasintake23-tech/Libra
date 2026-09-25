@@ -16,7 +16,7 @@ val generatedReleaseId = System.getenv("LIBRA_RELEASE_ID")
     ?.takeIf { it.isNotBlank() }
     ?: gitValue("rev-parse", "--short=12", "HEAD")
         ?.let { "rel_$it" }
-    ?: "rel_local"
+    ?: "rel_local_${System.currentTimeMillis()}"
 
 plugins {
     alias(libs.plugins.android.application)
