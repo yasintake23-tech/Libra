@@ -44,7 +44,11 @@ class AppUpdateViewModel : ViewModel() {
             when (result) {
                 is AppResult.Success -> {
                     val release = result.data
+                    val localReleaseId = BuildConfig.LIBRA_RELEASE_ID.trim()
                     val hasUpdate = release != null &&
+                        release.releaseId.isNotBlank() &&
+                        localReleaseId.isNotBlank() &&
+                        release.releaseId != localReleaseId &&
                         release.versionCode > BuildConfig.VERSION_CODE.toLong()
                     _uiState.value = _uiState.value.copy(
                         checking = false,
