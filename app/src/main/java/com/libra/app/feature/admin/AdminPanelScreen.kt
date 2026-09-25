@@ -344,27 +344,40 @@ private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfil
     )
 }
 
-@Composable private fun AdminRoleDialog(uid:String,vm:AdminViewModel,dismiss:()->Unit){
-    var role by remember{mutableStateOf<AdminRole?>(null)}
-    var name by remember{mutableStateOf("")}
-    var perms by remember{mutableStateOf(AdminPermissionSet())}
-    LaunchedEffect(uid){role=vm.loadAdminRole(uid);role?.let{name=it.name;perms=it.permissions}}
-    AlertDialog(onDismissRequest=dismiss,title={Text("Yönetici rolü")},text={Column(Modifier.heightIn(max=560.dp)){
-        OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Rol adı")})
-        SwitchRow("Üye yönetimi",perms.manageMembers){perms=perms.copy(manageMembers=it)}
-        SwitchRow("Ban/susturma",perms.manageBans){perms=perms.copy(manageBans=it)}
-        SwitchRow("Profil düzenleme",perms.editProfiles){perms=perms.copy(editProfiles=it)}
-        SwitchRow("Kitap yönetimi",perms.manageBooks){perms=perms.copy(manageBooks=it)}
-        SwitchRow("Gönderi yönetimi",perms.managePosts){perms=perms.copy(managePosts=it)}
-        SwitchRow("Hikâye yönetimi",perms.manageStories){perms=perms.copy(manageStories=it)}
-        SwitchRow("Sunucu yönetimi",perms.manageServers){perms=perms.copy(manageServers=it)}
-        SwitchRow("Genel chat",perms.manageGlobalChat){perms=perms.copy(manageGlobalChat=it)}
-        SwitchRow("Yönetici rolü",perms.manageAdminRoles){perms=perms.copy(manageAdminRoles=it)}
-        SwitchRow("Kozmetik rol",perms.manageCosmetics){perms=perms.copy(manageCosmetics=it)}
-        SwitchRow("Geri bildirim",perms.sendFeedback){perms=perms.copy(sendFeedback=it)}
-    }},confirmButton={TextButton({vm.saveAdminRole(uid,AdminRole(name=name.ifBlank{"Özel rol"},permissions=perms));dismiss()}){Text("Kaydet")}},dismissButton={TextButton({vm.saveAdminRole(uid,null);dismiss()}){Text("Rolü kaldır")}})
+@Composable
+private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit) {
+    var role by remember { mutableStateOf<AdminRole?>(null) }
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var perms by remember { mutableStateOf(AdminPermissionSet()) }
+    LaunchedEffect(uid) { role = vm.loadAdminRole(uid); role?.let { name = it.name; description = it.description; perms = it.permissions } }
+    val presets = listOf(
+        "Moderatör" to AdminPermissionSet(manageMembers = true, manageBans = true, managePosts = true, manageStories = true, manageGlobalChat = true, sendFeedback = true),
+        "Sunucu Moderatörü" to AdminPermissionSet(manageMembers = true, manageBans = true, manageServers = true, manageGlobalChat = true),
+        "Yazar Editörü" to AdminPermissionSet(manageBooks = true, managePosts = true, manageStories = true),
+        "CEO" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true)
+    )
+    AlertDialog(onDismissRequest = dismiss, title = { Text("Yönetici rolü") }, text = {
+        Column(Modifier.heightIn(max = 620.dp)) {
+            Text("Hazır rol", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { presets.forEach { (preset, presetPerms) -> FilterChip(name == preset, { name = preset; perms = presetPerms }, label = { Text(preset) }) } }
+            OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Rol adı") })
+            OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(), label = { Text("Açıklama") })
+            Spacer(Modifier.height(8.dp)); Text("Özel yetkiler", fontWeight = FontWeight.Bold)
+            SwitchRow("Üye yönetimi", perms.manageMembers) { perms = perms.copy(manageMembers = it) }
+            SwitchRow("Ban / susturma", perms.manageBans) { perms = perms.copy(manageBans = it) }
+            SwitchRow("Profil düzenleme", perms.editProfiles) { perms = perms.copy(editProfiles = it) }
+            SwitchRow("Kitap yönetimi", perms.manageBooks) { perms = perms.copy(manageBooks = it) }
+            SwitchRow("Gönderi yönetimi", perms.managePosts) { perms = perms.copy(managePosts = it) }
+            SwitchRow("Hikâye yönetimi", perms.manageStories) { perms = perms.copy(manageStories = it) }
+            SwitchRow("Sunucu yönetimi", perms.manageServers) { perms = perms.copy(manageServers = it) }
+            SwitchRow("Genel chat", perms.manageGlobalChat) { perms = perms.copy(manageGlobalChat = it) }
+            SwitchRow("Yönetici rolü verme", perms.manageAdminRoles) { perms = perms.copy(manageAdminRoles = it) }
+            SwitchRow("Kozmetik rol", perms.manageCosmetics) { perms = perms.copy(manageCosmetics = it) }
+            SwitchRow("Geri bildirim / DM", perms.sendFeedback) { perms = perms.copy(sendFeedback = it) }
+        }
+    }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { vm.saveAdminRole(uid, AdminRole(name = name.trim(), description = description.trim(), permissions = perms)); dismiss() }) { Text("Kaydet") } }, dismissButton = { TextButton(onClick = { if (role != null) vm.saveAdminRole(uid, null); dismiss() }) { Text(if (role == null) "Kapat" else "Rolü kaldır") } })
 }
-
 @Composable
 private fun CosmeticDialog(p: UserProfile, vm: AdminViewModel, dismiss: () -> Unit) {
     val roles = vm.cosmeticRoles.collectAsState().value
