@@ -156,6 +156,7 @@ fun HomeScreen(
                             currentUserId = data.currentUser?.uid.orEmpty(),
                             onStoryClick = { selectedStory = it },
                             onOpenProfile = onOpenProfile,
+                            onCreateStory = onOpenCreateStory,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
