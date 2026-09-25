@@ -21,14 +21,16 @@ data class UserProfile(
     val usernameLastChangedAt: Date? = null,
     @ServerTimestamp
     val displayNameChangeWindowStart: Date? = null,
-    val displayNameChangesInWindow: Int = 0
+    val displayNameChangesInWindow: Int = 0,
+    val moderation: UserModeration = UserModeration(),
+    val cosmeticRoleIds: List<String> = emptyList()
 ) {
     val handle: String
-        get() = if (username.isNotBlank()) "@" + username else "@user_" + uid.take(6)
+        get() = if (username.isNotBlank()) "@$username" else "@user_" + uid.take(6)
 
     val initials: String
         get() = displayName.trim()
-            .split(Regex("\\s+"))
+            .split(Regex("\s+"))
             .mapNotNull { it.firstOrNull()?.toString() }
             .take(2)
             .joinToString("")
