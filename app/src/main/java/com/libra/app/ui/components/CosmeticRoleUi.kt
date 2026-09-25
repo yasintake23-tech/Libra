@@ -23,9 +23,9 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun CosmeticRoleBadge(role: CosmeticRole, onClick: () -> Unit) {
-    val image = remember(role.imageUrl) {
-        if (role.imageUrl.isBlank()) null
-        else runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }.getOrNull()
+    var image by remember(role.imageUrl) { mutableStateOf<String?>(null) }
+    LaunchedEffect(role.imageUrl) {
+        image = if (role.imageUrl.isBlank()) null else ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl)
     }
     Row(
         modifier = Modifier
@@ -62,9 +62,9 @@ fun CosmeticRoleReveal(role: CosmeticRole?, onDismiss: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val image = remember(role.imageUrl) {
-                if (role.imageUrl.isBlank()) null
-                else runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }.getOrNull()
+            var image by remember(role.imageUrl) { mutableStateOf<String?>(null) }
+            LaunchedEffect(role.imageUrl) {
+                image = if (role.imageUrl.isBlank()) null else ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl)
             }
             if (image != null) AsyncImage(image, role.name, Modifier.size((90 + p * 45).dp).clip(CircleShape), contentScale = ContentScale.Crop)
             else Text(role.icon, style = MaterialTheme.typography.displayLarge, color = Color.White)
