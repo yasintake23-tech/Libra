@@ -128,17 +128,17 @@ fun AppUpdatePrompt(
                                 if (!down.pressed) return@awaitEachGesture
 
                                 holdStarted = true
-                                val reachedTenSeconds = withTimeoutOrNull<Boolean>(ADMIN_HOLD_MILLIS) {
+                                val holdCompleted = withTimeoutOrNull<Unit>(ADMIN_HOLD_MILLIS) {
                                     while (true) {
                                         val event = awaitPointerEvent()
                                         if (event.changes.none { it.pressed }) {
-                                            return@withTimeoutOrNull false
+                                            return@withTimeoutOrNull
                                         }
                                     }
-                                } ?: true
+                                }
 
                                 holdStarted = false
-                                if (reachedTenSeconds) {
+                                if (holdCompleted == null) {
                                     adminHoldTriggered = true
                                     adminPassword = ""
                                     adminPasswordError = false
