@@ -99,6 +99,7 @@ private fun ProfileContent(
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
     var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
+    var adminRole by remember { mutableStateOf<com.libra.app.domain.model.AdminRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
@@ -110,6 +111,9 @@ private fun ProfileContent(
             ServiceLocator.adminRepository.observeCosmeticRoles().first().let { result ->
                 if (result is com.libra.app.core.result.AppResult.Success) cosmeticRoles = result.data
             }
+        }
+        launch {
+            adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
         }
         launch {
             ServiceLocator.userRepository.getFollowing(profile.uid).let {
@@ -184,6 +188,11 @@ private fun ProfileContent(
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(profile.displayName, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                adminRole?.let { role ->
+                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
                 cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
                     CosmeticRoleBadge(role) { selectedCosmetic = role }
                 }
