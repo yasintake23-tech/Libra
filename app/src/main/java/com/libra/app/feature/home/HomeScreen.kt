@@ -573,7 +573,19 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onLike) {
-                    Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
+                    Icon(
+                        imageVector = if (post.likedByCurrentUser) {
+                            Icons.Default.Favorite
+                        } else {
+                            Icons.Default.FavoriteBorder
+                        },
+                        contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen",
+                        tint = if (post.likedByCurrentUser) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onComment, enabled = canComment) {
