@@ -96,6 +96,17 @@
           ".write": "auth != null && !root.child('moderation').child(auth.uid).child('serverMessagingDisabled').val() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
           ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
           "reactions": {"$uid": {".write": "auth != null && auth.uid === $uid"}}
+        },
+        "channels": {
+          "$channelId": {
+            ".read": "auth != null",
+            ".indexOn": ["createdAt"],
+            "$messageId": {
+              ".write": "auth != null && !root.child('moderation').child(auth.uid).child('serverMessagingDisabled').val() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+              ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
+              "reactions": {"$uid": {".write": "auth != null && auth.uid === $uid"}}
+            }
+          }
         }
       }
     }
