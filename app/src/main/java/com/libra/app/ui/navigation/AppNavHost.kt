@@ -497,7 +497,7 @@ fun AppNavHost(
                         },
                         vm::loadProfile,
                         onSettingsClick = { showSettings = true },
-                        onAdminClick = { showAdminPanel = true }
+                        onAdminClick = if (profile.uid == LIBRA_ADMIN_UID) { { showAdminPanel = true } } else null
                     )
                 }
             }
