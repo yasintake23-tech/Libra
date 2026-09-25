@@ -582,7 +582,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                         },
                         contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen",
                         tint = if (post.likedByCurrentUser) {
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
