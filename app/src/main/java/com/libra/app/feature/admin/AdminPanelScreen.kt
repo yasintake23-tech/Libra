@@ -79,61 +79,210 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
     val resolver = context.contentResolver
     val clipboard = LocalClipboardManager.current
     val active = vm.activeRelease.collectAsState().value
+    val detected = vm.selectedReleaseInfo.collectAsState().value
     val progress = vm.releaseProgress.collectAsState().value
     val busy = vm.releaseBusy.collectAsState().value
     val status = vm.releaseStatus.collectAsState().value
-    var releaseId by remember { mutableStateOf("") }
-    var versionName by remember { mutableStateOf(BuildConfig.VERSION_NAME) }
-    var versionCode by remember { mutableStateOf(BuildConfig.VERSION_CODE.toString()) }
     var changelog by remember { mutableStateOf("") }
     var forceUpdate by remember { mutableStateOf(false) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var selectedName by remember { mutableStateOf("") }
     var selectedSize by remember { mutableStateOf(0L) }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
         selectedUri = uri
-        selectedName = uri.lastPathSegment?.substringAfterLast("/")?.ifBlank { "Libra-release.apk" } ?: "Libra-release.apk"
+        selectedName = ""
+        selectedSize = 0L
+        vm.clearSelectedRelease()
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        selectedName = uri.lastPathSegment?.substringAfterLast("/")?.ifBlank { "Libra-release.apk" }
+            ?: "Libra-release.apk"
         selectedSize = runCatching {
-            resolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            resolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
                 if (cursor.moveToFirst()) cursor.getLong(0) else 0L
             } ?: 0L
         }.getOrDefault(0L)
+        vm.inspectAppRelease(uri)
     }
+
     Column(modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Column { Text("Güncelleme ayarları", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)); Text("APK yayınlama ve sürüm yönetimi", color = Color.Gray) }
-        }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
-            item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Mevcut uygulama", fontWeight = FontWeight.Bold)
-                Text("Kurulu sürüm: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
-                Text("Aktif yayın: " + (active?.versionName ?: "Henüz yayınlanmadı"))
-                Text("Release ID: " + (active?.releaseId ?: "Henüz yok"), color = Color.Gray)
-                active?.releaseId?.takeIf { it.isNotBlank() }?.let { id -> OutlinedButton(onClick = { clipboard.setText(AnnotatedString(id)) }) { Text("Release IDyi kopyala") } }
-            } } }
-            item { Text("Yeni yayın", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
-            item { OutlinedTextField(releaseId, { releaseId = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Yeni release ID") }, placeholder = { Text("Örn. rel_8f3a91c2") }, singleLine = true, enabled = !busy) }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(versionName, { versionName = it.take(30) }, Modifier.weight(1f), label = { Text("Sürüm adı") }, enabled = !busy)
-                OutlinedTextField(versionCode, { versionCode = it.filter(Char::isDigit).take(10) }, Modifier.weight(1f), label = { Text("Version code") }, enabled = !busy)
-            } }
-            item { OutlinedTextField(changelog, { changelog = it }, Modifier.fillMaxWidth(), label = { Text("Değişiklik notları") }, minLines = 4, enabled = !busy) }
-            item {
-                Button(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (selectedName.isBlank()) "APK seç" else "APK: " + selectedName) }
-                if (selectedSize > 0L) Text("Boyut: %.1f MB".format(selectedSize / 1024f / 1024f), color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+            IconButton(onClick = onBack, enabled = !busy) {
+                Icon(Icons.Default.ArrowBack, "Geri")
             }
-            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Zorunlu güncelleme", fontWeight = FontWeight.SemiBold); Text("Eski sürümlerde uygulamayı güncelleme ekranında tutar.", color = Color.Gray, style = MaterialTheme.typography.bodySmall) }; Switch(forceUpdate, { forceUpdate = it }, enabled = !busy) } }
-            item { if (busy) { LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth()); Text("APK yükleniyor: %" + progress) }; status?.let { Text(it, color = if (it.startsWith("Yeni sürüm")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) } }
-            item { Button(onClick = {
-                val code = versionCode.toLongOrNull() ?: return@Button
-                val uri = selectedUri ?: return@Button
-                vm.publishAppRelease(uri, selectedName, selectedSize, releaseId.trim(), code, versionName.trim(), changelog.lines().map { it.trim() }.filter { it.isNotBlank() }, forceUpdate)
-            }, enabled = !busy && selectedUri != null && selectedSize > 0L && releaseId.isNotBlank() && versionName.isNotBlank() && (versionCode.toLongOrNull() ?: 0L) > maxOf(BuildConfig.VERSION_CODE.toLong(), active?.versionCode ?: 0L), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yayınlanıyor..." else "Yayınla") } }
+            Column {
+                Text(
+                    "Güncelleme ayarları",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                )
+                Text("APK yayınlama ve sürüm yönetimi", color = Color.Gray)
+            }
+        }
+
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Mevcut uygulama", fontWeight = FontWeight.Bold)
+                        Text("Kurulu sürüm: ${BuildConfig.VERSION_NAME} (§{BuildConfig.VERSION_CODE})")
+                        Text("Kurulu release ID: §{BuildConfig.LIBRA_RELEASE_ID}", color = Color.Gray)
+                        Text("Aktif yayın: " + (active?.versionName ?: "Henüz yayınlanmadı"))
+                        Text("Release ID: " + (active?.releaseId ?: "Henüz yok"), color = Color.Gray)
+                        active?.releaseId?.takeIf { it.isNotBlank() }?.let { id ->
+                            OutlinedButton(onClick = { clipboard.setText(AnnotatedString(id)) }) {
+                                Text("Release IDyi kopyala")
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "Yeni yayın",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        picker.launch(
+                            arrayOf(
+                                "application/vnd.android.package-archive",
+                                "application/octet-stream"
+                            )
+                        )
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (selectedName.isBlank()) "APK seç" else "APK: §{selectedName}")
+                }
+
+                if (selectedSize > 0L) {
+                    Text(
+                        "Boyut: %.1f MB".format(selectedSize / 1024f / 1024f),
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            item {
+                if (detected != null) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("APK bilgileri otomatik algılandı", fontWeight = FontWeight.Bold)
+                            Text("Sürüm: §{detected.versionName} (§{detected.versionCode})")
+                            Text("Release ID: §{detected.releaseId}", color = Color.Gray)
+                            Text("Bu bilgiler APK'nın içinden okunur, elle girilmez.")
+                        }
+                    }
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    changelog,
+                    { changelog = it },
+                    Modifier.fillMaxWidth(),
+                    label = { Text("Değişiklik notları") },
+                    minLines = 4,
+                    enabled = !busy
+                )
+            }
+
+            item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Zorunlu güncelleme", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Eski sürümlerde uygulamayı güncelleme ekranında tutar.",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(forceUpdate, { forceUpdate = it }, enabled = !busy)
+                }
+            }
+
+            item {
+                if (busy) {
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("APK yükleniyor: %§{progress}")
+                }
+                status?.let {
+                    Text(
+                        it,
+                        color = if (
+                            it.startsWith("Yeni sürüm") ||
+                            it.contains("otomatik algılandı")
+                        ) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
+                    )
+                }
+            }
+
+            item {
+                val canPublish = !busy &&
+                    selectedUri != null &&
+                    selectedSize > 0L &&
+                    detected != null &&
+                    detected.versionCode > maxOf(
+                        BuildConfig.VERSION_CODE.toLong(),
+                        active?.versionCode ?: 0L
+                    )
+
+                Button(
+                    onClick = {
+                        val uri = selectedUri ?: return@Button
+                        vm.publishAppRelease(
+                            uri = uri,
+                            fileName = selectedName,
+                            fileSize = selectedSize,
+                            changelog = changelog.lines()
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() },
+                            forceUpdate = forceUpdate
+                        )
+                    },
+                    enabled = canPublish,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (busy) "Yayınlanıyor..." else "Yayınla")
+                }
+            }
         }
     }
 }
+
 @Composable private fun MembersScreen(members: List<UserProfile>, onBack: () -> Unit, onSelect: (UserProfile) -> Unit, modifier: Modifier, enabled: Boolean) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("Tümü") }
