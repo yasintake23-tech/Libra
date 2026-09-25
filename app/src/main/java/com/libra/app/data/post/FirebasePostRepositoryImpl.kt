@@ -1,6 +1,7 @@
 package com.libra.app.data.post
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -86,7 +87,9 @@ class FirebasePostRepositoryImpl(
                                 mediaType = data["mediaType"] as? String ?: "",
                                 tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
                                 likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
-                                commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: runCatching {
+                                    document.reference.collection("comments").count().get(AggregateSource.SERVER).await().count.toInt()
+                                }.getOrDefault(0),
                                 likedByCurrentUser = document.id in likedIds,
                                 savedByCurrentUser = document.id in savedIds,
                                 createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
