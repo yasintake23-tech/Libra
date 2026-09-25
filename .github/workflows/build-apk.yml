@@ -237,7 +237,7 @@ jobs:
           PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
           VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
           VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
-          RELEASE_ID=$(aapt2 dump xmltree "$APK_PATH" AndroidManifest.xml 2>/dev/null | awk '
+          RELEASE_ID=$("$AAPT" dump xmltree "$APK_PATH" AndroidManifest.xml 2>/dev/null | awk '
             /E: meta-data/ { in_meta=1; next }
             in_meta && /A: android:name/ && /com.libra.app.RELEASE_ID/ { found=1; next }
             found && /A: android:value/ {
