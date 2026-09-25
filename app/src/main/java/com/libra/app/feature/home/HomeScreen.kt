@@ -574,7 +574,21 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
-                IconButton(onClick = onSave) { Icon(if (post.savedByCurrentUser) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Kaydet") }
+                IconButton(onClick = onSave) {
+                    Icon(
+                        imageVector = if (post.savedByCurrentUser) {
+                            Icons.Default.Bookmark
+                        } else {
+                            Icons.Default.BookmarkBorder
+                        },
+                        contentDescription = if (post.savedByCurrentUser) "Kaydedildi" else "Kaydet",
+                        tint = if (post.savedByCurrentUser) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
         }
     }
