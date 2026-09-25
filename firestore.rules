@@ -1,7 +1,10 @@
 rules_version = '2';
 
 service cloud.firestore {
-  match /databases/{database}/documents {\n    function isRootAdmin() { return request.auth != null && request.auth.uid == "ZBkz2js9plg07zrny2PzLW80X3i2"; }\n    function hasAdminPermission(permission) { return isRootAdmin() || (request.auth != null && get(/databases/$(database)/documents/adminRoles/$(request.auth.uid)).data.permissions[permission] == true); }\n
+  match /databases/{database}/documents {
+    function isRootAdmin() { return request.auth != null && request.auth.uid == "ZBkz2js9plg07zrny2PzLW80X3i2"; }
+    function hasAdminPermission(permission) { return isRootAdmin() || (request.auth != null && get(/databases/$(database)/documents/adminRoles/$(request.auth.uid)).data.permissions[permission] == true); }
+
     match /users/{uid} {
       allow read: if request.auth != null;
 
@@ -61,9 +64,21 @@ service cloud.firestore {
         );
 
       allow delete: if request.auth != null && request.auth.uid == uid;
+      allow update: if hasAdminPermission("editProfiles") && request.resource.data.uid == resource.data.uid;
+      allow update: if hasAdminPermission("manageBans") && request.resource.data.uid == resource.data.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["moderation","updatedAt"]);
     }
 
-    match /adminRoles/{uid} {\n      allow read: if request.auth != null;\n      allow create, update, delete: if isRootAdmin() || (hasAdminPermission("manageAdminRoles") && uid != request.auth.uid);\n    }\n\n    match /cosmeticRoles/{roleId} {\n      allow read: if request.auth != null;\n      allow create, update, delete: if hasAdminPermission("manageCosmetics");\n    }\n\n    match /usernames/{username} {
+    match /adminRoles/{uid} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isRootAdmin() || (hasAdminPermission("manageAdminRoles") && uid != request.auth.uid);
+    }
+
+    match /cosmeticRoles/{roleId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if hasAdminPermission("manageCosmetics");
+    }
+
+    match /usernames/{username} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
         && request.resource.data.uid == request.auth.uid;
@@ -99,6 +114,7 @@ service cloud.firestore {
     match /communityServers/{serverId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.serverCreationDisabled
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 2
@@ -130,6 +146,7 @@ service cloud.firestore {
     match /stories/{storyId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.storyDisabled
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 500
@@ -157,6 +174,7 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.postingDisabled
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.authorName is string
         && request.resource.data.authorUsername is string
@@ -191,6 +209,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
+          && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.commentingDisabled
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
