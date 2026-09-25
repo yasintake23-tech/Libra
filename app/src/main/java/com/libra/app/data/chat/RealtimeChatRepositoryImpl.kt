@@ -655,7 +655,8 @@ class RealtimeChatRepositoryImpl(
 
     override fun observeServerMessages(
         serverId: String,
-        limit: Long
+        limit: Long,
+        channelId: String
     ): Flow<AppResult<List<ServerMessage>>> = callbackFlow {
         if (serverId.isBlank()) {
             trySend(AppResult.Success(emptyList()))
@@ -664,7 +665,7 @@ class RealtimeChatRepositoryImpl(
         }
 
         val safeLimit = limit.coerceIn(1L, 200L).toInt()
-        val query = ref("serverMessages/$serverId")
+        val query = ref(serverMessagesPath(serverId, channelId))
             ?.orderByChild("createdAt")
             ?.limitToLast(safeLimit)
 
@@ -698,9 +699,10 @@ class RealtimeChatRepositoryImpl(
         serverId: String,
         text: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, "", "", replyTo, sharedContent)
+        sendServerInternal(serverId, text, "", "", replyTo, sharedContent, channelId)
 
     override suspend fun sendServerMediaMessage(
         serverId: String,
@@ -708,9 +710,10 @@ class RealtimeChatRepositoryImpl(
         mediaType: String,
         text: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent)
+        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent, channelId)
 
     private suspend fun sendServerInternal(
         serverId: String,
@@ -718,7 +721,8 @@ class RealtimeChatRepositoryImpl(
         mediaUrl: String,
         mediaType: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
@@ -745,7 +749,7 @@ class RealtimeChatRepositoryImpl(
             authPhoto = user.photoUrl?.toString().orEmpty()
         )
 
-        val messageRef = ref("serverMessages/$serverId")?.push()
+        val messageRef = ref(serverMessagesPath(serverId, channelId))?.push()
             ?: return error("Realtime Database yapılandırması bulunamadı.")
 
         val data = mapOf(
@@ -776,22 +780,25 @@ class RealtimeChatRepositoryImpl(
     override suspend fun editServerMessage(
         serverId: String,
         messageId: String,
-        text: String
+        text: String,
+        channelId: String
     ): AppResult<Unit> =
-        editMessage(ref("serverMessages/$serverId/$messageId"), text, 2000)
+        editMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId"), text, 2000)
 
     override suspend fun deleteServerMessage(
         serverId: String,
-        messageId: String
+        messageId: String,
+        channelId: String
     ): AppResult<Unit> =
-        deleteMessage(ref("serverMessages/$serverId/$messageId"))
+        deleteMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId")
 
     override suspend fun toggleServerMessageReaction(
         serverId: String,
         messageId: String,
-        emoji: String
+        emoji: String,
+        channelId: String
     ): AppResult<Unit> =
-        toggleReaction(ref("serverMessages/$serverId/$messageId"), emoji)
+        toggleReaction(ref(serverMessagesPath(serverId, channelId) + "/$messageId"), emoji)
 
     private suspend fun editMessage(
         messageRef: DatabaseReference?,
@@ -907,6 +914,13 @@ class RealtimeChatRepositoryImpl(
             ).await()
         }
     }
+
+    private fun serverMessagesPath(serverId: String, channelId: String): String =
+        if (channelId.isBlank()) {
+            "serverMessages/$serverId"
+        } else {
+            "serverMessages/$serverId/channels/$channelId"
+        }
 
     private suspend fun cleanupMedia(mediaKey: String) {
         if (mediaKey.isBlank()) return
