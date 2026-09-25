@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -121,6 +122,14 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
         }
         return
     }
+    if (page == "Yönetici rolü verme işlemleri") {
+        AdminRolePage(current.uid, vm, { page = null })
+        return
+    }
+    if (page == "Kozmetik rol") {
+        CosmeticPage(current, vm, { page = null })
+        return
+    }
 
     Surface(modifier.fillMaxSize(), color = Color.White) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -157,8 +166,6 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
     when (page) {
         "Hesap ve üyelik işlemleri" -> ProfileDialog(current, { page = null }) { current = it; vm.saveProfile(it) }
         "Kitap işlemleri" -> InfoDialog("Kitap işlemleri", "Yakında... Kitap mekaniği hazır olduğunda bağlanacak.", { page = null })
-        "Yönetici rolü verme işlemleri" -> AdminRoleDialog(current.uid, vm, { page = null })
-        "Kozmetik rol" -> CosmeticPage(current, vm, { page = null })
         "Kullanıcıya geri bildirim / DM" -> ContactDialog(current, { page = null })
     }
 }
@@ -341,7 +348,7 @@ private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfil
 }
 
 @Composable
-private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit) {
+private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) {
     var role by remember { mutableStateOf<AdminRole?>(null) }
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -350,29 +357,47 @@ private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit
     val presets = listOf(
         "Moderatör" to AdminPermissionSet(manageMembers = true, manageBans = true, managePosts = true, manageStories = true, manageGlobalChat = true, sendFeedback = true),
         "Sunucu Moderatörü" to AdminPermissionSet(manageMembers = true, manageBans = true, manageServers = true, manageGlobalChat = true),
-        "Yazar Editörü" to AdminPermissionSet(manageBooks = true, managePosts = true, manageStories = true),
-        "CEO" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true)
+        "İçerik Editörü" to AdminPermissionSet(managePosts = true, manageStories = true, manageBooks = true),
+        "Yönetici" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, sendFeedback = true),
+        "CEO" to AdminPermissionSet(true, true, true, true, true, true, true, true, true, true, true)
     )
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Yönetici rolü") }, text = {
-        Column(Modifier.heightIn(max = 620.dp)) {
-            Text("Hazır rol", fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { presets.forEach { (preset, presetPerms) -> FilterChip(name == preset, { name = preset; perms = presetPerms }, label = { Text(preset) }) } }
-            OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Rol adı") })
-            OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(), label = { Text("Açıklama") })
-            Spacer(Modifier.height(8.dp)); Text("Özel yetkiler", fontWeight = FontWeight.Bold)
-            SwitchRow("Üye yönetimi", perms.manageMembers) { perms = perms.copy(manageMembers = it) }
-            SwitchRow("Ban / susturma", perms.manageBans) { perms = perms.copy(manageBans = it) }
-            SwitchRow("Profil düzenleme", perms.editProfiles) { perms = perms.copy(editProfiles = it) }
-            SwitchRow("Kitap yönetimi", perms.manageBooks) { perms = perms.copy(manageBooks = it) }
-            SwitchRow("Gönderi yönetimi", perms.managePosts) { perms = perms.copy(managePosts = it) }
-            SwitchRow("Hikâye yönetimi", perms.manageStories) { perms = perms.copy(manageStories = it) }
-            SwitchRow("Sunucu yönetimi", perms.manageServers) { perms = perms.copy(manageServers = it) }
-            SwitchRow("Genel chat", perms.manageGlobalChat) { perms = perms.copy(manageGlobalChat = it) }
-            SwitchRow("Yönetici rolü verme", perms.manageAdminRoles) { perms = perms.copy(manageAdminRoles = it) }
-            SwitchRow("Kozmetik rol", perms.manageCosmetics) { perms = perms.copy(manageCosmetics = it) }
-            SwitchRow("Geri bildirim / DM", perms.sendFeedback) { perms = perms.copy(sendFeedback = it) }
+    val permissionItems = listOf(
+        "Üye yönetimi" to Triple("Üyeleri görüntüleme ve üye yönetim ekranlarını kullanma.", perms.manageMembers, { v: Boolean -> perms = perms.copy(manageMembers = v) }),
+        "Ban / erişim kısıtlamaları" to Triple("Ban, süreli ban ve içerik/mesaj erişim kısıtlarını değiştirme.", perms.manageBans, { v: Boolean -> perms = perms.copy(manageBans = v) }),
+        "Profil düzenleme" to Triple("Ad, kullanıcı adı, hakkımda ve profil fotoğrafını yönetme.", perms.editProfiles, { v: Boolean -> perms = perms.copy(editProfiles = v) }),
+        "Kitap yönetimi" to Triple("Kitap ve yayın yönetim araçlarına erişme.", perms.manageBooks, { v: Boolean -> perms = perms.copy(manageBooks = v) }),
+        "Gönderi yönetimi" to Triple("Gönderi moderasyonu ve yönetim işlemleri.", perms.managePosts, { v: Boolean -> perms = perms.copy(managePosts = v) }),
+        "Hikâye yönetimi" to Triple("Hikâye moderasyonu ve yönetim işlemleri.", perms.manageStories, { v: Boolean -> perms = perms.copy(manageStories = v) }),
+        "Sunucu yönetimi" to Triple("Sunucu oluşturma ve sunucu yönetim araçları.", perms.manageServers, { v: Boolean -> perms = perms.copy(manageServers = v) }),
+        "Genel chat yönetimi" to Triple("Genel chat moderasyonu ve mesaj yönetimi.", perms.manageGlobalChat, { v: Boolean -> perms = perms.copy(manageGlobalChat = v) }),
+        "Yönetici rolü verme" to Triple("Yönetici rolleri verme, düzenleme ve kaldırma.", perms.manageAdminRoles, { v: Boolean -> perms = perms.copy(manageAdminRoles = v) }),
+        "Kozmetik rol yönetimi" to Triple("Kozmetik rozet oluşturma ve kullanıcıya atama.", perms.manageCosmetics, { v: Boolean -> perms = perms.copy(manageCosmetics = v) }),
+        "Geri bildirim / DM" to Triple("Yönetim bildirimi ve doğrudan mesaj gönderme.", perms.sendFeedback, { v: Boolean -> perms = perms.copy(sendFeedback = v) })
+    )
+    Column(Modifier.fillMaxSize().background(Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = dismiss) { Icon(Icons.Default.ArrowBack, "Geri") }
+            Column { Text("Yönetici rolü", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)); Text(if (role == null) "Yeni yönetici rolü oluştur" else "Mevcut rolü düzenle", color = Color.Gray) }
         }
-    }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { vm.saveAdminRole(uid, AdminRole(name = name.trim(), description = description.trim(), permissions = perms)); dismiss() }) { Text("Kaydet") } }, dismissButton = { TextButton(onClick = { if (role != null) vm.saveAdminRole(uid, null); dismiss() }) { Text(if (role == null) "Kapat" else "Rolü kaldır") } })
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item {
+                Text("Hazır roller", fontWeight = FontWeight.Bold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(presets.size) { index -> val preset = presets[index]; FilterChip(name == preset.first, { name = preset.first; perms = preset.second }, label = { Text(preset.first) }) } }
+            }
+            item { OutlinedTextField(name, { name = it.take(40) }, Modifier.fillMaxWidth(), label = { Text("Rol adı") }, singleLine = true); Spacer(Modifier.height(8.dp)); OutlinedTextField(description, { description = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("Açıklama") }, minLines = 2) }
+            item { Text("Yetkiler", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
+            items(permissionItems.size) { index ->
+                val item = permissionItems[index]
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F7F7))) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(item.first, fontWeight = FontWeight.SemiBold); Text(item.second.first, color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
+                        Switch(item.second.second, item.second.third)
+                    }
+                }
+            }
+            item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { if (role != null) OutlinedButton(onClick = { vm.saveAdminRole(uid, null); dismiss() }, Modifier.weight(1f)) { Text("Rolü kaldır") }; Button(onClick = { vm.saveAdminRole(uid, AdminRole(id = role?.id ?: "", name = name.trim(), description = description.trim(), permissions = perms)); dismiss() }, enabled = name.trim().isNotBlank(), modifier = Modifier.weight(1f)) { Text("Kaydet") } } }
+        }
+    }
 }
 @Composable private fun CosmeticPage(p: UserProfile, vm: AdminViewModel, dismiss: () -> Unit) {
     val roles = vm.cosmeticRoles.collectAsState().value
