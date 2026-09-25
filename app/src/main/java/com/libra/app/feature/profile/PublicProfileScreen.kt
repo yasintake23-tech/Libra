@@ -53,6 +53,7 @@ fun PublicProfileScreen(
     onBack: () -> Unit,
     onFollow: () -> Unit,
     onMessage: () -> Unit,
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var socialDialog by remember { mutableStateOf<PublicSocialListType?>(null) }
@@ -223,7 +224,8 @@ fun PublicProfileScreen(
         SocialListDialog(
             type = type,
             users = if (type == PublicSocialListType.FOLLOWERS) followers else following,
-            onDismiss = { socialDialog = null }
+            onDismiss = { socialDialog = null },
+            onOpenProfile = onOpenProfile
         )
     }
 }
@@ -257,7 +259,8 @@ private fun ProfileStat(
 private fun SocialListDialog(
     type: PublicSocialListType,
     users: List<UserProfile>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenProfile: (String) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -281,13 +284,13 @@ private fun SocialListDialog(
                                 .padding(vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
+                            UserAvatar(user.profileImageUrl, user.initials, size = 42.dp, onClick = { onOpenProfile(user.uid) })
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
                                     .padding(start = 10.dp)
                             ) {
-                                Text(user.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(user.displayName, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onOpenProfile(user.uid) })
                                 Text(
                                     user.handle,
                                     style = MaterialTheme.typography.bodySmall,
