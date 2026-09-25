@@ -1,5 +1,6 @@
 package com.libra.app.domain.model
 
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.ServerTimestamp
 import java.util.Date
 
@@ -25,9 +26,11 @@ data class UserProfile(
     val moderation: UserModeration = UserModeration(),
     val cosmeticRoleIds: List<String> = emptyList()
 ) {
+    @get:Exclude
     val handle: String
         get() = if (username.isNotBlank()) "@$username" else "@user_" + uid.take(6)
 
+    @get:Exclude
     val initials: String
         get() = displayName.trim()
             .split(Regex("\\s+"))
