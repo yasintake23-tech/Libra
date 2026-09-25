@@ -50,8 +50,8 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
     } catch(e:Exception) { AppResult.Error(AppError.Database("Üye profili güncellenemedi: " + (e.localizedMessage ?: "Bilinmeyen hata."),e)) }
 
     override suspend fun updateModeration(uid:String, moderation:UserModeration):AppResult<Unit> = try {
-        users.document(uid).update("moderation",moderation).await()
-        rtdb.getReference("moderation").child(uid).setValue(moderation).await()
+        users.document(uid).update("moderation", moderation).await()
+        rtdb.getReference("moderation").child(uid).setValue(moderation.toPersistedMap()).await()
         AppResult.Success(Unit)
     } catch(e:Exception) { AppResult.Error(AppError.Database("Üye erişim ayarları güncellenemedi.",e)) }
 
@@ -88,4 +88,24 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
         if(assigned&&roleId !in ids)ids.add(roleId);if(!assigned)ids.remove(roleId)
         ref.update("cosmeticRoleIds",ids).await();AppResult.Success(Unit)
     }catch(e:Exception){AppResult.Error(AppError.Database("Kozmetik rol ataması değiştirilemedi.",e))}
+
+    private fun UserModeration.toPersistedMap(): Map<String, Any> = mapOf(
+        "banned" to banned,
+        "banUntil" to banUntil,
+        "banReason" to banReason,
+        "postingDisabled" to postingDisabled,
+        "postingDisabledUntil" to postingDisabledUntil,
+        "messagingDisabled" to messagingDisabled,
+        "messagingDisabledUntil" to messagingDisabledUntil,
+        "storyDisabled" to storyDisabled,
+        "storyDisabledUntil" to storyDisabledUntil,
+        "commentingDisabled" to commentingDisabled,
+        "commentingDisabledUntil" to commentingDisabledUntil,
+        "bookPublishingDisabled" to bookPublishingDisabled,
+        "bookPublishingDisabledUntil" to bookPublishingDisabledUntil,
+        "serverCreationDisabled" to serverCreationDisabled,
+        "serverCreationDisabledUntil" to serverCreationDisabledUntil,
+        "serverMessagingDisabled" to serverMessagingDisabled,
+        "serverMessagingDisabledUntil" to serverMessagingDisabledUntil
+    )
 }
