@@ -143,6 +143,15 @@ jobs:
           set -euo pipefail
           npx --yes firebase-tools@latest deploy --only database --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
 
+      - name: Deploy Firestore rules when Firebase token is configured
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        if: ${{ env.FIREBASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest deploy --only firestore:rules --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
+
       - name: Verify backend architecture
         shell: bash
         run: |
