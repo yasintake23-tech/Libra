@@ -97,8 +97,6 @@ private fun ProfileContent(
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
     var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
-    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
-    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
