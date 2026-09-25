@@ -54,6 +54,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 class DirectMessagesViewModel : ViewModel() {
     private val repository = ServiceLocator.chatRepository
@@ -666,8 +667,18 @@ private fun DirectConversationScreen(
                                 }
 
                                 if (message.mediaUrl.isNotBlank()) {
+                                    var resolvedMediaUrl by remember(message.mediaUrl) { mutableStateOf<String?>(null) }
                                     var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
-                                    if (mediaFailed) {
+
+                                    LaunchedEffect(message.mediaUrl) {
+                                        while (true) {
+                                            resolvedMediaUrl = ServiceLocator.storageRepository.getSignedMediaUrl(message.mediaUrl)
+                                            mediaFailed = false
+                                            delay(9 * 60 * 1000L)
+                                        }
+                                    }
+
+                                    if (mediaFailed || resolvedMediaUrl.isNullOrBlank()) {
                                         Surface(
                                             modifier = Modifier.width(220.dp).height(120.dp),
                                             shape = RoundedCornerShape(12.dp),
@@ -679,7 +690,7 @@ private fun DirectConversationScreen(
                                         }
                                     } else {
                                         AsyncImage(
-                                            model = ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl),
+                                            model = resolvedMediaUrl,
                                             contentDescription = "Gönderilen fotoğraf",
                                             modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)),
                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,

@@ -1,5 +1,6 @@
 package com.libra.app.ui.components
 
+import com.libra.app.core.di.ServiceLocator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 
 @Composable
@@ -44,12 +51,35 @@ fun UserAvatar(
             contentAlignment = Alignment.Center
         ) {
             if (!photoUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = com.libra.app.core.di.ServiceLocator.storageRepository.getPublicCdnUrl(photoUrl),
-                    contentDescription = "User profile photo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                var resolvedUrl by remember(photoUrl) { mutableStateOf<String?>(null) }
+                var imageFailed by remember(photoUrl) { mutableStateOf(false) }
+
+                LaunchedEffect(photoUrl) {
+                    while (true) {
+                        resolvedUrl = ServiceLocator.storageRepository.getSignedMediaUrl(photoUrl)
+                        imageFailed = false
+                        delay(9 * 60 * 1000L)
+                    }
+                }
+
+                if (!imageFailed && !resolvedUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = resolvedUrl,
+                        contentDescription = "User profile photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        onError = { imageFailed = true }
+                    )
+                } else {
+                    Text(
+                        text = initials.take(2),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = (size.value * 0.38f).sp
+                        )
+                    )
+                }
             } else {
                 Text(
                     text = initials.take(2),
