@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -35,11 +36,13 @@ fun UserAvatar(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
     showOnlineBadge: Boolean = false,
-    borderColor: Color = MaterialTheme.colorScheme.primary
+    borderColor: Color = MaterialTheme.colorScheme.primary,
+    onClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
             .size(size)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .testTag("user_avatar")
     ) {
         Box(
