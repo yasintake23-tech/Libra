@@ -259,6 +259,7 @@ fun AppNavHost(
         GlobalChatScreen(
             onBack = { showGlobalChat = false },
             onOpenProfile = ::openPublicProfile,
+            canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
             modifier = modifier.fillMaxSize()
         )
         return
