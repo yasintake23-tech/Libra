@@ -155,6 +155,7 @@ fun HomeScreen(
                             stories = data.stories,
                             currentUserId = data.currentUser?.uid.orEmpty(),
                             onStoryClick = { selectedStory = it },
+                            onOpenProfile = onOpenProfile,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
@@ -291,7 +292,8 @@ fun HomeScreen(
                             onStoryReply(story)
                             selectedStory = null
                         },
-                        onLike = { onStoryLike(story) }
+                        onLike = { onStoryLike(story) },
+                        onOpenProfile = onOpenProfile
                     )
                 }
 
