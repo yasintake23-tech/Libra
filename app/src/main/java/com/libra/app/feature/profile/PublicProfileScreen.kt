@@ -37,14 +37,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.AdminRole
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.CosmeticRoleBadge
 
 @Composable
 fun PublicProfileScreen(
@@ -59,6 +62,8 @@ fun PublicProfileScreen(
     var socialDialog by remember { mutableStateOf<PublicSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var adminRole by remember { mutableStateOf<AdminRole?>(null) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
 
     LaunchedEffect(profile.uid, isFollowing) {
         ServiceLocator.userRepository.getFollowers(profile.uid).let {
@@ -67,6 +72,10 @@ fun PublicProfileScreen(
         ServiceLocator.userRepository.getFollowing(profile.uid).let {
             if (it is com.libra.app.core.result.AppResult.Success) following = it.data
         }
+    }
+    LaunchedEffect(profile.uid) {
+        adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
+        (ServiceLocator.adminRepository.observeCosmeticRoles().first() as? com.libra.app.core.result.AppResult.Success)?.let { cosmeticRoles = it.data }
     }
 
     Column(
@@ -119,12 +128,17 @@ fun PublicProfileScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    Text(
-                        profile.displayName,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(profile.displayName, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                        adminRole?.let { role ->
+                            androidx.compose.material3.Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                        cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                            CosmeticRoleBadge(role) {}
+                        }
+                    }
 
                     Text(
                         profile.handle,
