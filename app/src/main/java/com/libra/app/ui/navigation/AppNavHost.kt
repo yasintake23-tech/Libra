@@ -52,6 +52,7 @@ import com.libra.app.feature.notifications.NotificationsScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
+import com.libra.app.feature.profile.ProfileEditScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.BookEditorScreen
