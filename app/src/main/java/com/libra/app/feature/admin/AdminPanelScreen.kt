@@ -320,16 +320,10 @@ private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfil
                                     "image/heif" -> "heif"
                                     else -> "jpg"
                                 }
-                                val result = ServiceLocator.storageRepository.uploadMedia(
-                                    StorageUploadRequest(
-                                        fileName = "profile.$ext",
-                                        bytes = bytes,
-                                        contentType = mime,
-                                        targetDirectory = "users/${p.uid}"
-                                    )
-                                ).first()
-                                if (result is AppResult.Error) error(result.error.message)
-                                photo = (result as AppResult.Success).data
+                                when (val result = ServiceLocator.storageRepository.uploadMedia(StorageUploadRequest(fileName = "profile.$ext", bytes = bytes, contentType = mime, targetDirectory = "users/${p.uid}")).first()) {
+                                    is AppResult.Success -> photo = result.data
+                                    is AppResult.Error -> error(result.error.message)
+                                }
                             }
                             save(p.copy(displayName = name.trim(), username = username.trim(), bio = bio.trim(), profileImageUrl = photo))
                             dismiss()
