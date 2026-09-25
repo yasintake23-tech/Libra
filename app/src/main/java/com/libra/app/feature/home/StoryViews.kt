@@ -205,22 +205,26 @@ fun StoryViewer(
                 .align(Alignment.BottomCenter),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
-                value = "",
-                onValueChange = {},
-                readOnly = true,
-                enabled = false,
-                placeholder = { Text("Yanıtla", color = Color.White.copy(alpha = 0.8f)) },
-                leadingIcon = { Icon(Icons.Default.Reply, null, tint = Color.White) },
-                modifier = Modifier.weight(1f),
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onReply),
                 shape = RoundedCornerShape(28.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    disabledBorderColor = Color.White.copy(alpha = 0.55f),
-                    disabledContainerColor = Color.Transparent,
-                    disabledPlaceholderColor = Color.White.copy(alpha = 0.8f),
-                    disabledLeadingIconColor = Color.White
+                color = Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    Color.White.copy(alpha = 0.55f)
                 )
-            )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Reply, null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Yanıtla", color = Color.White.copy(alpha = 0.82f))
+                }
+            }
             IconButton(onClick = {
                 liked = !liked
                 onLike()
