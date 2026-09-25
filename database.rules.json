@@ -3,7 +3,7 @@
     "moderation": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
+        ".write": "auth != null && (auth.uid === $uid || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBans').val() === true)"
       }
     },
     "users": {
