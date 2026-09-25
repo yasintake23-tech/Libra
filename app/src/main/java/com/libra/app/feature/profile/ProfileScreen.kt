@@ -273,7 +273,10 @@ private fun ProfileContent(
         }
 
         selectedCosmetic?.let { role ->
-            AlertDialog(onDismissRequest = { selectedCosmetic = null }, title = { Text(role.icon + " " + role.name) }, text = { Text(role.description.ifBlank { "Libra kozmetik rozeti" }) }, confirmButton = { TextButton(onClick = { selectedCosmetic = null }) { Text("Tamam") } })
+            CosmeticRoleReveal(
+                role = role,
+                onDismiss = { selectedCosmetic = null }
+            )
         }
 
         TextButton(
