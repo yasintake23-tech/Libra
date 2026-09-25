@@ -35,6 +35,8 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.ServerCategory
+import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.Dispatchers
@@ -50,8 +52,14 @@ fun CommunityServersScreen(
 ) {
     val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
+
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
+    var selectedChannel by remember { mutableStateOf<ServerChannel?>(null) }
+    var categories by remember { mutableStateOf<List<ServerCategory>>(emptyList()) }
+    var channels by remember { mutableStateOf<List<ServerChannel>>(emptyList()) }
+    var previewServer by remember { mutableStateOf<CommunityServer?>(null) }
+    var previewIsMember by remember { mutableStateOf(false) }
     var showCreate by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -64,12 +72,54 @@ fun CommunityServersScreen(
         }
     }
 
-    selectedServer?.let { server ->
-        ServerChatScreen(
-            server = server,
-            onBack = { selectedServer = null },
-            modifier = modifier
-        )
+    LaunchedEffect(selectedServer?.id) {
+        val serverId = selectedServer?.id ?: return@LaunchedEffect
+        communityRepository.ensureServerStructure(serverId)
+        launch {
+            communityRepository.observeServerCategories(serverId).collect { result ->
+                if (result is AppResult.Success) categories = result.data
+            }
+        }
+        launch {
+            communityRepository.observeServerChannels(serverId).collect { result ->
+                if (result is AppResult.Success) channels = result.data
+            }
+        }
+    }
+
+    LaunchedEffect(selectedServer?.id, channels) {
+        if (selectedServer != null && selectedChannel == null && channels.isNotEmpty()) {
+            selectedChannel = channels.first()
+        }
+        if (selectedChannel != null && channels.none { it.id == selectedChannel?.id }) {
+            selectedChannel = channels.firstOrNull()
+        }
+    }
+
+    if (selectedServer != null) {
+        val server = selectedServer!!
+        if (selectedChannel != null) {
+            ServerChatScreen(
+                server = server,
+                channel = selectedChannel!!,
+                onBack = { selectedChannel = null },
+                modifier = modifier
+            )
+        } else {
+            ServerWorkspace(
+                server = server,
+                categories = categories,
+                channels = channels,
+                onBack = {
+                    selectedServer = null
+                    selectedChannel = null
+                    categories = emptyList()
+                    channels = emptyList()
+                },
+                onChannelClick = { selectedChannel = it },
+                modifier = modifier
+            )
+        }
         return
     }
 
@@ -78,65 +128,72 @@ fun CommunityServersScreen(
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column(Modifier.weight(1f)) {
                 Text("Sunucular", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text("Kitap türlerine göre topluluklara katıl.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Topluluklara göz at, katıl ve kendi kanallarında sohbet et.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { showCreate = true }) {
-                Icon(Icons.Default.Add, "Sunucu oluştur")
-            }
+            IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "Sunucu oluştur") }
         }
         Spacer(Modifier.height(12.dp))
-
-        error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
-        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
 
         if (servers.isEmpty()) {
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Groups, null, modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(10.dp))
+                    Icon(Icons.Default.Groups, null, modifier = Modifier.size(52.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text("Henüz sunucu yok.", fontWeight = FontWeight.Bold)
                     Text("İlk topluluğu sen oluştur.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                     Button(onClick = { showCreate = true }) { Text("Sunucu oluştur") }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
+            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(servers, key = { it.id }) { server ->
-                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Card(Modifier.fillMaxWidth().clickable { previewServer = server }, shape = RoundedCornerShape(18.dp)) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) { Icon(Icons.Default.Groups, null) }
+                            Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                                Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            }
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                 Text(server.name, fontWeight = FontWeight.Bold)
-                                if (server.description.isNotBlank()) {
-                                    Text(server.description, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
+                                if (server.description.isNotBlank()) Text(server.description, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(5.dp))
+                                Text("Topluluk sunucusu • Katılmak için dokun", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
-                            IconButton(onClick = {
-                                scope.launch {
-                                    when (val result = communityRepository.joinCommunityServer(server.id)) {
-                                        is AppResult.Success -> {
-                                            error = null
-                                            selectedServer = server
-                                        }
-                                        is AppResult.Error -> error = result.error.message
-                                    }
-                                }
-                            }) {
-                                Icon(Icons.Default.ChevronRight, "Katıl")
-                            }
+                            Icon(Icons.Default.ChevronRight, "Sunucuyu görüntüle")
                         }
                     }
                 }
+            }
+        }
+    }
+
+    previewServer?.let { server ->
+        ServerPreviewDialog(
+            server = server,
+            isMember = previewIsMember,
+            onDismiss = { previewServer = null },
+            onEnter = {
+                scope.launch {
+                    val result = if (previewIsMember) {
+                        communityRepository.ensureServerStructure(server.id)
+                    } else {
+                        when (val joined = communityRepository.joinCommunityServer(server.id)) {
+                            is AppResult.Success -> communityRepository.ensureServerStructure(server.id)
+                            is AppResult.Error -> joined
+                        }
+                    }
+                    when (result) {
+                        is AppResult.Success -> { previewServer = null; selectedServer = server; selectedChannel = null; error = null }
+                        is AppResult.Error -> error = result.error.message
+                    }
+                }
+            }
+        )
+        LaunchedEffect(server.id) {
+            previewIsMember = when (val result = communityRepository.isServerMember(server.id)) {
+                is AppResult.Success -> result.data
+                is AppResult.Error -> false
             }
         }
     }
@@ -147,20 +204,102 @@ fun CommunityServersScreen(
             onCreate = { name, description ->
                 scope.launch {
                     when (val result = communityRepository.createCommunityServer(name, description)) {
-                        is AppResult.Success -> {
-                            showCreate = false
-                            error = null
-                            selectedServer = result.data
-                        }
+                        is AppResult.Success -> { showCreate = false; error = null; selectedServer = result.data; selectedChannel = null }
                         is AppResult.Error -> error = result.error.message
                     }
                 }
             }
         )
     }
-
 }
 
+@Composable
+private fun ServerPreviewDialog(
+    server: CommunityServer,
+    isMember: Boolean,
+    onDismiss: () -> Unit,
+    onEnter: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(server.name, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(server.description.ifBlank { "Libra topluluğuna katıl ve kanallarda sohbet etmeye başla." }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text("Sunucu yapısı", fontWeight = FontWeight.SemiBold)
+                        Text("Kategoriler • Metin kanalları • Üyeler • Gerçek zamanlı sohbet", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onEnter) { Text(if (isMember) "Sunucuya gir" else "Katıl") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } }
+    )
+}
+
+@Composable
+private fun ServerWorkspace(
+    server: CommunityServer,
+    categories: List<ServerCategory>,
+    channels: List<ServerChannel>,
+    onBack: () -> Unit,
+    onChannelClick: (ServerChannel) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier.fillMaxSize()) {
+        Surface(modifier = Modifier.width(122.dp).fillMaxHeight(), tonalElevation = 3.dp) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Sunucu listesinden çık") }
+                }
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).size(70.dp).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+                }
+                Text(server.name, modifier = Modifier.fillMaxWidth().padding(8.dp), maxLines = 1, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                HorizontalDivider()
+                if (categories.isEmpty() || channels.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
+                        categories.forEach { category ->
+                            item(key = "category-" + category.id) {
+                                Text(category.name, modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            channels.filter { it.categoryId == category.id }.forEach { channel ->
+                                item(key = "channel-" + channel.id) {
+                                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onChannelClick(channel) }.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("#", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(channel.name, maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                Text(server.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Text("Bir kanal seçerek topluluğa gir.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Text("# kanal seç", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
 @Composable
 private fun CreateServerDialog(
     onDismiss: () -> Unit,
@@ -188,6 +327,7 @@ private fun CreateServerDialog(
 @Composable
 private fun ServerChatScreen(
     server: CommunityServer,
+    channel: ServerChannel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -255,7 +395,7 @@ private fun ServerChatScreen(
     }
 
     LaunchedEffect(server.id) {
-        chatRepository.observeServerMessages(server.id).collect { result ->
+        chatRepository.observeServerMessages(server.id, channelId = channel.id).collect { result ->
             when (result) {
                 is AppResult.Success -> messages = result.data
                 is AppResult.Error -> error = result.error.message
@@ -274,8 +414,8 @@ private fun ServerChatScreen(
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column(Modifier.weight(1f)) {
-                Text(serverName, fontWeight = FontWeight.Bold)
-                Text("${members.size} üye • Topluluk sohbeti", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("# " + channel.name, fontWeight = FontWeight.Bold)
+                Text(serverName + " • " + members.size + " üye", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (server.ownerId == currentUid) {
                 IconButton(onClick = { showManage = true }) {
@@ -331,7 +471,7 @@ private fun ServerChatScreen(
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.pointerInput(message.id + "-tap") {
                             detectTapGestures(
-                                onDoubleTap = { scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️") } },
+                                onDoubleTap = { scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️", channelId = channel.id) } },
                                 onLongPress = { actionMessage = message }
                             )
                         }
@@ -406,12 +546,12 @@ private fun ServerChatScreen(
                         scope.launch { chatRepository.editServerMessage(server.id, edit.id, text) }
                         editingMessage = null
                     } else if (pendingUrl.isNotBlank()) {
-                        scope.launch { chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget) }
+                        scope.launch { chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget, channelId = channel.id) }
                         pendingUri = null
                         pendingUrl = ""
                         replyTarget = null
                     } else {
-                        scope.launch { chatRepository.sendServerMessage(server.id, text, replyTarget) }
+                        scope.launch { chatRepository.sendServerMessage(server.id, text, replyTarget, channelId = channel.id) }
                         replyTarget = null
                     }
                     draft = ""
@@ -427,7 +567,7 @@ private fun ServerChatScreen(
             onReply = { replyTarget = message; actionMessage = null },
             onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji) }; actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
-            onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id) }; actionMessage = null }
+            onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id, channelId = channel.id) }; actionMessage = null }
         )
     }
 
