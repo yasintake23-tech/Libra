@@ -22,6 +22,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.delay
 
 private const val LIBRA_RTDB_URL =
     "https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app"
@@ -518,37 +519,41 @@ class RealtimeChatRepositoryImpl(
         val root = database()?.reference ?: return
         val recipientProfile = profileOrFallback(recipientUid)
 
-        runCatching {
-            root.updateChildren(
-                mapOf(
-                    "directConversations/$senderUid/$conversationId" to summaryData(
-                        otherUserId = recipientUid,
-                        otherUserName = recipientProfile.displayName,
-                        otherUserUsername = recipientProfile.username,
-                        otherUserPhotoUrl = recipientProfile.profileImageUrl,
-                        lastMessage = lastMessage,
-                        updatedAt = timestamp,
-                        unreadCount = 0
-                    )
-                )
-            ).await()
+        val updates = mapOf(
+            "directConversations/$senderUid/$conversationId" to summaryData(
+                otherUserId = recipientUid,
+                otherUserName = recipientProfile.displayName,
+                otherUserUsername = recipientProfile.username,
+                otherUserPhotoUrl = recipientProfile.profileImageUrl,
+                lastMessage = lastMessage,
+                updatedAt = timestamp,
+                unreadCount = 0
+            ),
+            "directConversations/$recipientUid/$conversationId" to summaryData(
+                otherUserId = senderUid,
+                otherUserName = senderProfile.displayName,
+                otherUserUsername = senderProfile.username,
+                otherUserPhotoUrl = senderProfile.profileImageUrl,
+                lastMessage = lastMessage,
+                updatedAt = timestamp,
+                unreadCount = ServerValue.increment(1)
+            )
+        )
+
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                root.updateChildren(updates).await()
+                return
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < 2) delay(400L * (attempt + 1))
+            }
         }
 
-        runCatching {
-            root.updateChildren(
-                mapOf(
-                    "directConversations/$recipientUid/$conversationId" to summaryData(
-                        otherUserId = senderUid,
-                        otherUserName = senderProfile.displayName,
-                        otherUserUsername = senderProfile.username,
-                        otherUserPhotoUrl = senderProfile.profileImageUrl,
-                        lastMessage = lastMessage,
-                        updatedAt = timestamp,
-                        unreadCount = ServerValue.increment(1)
-                    )
-                )
-            ).await()
-        }
+        // The message itself is already persisted. Summary failure is retried
+        // here but must never turn a successful message send into a failed send.
+        lastError
     }
 
     override suspend fun editDirectMessage(
