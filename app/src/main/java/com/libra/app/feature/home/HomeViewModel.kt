@@ -192,10 +192,7 @@ class HomeViewModel(
                         tags = tags
                     )
                 ) {
-                    is AppResult.Success -> {
-                        refreshStories()
-                        onComplete(true)
-                    }
+                    is AppResult.Success -> onComplete(true)
                     is AppResult.Error -> {
                         _postError.value = result.error.message
                         onComplete(false)
@@ -234,7 +231,10 @@ class HomeViewModel(
                         mediaType = mediaType
                     )
                 ) {
-                    is AppResult.Success -> onComplete(true)
+                    is AppResult.Success -> {
+                        refreshStories()
+                        onComplete(true)
+                    }
                     is AppResult.Error -> {
                         _postError.value = result.error.message
                         if (mediaUrl.isNotBlank()) {
