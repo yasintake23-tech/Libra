@@ -1,5 +1,8 @@
 package com.libra.app.domain.model
 
+import com.google.firebase.firestore.ServerTimestamp
+import java.util.Date
+
 data class UserProfile(
     val uid: String = "",
     val displayName: String = "",
@@ -13,7 +16,12 @@ data class UserProfile(
     val followingCount: Int = 0,
     val profileCompleted: Boolean = false,
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    @ServerTimestamp
+    val usernameLastChangedAt: Date? = null,
+    @ServerTimestamp
+    val displayNameChangeWindowStart: Date? = null,
+    val displayNameChangesInWindow: Int = 0
 ) {
     val handle: String
         get() = if (username.isNotBlank()) "@" + username else "@user_" + uid.take(6)
