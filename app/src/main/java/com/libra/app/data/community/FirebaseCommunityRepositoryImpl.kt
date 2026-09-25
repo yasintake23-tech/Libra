@@ -236,6 +236,53 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 
+    override suspend fun ensureServerStructure(serverId: String): AppResult<Unit> {
+        val user = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) {
+                val member = serverRef.collection("members").document(user.uid).get().await()
+                if (!member.exists()) {
+                    return AppResult.Error(AppError.Auth("Bu sunucuya erişimin yok."))
+                }
+            }
+
+            val categories = serverRef.collection("categories").get().await()
+            val channels = serverRef.collection("channels").get().await()
+            if (!categories.isEmpty && !channels.isEmpty) return AppResult.Success(Unit)
+
+            val batch = firestore.batch()
+            val generalCategory = serverRef.collection("categories").document("general")
+            val communityCategory = serverRef.collection("categories").document("community")
+            if (!categories.documents.any { it.id == "general" }) {
+                batch.set(generalCategory, ServerCategory("general", "GENEL", 0))
+            }
+            if (!categories.documents.any { it.id == "community" }) {
+                batch.set(communityCategory, ServerCategory("community", "TOPLULUK", 1))
+            }
+
+            val defaults = listOf(
+                ServerChannel("general-chat", "general", "GENEL", "genel", "TEXT", 0),
+                ServerChannel("chat", "general", "GENEL", "sohbet", "TEXT", 1),
+                ServerChannel("announcements", "community", "TOPLULUK", "duyurular", "TEXT", 2)
+            )
+            defaults.forEach { channel ->
+                if (!channels.documents.any { it.id == channel.id }) {
+                    batch.set(serverRef.collection("channels").document(channel.id), channel)
+                }
+            }
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu yapısı hazırlanamadı.", e))
+        }
+    }
+
     override fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>> =
         callbackFlow {
             val registration = serversRef.document(serverId)
