@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 private data class ShareTarget(val key: String, val title: String, val subtitle: String)
 fun sharedContentUrl(type: String, id: String) = "https://libra.app/share/$type/$id"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareSheet(content: SharedContent, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -78,11 +80,11 @@ fun ShareSheet(content: SharedContent, onDismiss: () -> Unit) {
                     selected.clear()
                     sending = false
                 }
-            }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Send, null); Spacer(Modifier.width(6.dp)); Text("Seçilenlere gönder") }
+            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Send, null); Spacer(Modifier.width(6.dp)); Text("Seçilenlere gönder") }
             Button(onClick = {
                 val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, content.title + "\n" + content.url) }
                 context.startActivity(Intent.createChooser(intent, "Libra içeriğini paylaş"))
-            }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(6.dp)); Text("Dışarı paylaş") }
+            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(6.dp)); Text("Dışarı paylaş") }
             if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(8.dp))
         }
     }
