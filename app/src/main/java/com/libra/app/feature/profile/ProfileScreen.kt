@@ -49,7 +49,7 @@ fun ProfileScreen(
     onSignOutClick: () -> Unit,
     onRetry: () -> Unit,
     onSettingsClick: () -> Unit = {},
-    onAdminClick: () -> Unit = {},
+    onAdminClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
@@ -83,7 +83,7 @@ private fun ProfileContent(
     profile: UserProfile,
     onSignOut: () -> Unit,
     onSettingsClick: () -> Unit,
-    onAdminClick: () -> Unit,
+    onAdminClick: (() -> Unit)?,
     modifier: Modifier
 ) {
     var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
@@ -124,23 +124,25 @@ private fun ProfileContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                androidx.compose.material3.Button(
-                    onClick = onAdminClick,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 14.dp,
-                        vertical = 8.dp
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.AdminPanelSettings,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        "Yönetim",
-                        modifier = Modifier.padding(start = 6.dp),
-                        fontWeight = FontWeight.SemiBold
-                    )
+                if (onAdminClick != null) {
+                    androidx.compose.material3.Button(
+                        onClick = onAdminClick,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 14.dp,
+                            vertical = 8.dp
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.AdminPanelSettings,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            "Yönetim",
+                            modifier = Modifier.padding(start = 6.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
                 androidx.compose.material3.IconButton(onClick = onSettingsClick) {
                     Icon(
