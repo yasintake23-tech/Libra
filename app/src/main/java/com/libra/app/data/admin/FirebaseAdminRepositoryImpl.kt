@@ -61,7 +61,8 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
     } catch(e:Exception){AppResult.Error(AppError.Database("Yönetici rolü okunamadı.",e))}
 
     override suspend fun setAdminRole(uid:String,role:AdminRole?):AppResult<Unit> = try {
-        if(role==null) roles.document(uid).delete().await() else roles.document(uid).set(role.copy(id=uid)).await()
+        if(role==null) { roles.document(uid).delete().await(); rtdb.getReference("adminRoles").child(uid).removeValue().await() }
+        else { val saved = role.copy(id=uid); roles.document(uid).set(saved).await(); rtdb.getReference("adminRoles").child(uid).setValue(saved).await() }
         AppResult.Success(Unit)
     } catch(e:Exception){AppResult.Error(AppError.Database("Yönetici rolü kaydedilemedi.",e))}
 
