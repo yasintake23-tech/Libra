@@ -100,6 +100,7 @@ class GlobalChatViewModel : ViewModel() {
 fun GlobalChatScreen(
     onBack: () -> Unit,
     viewModel: GlobalChatViewModel = viewModel(),
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -191,7 +192,7 @@ fun GlobalChatScreen(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     if (message.senderId != currentUid) {
-                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp)
+                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp, onClick = { onOpenProfile(message.senderId) })
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
@@ -202,7 +203,7 @@ fun GlobalChatScreen(
                         }
                     ) {
                         Column(Modifier.widthIn(max = 320.dp).padding(6.dp)) {
-                            if (message.senderId != currentUid) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp, 4.dp))
+                            if (message.senderId != currentUid) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp, 4.dp).clickable { onOpenProfile(message.senderId) })
                             if (message.replyToMessageId.isNotBlank()) {
                                 Surface(color = androidx.compose.ui.graphics.Color(0xFFFFE8D5), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(8.dp)) {
