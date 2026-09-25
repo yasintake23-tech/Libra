@@ -150,6 +150,7 @@ class FirebasePostRepositoryImpl(
                     "mediaType" to post.mediaType,
                     "tags" to post.tags,
                     "likesCount" to 0,
+                    "commentsCount" to 0,
                     "createdAt" to post.createdAt
                 )
             ).await()
