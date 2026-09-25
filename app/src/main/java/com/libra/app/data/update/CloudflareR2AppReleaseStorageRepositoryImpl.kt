@@ -1,6 +1,7 @@
 package com.libra.app.data.update
 
 import android.content.Context
+import android.net.Uri
 import com.amazonaws.HttpMethod
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.regions.Region
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
+import java.io.InputStream
 import java.net.URL
 import java.util.Date
 import java.util.UUID
@@ -29,35 +31,35 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
     private val config get() = CloudflareR2StorageConfig
 
     override fun uploadApk(
+        uri: Uri,
         fileName: String,
-        bytes: ByteArray,
+        fileSize: Long,
         onProgress: (Int) -> Unit
     ): Flow<AppResult<String>> = flow {
         if (!config.isConfigured(context)) {
             emit(AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik.")))
             return@flow
         }
-        if (bytes.isEmpty()) {
+        if (fileSize <= 0L) {
             emit(AppResult.Error(AppError.Storage("APK dosyası boş.")))
             return@flow
         }
-        if (bytes.size > MAX_APK_BYTES) {
+        if (fileSize > MAX_APK_BYTES) {
             emit(AppResult.Error(AppError.Storage("APK dosyası 200 MB'dan büyük olamaz.")))
             return@flow
         }
 
         val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
-            .replace(Regex("[\\/\\u0000-\\u001F]"), "_")
+            .replace(Regex("[\\\\/\\u0000-\\u001F]"), "_")
             .trim()
             .ifBlank { "Libra-release.apk" }
             .take(120)
-
         val objectKey = "releases/" + UUID.randomUUID() + "-" + safeName
 
         try {
             withContext(Dispatchers.IO) {
                 onProgress(0)
-                uploadWithRetry(objectKey, bytes, onProgress)
+                uploadWithRetry(uri, objectKey, fileSize, onProgress)
                 onProgress(100)
             }
             emit(AppResult.Success(objectKey))
@@ -102,8 +104,9 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
         }
 
     private fun uploadWithRetry(
+        uri: Uri,
         objectKey: String,
-        bytes: ByteArray,
+        fileSize: Long,
         onProgress: (Int) -> Unit
     ) {
         var lastError: Exception? = null
@@ -118,7 +121,9 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
                         HttpMethod.PUT
                     )
                 }
-                putFixedLength(url, bytes, onProgress)
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    putFixedLength(url, input, fileSize, onProgress)
+                } ?: error("APK dosyası açılamadı.")
                 return
             } catch (e: Exception) {
                 lastError = e
@@ -128,7 +133,12 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
         throw lastError ?: IllegalStateException("APK yükleme başarısız.")
     }
 
-    private fun putFixedLength(url: URL, bytes: ByteArray, onProgress: (Int) -> Unit) {
+    private fun putFixedLength(
+        url: URL,
+        input: InputStream,
+        fileSize: Long,
+        onProgress: (Int) -> Unit
+    ) {
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"
             doOutput = true
@@ -137,20 +147,24 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
             instanceFollowRedirects = true
             connectTimeout = HTTP_TIMEOUT_MS
             readTimeout = HTTP_TIMEOUT_MS
-            setFixedLengthStreamingMode(bytes.size)
+            setFixedLengthStreamingMode(fileSize)
             setRequestProperty("Content-Type", "application/vnd.android.package-archive")
         }
 
         try {
             connection.connect()
             connection.outputStream.use { output ->
-                val bufferSize = 64 * 1024
-                var offset = 0
-                while (offset < bytes.size) {
-                    val count = minOf(bufferSize, bytes.size - offset)
-                    output.write(bytes, offset, count)
-                    offset += count
-                    onProgress((offset * 100 / bytes.size).coerceIn(1, 99))
+                val buffer = ByteArray(64 * 1024)
+                var uploaded = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                    uploaded += count
+                    onProgress(((uploaded * 100L) / fileSize).toInt().coerceIn(1, 99))
+                }
+                if (uploaded != fileSize) {
+                    error("APK dosya boyutu değişti veya eksik okundu.")
                 }
                 output.flush()
             }
