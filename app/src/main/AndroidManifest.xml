@@ -13,6 +13,9 @@
         android:roundIcon="@drawable/libra_app_icon"
         android:supportsRtl="true"
         android:theme="@style/Theme.Libra">
+        <meta-data
+            android:name="com.libra.app.RELEASE_ID"
+            android:value="${libraReleaseId}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
