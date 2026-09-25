@@ -44,6 +44,8 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.Post
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.ui.components.CosmeticRoleReveal
 import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -180,22 +182,11 @@ private fun ProfileContent(
 
             Spacer(Modifier.height(10.dp))
 
-            Text(
-                profile.displayName,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold
-                )
-            )
-
-            if (profile.cosmeticRoleIds.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
-                        Surface(shape = RoundedCornerShape(10.dp), color = Color(role.color), modifier = Modifier.clickable { selectedCosmetic = role }) {
-                            Text(role.icon + " " + role.name, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(profile.displayName, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                    CosmeticRoleBadge(role) { selectedCosmetic = role }
                 }
-                Spacer(Modifier.height(6.dp))
             }
 
             Text(
@@ -284,6 +275,9 @@ private fun ProfileContent(
             Text("  Çıkış yap")
         }
     }
+}
+
+    CosmeticRoleReveal(selectedCosmetic) { selectedCosmetic = null }
 }
 
 @Composable
