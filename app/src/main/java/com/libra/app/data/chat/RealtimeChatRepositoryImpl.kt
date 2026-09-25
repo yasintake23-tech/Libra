@@ -13,6 +13,7 @@ import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.NotificationRepository
@@ -77,7 +78,8 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = reactions(snapshot.child("reactions"))
+                reactions = reactions(snapshot.child("reactions")),
+                sharedContent = sharedContent(snapshot.child("sharedContent"))
             )
         }.getOrNull()
 
@@ -122,6 +124,38 @@ class RealtimeChatRepositoryImpl(
                 reactions = reactions(snapshot.child("reactions"))
             )
         }.getOrNull()
+
+
+    private fun sharedContent(snapshot: DataSnapshot): SharedContent? {
+        if (!snapshot.exists()) return null
+        val type = snapshot.child("type").getValue(String::class.java).orEmpty()
+        val id = snapshot.child("id").getValue(String::class.java).orEmpty()
+        if (type.isBlank() || id.isBlank()) return null
+        return SharedContent(
+            type = type,
+            id = id,
+            title = snapshot.child("title").getValue(String::class.java).orEmpty(),
+            text = snapshot.child("text").getValue(String::class.java).orEmpty(),
+            authorId = snapshot.child("authorId").getValue(String::class.java).orEmpty(),
+            authorName = snapshot.child("authorName").getValue(String::class.java).orEmpty(),
+            mediaUrl = snapshot.child("mediaUrl").getValue(String::class.java).orEmpty(),
+            url = snapshot.child("url").getValue(String::class.java).orEmpty()
+        )
+    }
+
+    private fun sharedContentData(content: SharedContent?): Map<String, Any>? =
+        content?.let {
+            mapOf(
+                "type" to it.type,
+                "id" to it.id,
+                "title" to it.title,
+                "text" to it.text,
+                "authorId" to it.authorId,
+                "authorName" to it.authorName,
+                "mediaUrl" to it.mediaUrl,
+                "url" to it.url
+            )
+        }
 
     private fun reactions(snapshot: DataSnapshot): Map<String, String> =
         buildMap {
@@ -208,23 +242,26 @@ class RealtimeChatRepositoryImpl(
 
     override suspend fun sendGlobalMessage(
         text: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendGlobalInternal(text, "", "", replyTo)
+        sendGlobalInternal(text, "", "", replyTo, sharedContent)
 
     override suspend fun sendGlobalMediaMessage(
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendGlobalInternal(text, mediaUrl, mediaType, replyTo)
+        sendGlobalInternal(text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendGlobalInternal(
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Sohbet için giriş yapmalısın."))
@@ -263,7 +300,8 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.senderName ?: "")
+            "replyToSenderName" to (replyTo?.senderName ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -400,25 +438,28 @@ class RealtimeChatRepositoryImpl(
     override suspend fun sendDirectMessage(
         recipientId: String,
         text: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendDirectInternal(recipientId, text, "", "", replyTo)
+        sendDirectInternal(recipientId, text, "", "", replyTo, sharedContent)
 
     override suspend fun sendDirectMediaMessage(
         recipientId: String,
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendDirectInternal(recipientId, text, mediaUrl, mediaType, replyTo)
+        sendDirectInternal(recipientId, text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendDirectInternal(
         recipientId: String,
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val sender = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
@@ -467,7 +508,8 @@ class RealtimeChatRepositoryImpl(
                 ?.ifBlank {
                     if (replyTo.senderId == sender.uid) senderProfile.displayName else ""
                 }
-                ?: "")
+                ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -481,7 +523,7 @@ class RealtimeChatRepositoryImpl(
                 conversationId = conversation,
                 senderProfile = senderProfile,
                 timestamp = now,
-                lastMessage = lastMessage(clean, mediaUrl)
+                lastMessage = lastMessage(clean, mediaUrl, sharedContent)
             )
 
             runCatching {
@@ -655,25 +697,28 @@ class RealtimeChatRepositoryImpl(
     override suspend fun sendServerMessage(
         serverId: String,
         text: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, "", "", replyTo)
+        sendServerInternal(serverId, text, "", "", replyTo, sharedContent)
 
     override suspend fun sendServerMediaMessage(
         serverId: String,
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo)
+        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendServerInternal(
         serverId: String,
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
@@ -715,7 +760,8 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.senderName ?: "")
+            "replyToSenderName" to (replyTo?.senderName ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -903,8 +949,12 @@ class RealtimeChatRepositoryImpl(
         }
     }
 
-    private fun lastMessage(text: String, mediaUrl: String): String =
-        text.ifBlank { if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }
+    private fun lastMessage(text: String, mediaUrl: String, sharedContent: SharedContent? = null): String =
+        text.ifBlank {
+            sharedContent?.title?.ifBlank {
+                if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "Paylaşılan içerik"
+            } ?: if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "Paylaşılan içerik"
+        }
 
     private fun replyText(text: String?, mediaUrl: String?): String =
         text.orEmpty().ifBlank {

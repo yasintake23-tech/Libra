@@ -15,5 +15,7 @@ interface StoryRepository {
 
     suspend fun getActiveStories(authorIds: Set<String>): AppResult<List<Story>>
 
+    suspend fun isLiked(storyId: String, userId: String): AppResult<Boolean>
+
     suspend fun toggleLike(storyId: String, userId: String): AppResult<Boolean>
 }

@@ -33,6 +33,8 @@ import com.libra.app.core.state.UiState
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
+import com.libra.app.domain.model.SharedContent
+import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.auth.AuthViewModel
 import com.libra.app.feature.auth.GoogleAuthHelper
 import com.libra.app.feature.auth.LoginScreen
@@ -355,6 +357,23 @@ fun AppNavHost(
                                         result.data?.let {
                                             selectedDirectUser = it
                                             selectedTab = BottomNavTab.DM
+                                            scope.launch {
+                                                val shared = SharedContent(
+                                                    type = "story",
+                                                    id = story.id,
+                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                                    text = story.text,
+                                                    authorId = story.authorId,
+                                                    authorName = story.authorName,
+                                                    mediaUrl = story.mediaUrl,
+                                                    url = sharedContentUrl("story", story.id)
+                                                )
+                                                ServiceLocator.chatRepository.sendDirectMessage(
+                                                    recipientId = story.authorId,
+                                                    text = "Hikâyenden bahsetti.",
+                                                    sharedContent = shared
+                                                )
+                                            }
                                         }
                                     }
                                     is com.libra.app.core.result.AppResult.Error -> {

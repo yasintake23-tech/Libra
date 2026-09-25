@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Reply
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -139,35 +142,78 @@ fun StoryStrip(
 
 @Composable
 fun StoryViewer(
-    story: Story,
+    stories: List<Story>,
+    initialIndex: Int,
+    currentUserId: String,
     onDismiss: () -> Unit,
-    onReply: () -> Unit,
-    onLike: () -> Unit,
-    onOpenProfile: (String) -> Unit = {}
+    onReply: (Story) -> Unit,
+    onLike: (Story) -> Unit,
+    onOpenProfile: (String) -> Unit = {},
+    onShare: (Story) -> Unit = {}
 ) {
+    if (stories.isEmpty()) {
+        onDismiss()
+        return
+    }
+
+    var index by remember(initialIndex, stories.map { it.id }) {
+        mutableStateOf(initialIndex.coerceIn(0, stories.lastIndex))
+    }
+    val story = stories[index]
     var mediaUrl by remember(story.id, story.mediaUrl) { mutableStateOf("") }
-    var liked by remember(story.id) { mutableStateOf(false) }
+    var liked by remember(story.id, currentUserId) { mutableStateOf(false) }
+    var paused by remember(story.id) { mutableStateOf(false) }
     val progress = remember(story.id) { Animatable(0f) }
 
-    LaunchedEffect(story.id) {
-        mediaUrl = ""
-        progress.snapTo(0f)
-        if (story.mediaUrl.isNotBlank()) {
-            mediaUrl = runCatching {
-                ServiceLocator.storageRepository.getSignedMediaUrl(story.mediaUrl)
-            }.getOrElse { story.mediaUrl }
+    LaunchedEffect(story.id, currentUserId) {
+        mediaUrl = if (story.mediaUrl.isBlank()) "" else runCatching {
+            ServiceLocator.storageRepository.getSignedMediaUrl(story.mediaUrl)
+        }.getOrElse { story.mediaUrl }
+
+        when (val result = ServiceLocator.storyRepository.isLiked(story.id, currentUserId)) {
+            is AppResult.Success -> liked = result.data
+            is AppResult.Error -> Unit
         }
+    }
+
+    LaunchedEffect(story.id, paused) {
+        if (paused) return@LaunchedEffect
+        val remaining = ((1f - progress.value) * 6000f).coerceAtLeast(1f).toInt()
         progress.animateTo(
             1f,
-            animationSpec = tween(6000, easing = FastOutSlowInEasing)
+            animationSpec = tween(
+                durationMillis = remaining,
+                easing = FastOutSlowInEasing
+            )
         )
-        onDismiss()
+        if (!paused) {
+            if (index < stories.lastIndex) index++ else onDismiss()
+        }
     }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .pointerInput(story.id) {
+                detectTapGestures(
+                    onLongPress = { paused = true },
+                    onTap = {
+                        if (index < stories.lastIndex) {
+                            index++
+                        } else {
+                            onDismiss()
+                        }
+                    },
+                    onPress = {
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            paused = false
+                        }
+                    }
+                )
+            }
     ) {
         if (mediaUrl.isNotBlank()) {
             AsyncImage(
@@ -200,12 +246,24 @@ fun StoryViewer(
             UserAvatar(
                 photoUrl = story.authorPhotoUrl,
                 initials = story.authorName.take(1).uppercase().ifBlank { "L" },
-                size = 38.dp
+                size = 38.dp,
+                onClick = { onOpenProfile(story.authorId) }
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(story.authorName.ifBlank { "Libra kullanıcısı" }, color = Color.White)
-                Text("24 saatlik hikâye", color = Color.White.copy(alpha = 0.65f), style = MaterialTheme.typography.labelSmall)
+                Text(
+                    story.authorName.ifBlank { "Libra kullanıcısı" },
+                    color = Color.White,
+                    modifier = Modifier.clickable { onOpenProfile(story.authorId) }
+                )
+                Text(
+                    if (paused) "Duraklatıldı" else "24 saatlik hikâye",
+                    color = Color.White.copy(alpha = 0.65f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            IconButton(onClick = { onShare(story) }) {
+                Icon(Icons.Default.Share, "Paylaş", tint = Color.White)
             }
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Default.Close, "Kapat", tint = Color.White)
@@ -241,7 +299,7 @@ fun StoryViewer(
             Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable(onClick = onReply),
+                    .clickable { onReply(story) },
                 shape = RoundedCornerShape(28.dp),
                 color = Color.Transparent,
                 border = androidx.compose.foundation.BorderStroke(
@@ -255,12 +313,13 @@ fun StoryViewer(
                 ) {
                     Icon(Icons.Default.Reply, null, tint = Color.White)
                     Spacer(Modifier.width(8.dp))
-                    Text("Yanıtla", color = Color.White.copy(alpha = 0.82f))
+                    Text("Mesaj ata", color = Color.White.copy(alpha = 0.82f))
                 }
             }
+
             IconButton(onClick = {
                 liked = !liked
-                onLike()
+                onLike(story)
             }) {
                 Icon(
                     Icons.Default.Favorite,

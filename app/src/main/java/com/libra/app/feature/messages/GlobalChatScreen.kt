@@ -214,6 +214,29 @@ fun GlobalChatScreen(
                                 }
                                 Spacer(Modifier.height(5.dp))
                             }
+                            message.sharedContent?.let { shared ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.45f)
+                                ) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Text(
+                                            when (shared.type) {
+                                                "story" -> "Hikâyeden bahsetti"
+                                                "post" -> "Bir gönderi paylaştı"
+                                                "book" -> "Bir kitap paylaştı"
+                                                else -> "Bir içerik paylaştı"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(shared.title.ifBlank { "Libra içeriği" }, fontWeight = FontWeight.SemiBold)
+                                        if (shared.text.isNotBlank()) Text(shared.text, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+
                             if (message.mediaUrl.isNotBlank()) AsyncImage(ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl), "Gönderilen fotoğraf", Modifier.width(220.dp).heightIn(max=280.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
                             if (message.text.isNotBlank()) Text(message.text, Modifier.padding(8.dp, 6.dp))
                             if (message.editedAt != null) Text("düzenlendi", Modifier.padding(horizontal=8.dp), style=MaterialTheme.typography.labelSmall)
