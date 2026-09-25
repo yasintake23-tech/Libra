@@ -70,6 +70,7 @@ fun AppNavHost(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
     val authState by authViewModel.authState.collectAsState()
     val authenticated by authViewModel.isAuthenticated.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
@@ -84,6 +85,23 @@ fun AppNavHost(
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    fun openPublicProfile(uid: String) {
+        if (uid.isBlank()) return
+        scope.launch {
+            when (val result = ServiceLocator.userRepository.getUserProfileFresh(uid)) {
+                is com.libra.app.core.result.AppResult.Success -> {
+                    if (result.data != null) {
+                        selectedPublicProfile = result.data
+                    } else {
+                        Toast.makeText(context, "Bu kullanıcı artık mevcut değil.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                is com.libra.app.core.result.AppResult.Error -> {
+                    Toast.makeText(context, "Kullanıcı profili yüklenemedi.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     var createContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
@@ -210,6 +228,7 @@ fun AppNavHost(
                 selectedDirectUser = publicProfile
                 selectedTab = BottomNavTab.DM
             },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
@@ -218,6 +237,7 @@ fun AppNavHost(
     if (showNotifications) {
         NotificationsScreen(
             onBack = { showNotifications = false },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
@@ -234,6 +254,7 @@ fun AppNavHost(
     if (showGlobalChat) {
         GlobalChatScreen(
             onBack = { showGlobalChat = false },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
@@ -325,7 +346,25 @@ fun AppNavHost(
                         onCloseComments = vm::closeComments,
                         isPosting = vm.isPosting.collectAsState().value,
                         postError = vm.postError.collectAsState().value,
-                        onClearPostError = vm::clearPostError
+                        onClearPostError = vm::clearPostError,
+                        onOpenProfile = ::openPublicProfile,
+                        onStoryReply = { story ->
+                            scope.launch {
+                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
+                                    is com.libra.app.core.result.AppResult.Success -> {
+                                        result.data?.let {
+                                            selectedDirectUser = it
+                                            selectedTab = BottomNavTab.DM
+                                        }
+                                    }
+                                    is com.libra.app.core.result.AppResult.Error -> {
+                                        Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        },
+                        onStoryLike = vm::toggleStoryLike,
+                        onStoriesRefresh = vm::refreshStories
                     )
                 }
 
@@ -392,6 +431,7 @@ fun AppNavHost(
                         },
                         initialUser = selectedDirectUser,
                         onInitialUserConsumed = { selectedDirectUser = null },
+                        onOpenProfile = ::openPublicProfile,
                         onServersClick = {
                             showCommunityServers = true
                         }

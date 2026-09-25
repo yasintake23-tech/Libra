@@ -12,6 +12,7 @@ import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.model.StorageUploadRequest
+import com.libra.app.domain.model.Story
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.PostRepository
@@ -30,7 +31,8 @@ data class HomeData(
     val featuredBooks: List<Book>,
     val recentBooks: List<Book>,
     val currentlyReading: UserShelfItem?,
-    val posts: List<Post> = emptyList()
+    val posts: List<Post> = emptyList(),
+    val stories: List<Story> = emptyList()
 )
 
 class HomeViewModel(
@@ -119,11 +121,42 @@ class HomeViewModel(
                 }
             }
         }
+
+        viewModelScope.launch {
+            loadStories(userId)
+        }
     }
 
     private fun updateHome(transform: (HomeData) -> HomeData) {
         val current = (_uiState.value as? UiState.Success)?.data ?: return
         _uiState.value = UiState.Success(transform(current))
+    }
+
+    fun refreshStories() {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch { loadStories(userId) }
+    }
+
+    private suspend fun loadStories(userId: String) {
+        val followingIds = when (val result = ServiceLocator.userRepository.getFollowingIds(userId)) {
+            is AppResult.Success -> result.data
+            is AppResult.Error -> emptySet()
+        }
+        val authorIds = followingIds + userId
+        when (val result = storyRepository.getActiveStories(authorIds)) {
+            is AppResult.Success -> updateHome { it.copy(stories = result.data) }
+            is AppResult.Error -> Unit
+        }
+    }
+
+    fun toggleStoryLike(story: Story) {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            when (val result = storyRepository.toggleLike(story.id, userId)) {
+                is AppResult.Success -> refreshStories()
+                is AppResult.Error -> _postError.value = result.error.message
+            }
+        }
     }
 
     fun createPost(text: String) {
@@ -198,7 +231,10 @@ class HomeViewModel(
                         mediaType = mediaType
                     )
                 ) {
-                    is AppResult.Success -> onComplete(true)
+                    is AppResult.Success -> {
+                        refreshStories()
+                        onComplete(true)
+                    }
                     is AppResult.Error -> {
                         _postError.value = result.error.message
                         if (mediaUrl.isNotBlank()) {

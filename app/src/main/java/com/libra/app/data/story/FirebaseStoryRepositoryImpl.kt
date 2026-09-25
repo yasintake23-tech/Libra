@@ -1,13 +1,14 @@
 package com.libra.app.data.story
 
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.Story
 import com.libra.app.domain.repository.StoryRepository
 import kotlinx.coroutines.tasks.await
 
 class FirebaseStoryRepositoryImpl : StoryRepository {
-
     private val firestore = FirebaseFirestore.getInstance()
     private val storiesRef get() = firestore.collection("stories")
 
@@ -20,15 +21,9 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
         mediaType: String
     ): AppResult<Unit> {
         val cleanText = text.trim()
-        if (authorId.isBlank()) {
-            return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
-        }
-        if (cleanText.isBlank() && mediaUrl.isBlank()) {
-            return AppResult.Error(AppError.Validation("Hikâye boş olamaz."))
-        }
-        if (cleanText.length > 500) {
-            return AppResult.Error(AppError.Validation("Hikâye metni en fazla 500 karakter olabilir."))
-        }
+        if (authorId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (cleanText.isBlank() && mediaUrl.isBlank()) return AppResult.Error(AppError.Validation("Hikâye boş olamaz."))
+        if (cleanText.length > 500) return AppResult.Error(AppError.Validation("Hikâye metni en fazla 500 karakter olabilir."))
         if (mediaUrl.isNotBlank() && mediaType != "image") {
             return AppResult.Error(AppError.Validation("Şimdilik yalnızca fotoğraf hikâyeleri destekleniyor."))
         }
@@ -44,12 +39,57 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
                     "mediaUrl" to mediaUrl.trim(),
                     "mediaType" to mediaType.trim(),
                     "createdAt" to now,
-                    "expiresAt" to now + 24L * 60L * 60L * 1000L
+                    "expiresAt" to now + 24L * 60L * 60L * 1000L,
+                    "likesCount" to 0
                 )
             ).await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Hikâye paylaşılırken hata oluştu.", e))
+        }
+    }
+
+    override suspend fun getActiveStories(authorIds: Set<String>): AppResult<List<Story>> {
+        if (authorIds.isEmpty()) return AppResult.Success(emptyList())
+        return try {
+            val now = System.currentTimeMillis()
+            val stories = authorIds.toList().chunked(10).flatMap { chunk ->
+                storiesRef
+                    .whereIn("authorId", chunk)
+                    .whereGreaterThan("expiresAt", now)
+                    .limit(100)
+                    .get()
+                    .await()
+                    .documents.mapNotNull { doc ->
+                        doc.toObject(Story::class.java)?.copy(id = doc.id)
+                    }
+            }
+            AppResult.Success(stories.sortedBy { it.createdAt })
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Hikâyeler yüklenemedi.", e))
+        }
+    }
+
+    override suspend fun toggleLike(storyId: String, userId: String): AppResult<Boolean> {
+        if (storyId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz hikâye."))
+        return try {
+            val likeRef = storiesRef.document(storyId).collection("likes").document(userId)
+            val storyRef = storiesRef.document(storyId)
+            val liked = firestore.runTransaction { tx ->
+                val like = tx.get(likeRef)
+                if (like.exists()) {
+                    tx.delete(likeRef)
+                    tx.update(storyRef, "likesCount", FieldValue.increment(-1))
+                    false
+                } else {
+                    tx.set(likeRef, mapOf("userId" to userId, "createdAt" to System.currentTimeMillis()))
+                    tx.update(storyRef, "likesCount", FieldValue.increment(1))
+                    true
+                }
+            }.await()
+            AppResult.Success(liked)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Hikâye beğenisi güncellenemedi.", e))
         }
     }
 }
