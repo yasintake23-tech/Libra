@@ -277,7 +277,6 @@ private fun ProfileContent(
     }
 }
 
-}
 
 @Composable
 private fun ProfileAction(
