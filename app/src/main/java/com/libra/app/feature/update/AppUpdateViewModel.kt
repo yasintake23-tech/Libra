@@ -33,7 +33,15 @@ class AppUpdateViewModel : ViewModel() {
         if (_uiState.value.checking) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(checking = true, error = null)
-            when (val result = ServiceLocator.updateRepository.getActiveRelease()) {
+            // Public R2 metadata is the primary source so this check also works
+            // while signed out or while the profile setup screen is open.
+            val publicResult = ServiceLocator.appReleaseStorageRepository.getPublicRelease()
+            val result = when (publicResult) {
+                is AppResult.Success -> publicResult
+                is AppResult.Error -> ServiceLocator.updateRepository.getActiveRelease()
+            }
+
+            when (result) {
                 is AppResult.Success -> {
                     val release = result.data
                     val hasUpdate = release != null &&
