@@ -29,6 +29,7 @@ import java.net.URL
 import java.util.Date
 import java.util.UUID
 import org.json.JSONObject
+import com.libra.app.domain.model.AppReleaseInfo
 import com.libra.app.domain.model.AppUpdate
 
 class CloudflareR2AppReleaseStorageRepositoryImpl(
@@ -36,6 +37,101 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
 ) : AppReleaseStorageRepository {
 
     private val config get() = CloudflareR2StorageConfig
+
+    override suspend fun inspectApk(uri: Uri): AppResult<AppReleaseInfo> =
+        withContext(Dispatchers.IO) {
+            if (!config.isConfigured(context)) {
+                return@withContext AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik."))
+            }
+
+            val validationDir = File(context.cacheDir, "updates-validation").apply { mkdirs() }
+            val validationFile = File(validationDir, "validate-${UUID.randomUUID()}.apk")
+            val pm = context.packageManager
+            val flags = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                PackageManager.GET_SIGNATURES
+            }) or PackageManager.GET_META_DATA
+
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(validationFile).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            copied += count
+                            if (copied > MAX_APK_BYTES) {
+                                return@withContext AppResult.Error(AppError.Storage("APK dosyası 200 MB'dan büyük olamaz."))
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.flush()
+                    }
+                } ?: return@withContext AppResult.Error(AppError.Storage("Seçilen APK dosyası okunamadı."))
+
+                val info = pm.getPackageArchiveInfo(validationFile.absolutePath, flags)
+                    ?: return@withContext AppResult.Error(AppError.Storage("Seçilen dosya geçerli bir APK değil."))
+                if (info.packageName != context.packageName) {
+                    return@withContext AppResult.Error(AppError.Storage("Bu APK Libra uygulamasına ait değil."))
+                }
+
+                val releaseId = info.applicationInfo?.metaData
+                    ?.getString(RELEASE_ID_META_DATA_KEY)
+                    ?.trim()
+                    .orEmpty()
+                if (releaseId.isBlank() || releaseId == "rel_local") {
+                    return@withContext AppResult.Error(
+                        AppError.Storage("Bu APK'da otomatik release kimliği bulunamadı. Yeni build oluşturun.")
+                    )
+                }
+
+                val installed = runCatching {
+                    val pi = pm.getPackageInfo(context.packageName, flags)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        pi.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                    } else {
+                        pi.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                    }
+                }.getOrElse {
+                    return@withContext AppResult.Error(AppError.Storage("Mevcut Libra imza bilgisi okunamadı."))
+                }
+
+                val uploaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                } else {
+                    info.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+                }
+
+                if (installed.isEmpty() || uploaded.isEmpty() || installed.intersect(uploaded).isEmpty()) {
+                    return@withContext AppResult.Error(
+                        AppError.Storage("APK, yüklü Libra sürümüyle aynı imzalama anahtarını kullanmıyor.")
+                    )
+                }
+
+                val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.longVersionCode
+                } else {
+                    info.versionCode.toLong()
+                }
+                if (versionCode <= 0L) {
+                    return@withContext AppResult.Error(AppError.Storage("APK versionCode bilgisi geçersiz."))
+                }
+
+                AppResult.Success(
+                    AppReleaseInfo(
+                        releaseId = releaseId,
+                        versionCode = versionCode,
+                        versionName = info.versionName?.trim().orEmpty()
+                    )
+                )
+            } catch (e: Exception) {
+                AppResult.Error(AppError.Storage("APK doğrulanırken dosya okunamadı.", e))
+            } finally {
+                validationFile.delete()
+            }
+        }
 
     override fun uploadApk(
         uri: Uri,
@@ -215,71 +311,11 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
             }
         }
 
-    private fun validateApk(uri: Uri): ApkValidation {
-        val pm = context.packageManager
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
-        } else {
-            PackageManager.GET_SIGNATURES
+    private suspend fun validateApk(uri: Uri): ApkValidation =
+        when (val result = inspectApk(uri)) {
+            is AppResult.Success -> ApkValidation.Valid
+            is AppResult.Error -> ApkValidation.Invalid(result.error.message)
         }
-
-        // OpenDocument normally returns a content:// URI. PackageManager
-        // requires a real APK filesystem path for getPackageArchiveInfo().
-        // Materialize only for validation, then remove the temporary copy.
-        val validationDir = File(context.cacheDir, "updates-validation").apply { mkdirs() }
-        val validationFile = File(validationDir, "validate-${UUID.randomUUID()}.apk")
-
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(validationFile).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var copied = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        copied += count
-                        if (copied > MAX_APK_BYTES) {
-                            return ApkValidation.Invalid("APK dosyası 200 MB'dan büyük olamaz.")
-                        }
-                        output.write(buffer, 0, count)
-                    }
-                    output.flush()
-                }
-            } ?: return ApkValidation.Invalid("Seçilen APK dosyası okunamadı.")
-
-            val info = pm.getPackageArchiveInfo(validationFile.absolutePath, flags)
-                ?: return ApkValidation.Invalid("Seçilen dosya geçerli bir APK değil.")
-            if (info.packageName != context.packageName) {
-                return ApkValidation.Invalid("Bu APK Libra uygulamasına ait değil.")
-            }
-
-            val installed = runCatching {
-                val pi = pm.getPackageInfo(context.packageName, flags)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    pi.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-                } else {
-                    pi.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-                }
-            }.getOrElse {
-                return ApkValidation.Invalid("Mevcut Libra imza bilgisi okunamadı.")
-            }
-
-            val uploaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                info.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-            } else {
-                info.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
-            }
-
-            if (installed.isEmpty() || uploaded.isEmpty() || installed.intersect(uploaded).isEmpty()) {
-                return ApkValidation.Invalid("APK, yüklü Libra sürümüyle aynı imzalama anahtarını kullanmıyor.")
-            }
-            ApkValidation.Valid
-        } catch (e: Exception) {
-            ApkValidation.Invalid("APK doğrulanırken dosya okunamadı.")
-        } finally {
-            validationFile.delete()
-        }
-    }
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
@@ -389,6 +425,7 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
     private companion object {
         const val MAX_APK_BYTES = 200L * 1024L * 1024L
         const val PUBLIC_RELEASE_OBJECT_KEY = "releases/latest.json"
+        const val RELEASE_ID_META_DATA_KEY = "com.libra.app.RELEASE_ID"
         const val MAX_ATTEMPTS = 3
         const val HTTP_TIMEOUT_MS = 60_000
         const val PRESIGNED_URL_LIFETIME_MS = 15L * 60L * 1000L
