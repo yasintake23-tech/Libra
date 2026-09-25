@@ -116,8 +116,26 @@ fun AppNavHost(
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
 
-    LaunchedEffect(currentUser?.uid) {
-        if (currentUser?.profileCompleted == true) updateVm.checkForUpdate()
+    // Keep the update prompt above all authentication/profile early returns.
+    // Release metadata is public, so this works for signed-out and incomplete profiles too.
+    updateState.release?.let { release ->
+        AppUpdatePrompt(
+            release = release,
+            progress = updateState.progress,
+            downloading = updateState.downloading,
+            error = updateState.error,
+            forceUpdate = release.forceUpdate,
+            onDownload = { updateVm.download(context) },
+            onDismiss = updateVm::dismissUpdate,
+            onClearError = updateVm::clearError,
+            downloadedFile = updateState.downloadedFile
+        )
+    }
+
+    // Update checks must run independently of authentication/profile setup.
+    // This lets a fresh install see a mandatory/new release before login or registration.
+    LaunchedEffect(Unit) {
+        updateVm.checkForUpdate()
     }
 
     LaunchedEffect(currentUser?.uid, selectedTab) {
@@ -375,15 +393,6 @@ fun AppNavHost(
                 }
             }
         }
-    }
-
-    updateState.release?.let { release ->
-        AppUpdatePrompt(
-            release = release, progress = updateState.progress, downloading = updateState.downloading,
-            error = updateState.error, forceUpdate = release.forceUpdate,
-            onDownload = { updateVm.download(context) }, onDismiss = updateVm::dismissUpdate,
-            onClearError = updateVm::clearError, downloadedFile = updateState.downloadedFile
-        )
     }
 
     selectedBook?.let { book ->
