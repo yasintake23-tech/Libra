@@ -156,7 +156,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
         "Hesap ve üyelik işlemleri" -> ProfileDialog(current, { page = null }) { current = it; vm.saveProfile(it) }
         "Kitap işlemleri" -> InfoDialog("Kitap işlemleri", "Yakında... Kitap mekaniği hazır olduğunda bağlanacak.", { page = null })
         "Yönetici rolü verme işlemleri" -> AdminRoleDialog(current.uid, vm, { page = null })
-        "Kozmetik rol" -> CosmeticDialog(current, vm, { page = null })
+        "Kozmetik rol" -> CosmeticPage(current, vm, { page = null })
         "Kullanıcıya geri bildirim / DM" -> ContactDialog(current, { page = null })
     }
 }
@@ -378,60 +378,41 @@ private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit
         }
     }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { vm.saveAdminRole(uid, AdminRole(name = name.trim(), description = description.trim(), permissions = perms)); dismiss() }) { Text("Kaydet") } }, dismissButton = { TextButton(onClick = { if (role != null) vm.saveAdminRole(uid, null); dismiss() }) { Text(if (role == null) "Kapat" else "Rolü kaldır") } })
 }
-@Composable
-private fun CosmeticDialog(p: UserProfile, vm: AdminViewModel, dismiss: () -> Unit) {
+@Composable private fun CosmeticPage(p: UserProfile, vm: AdminViewModel, dismiss: () -> Unit) {
     val roles = vm.cosmeticRoles.collectAsState().value
+    var assignedIds by remember(p.uid) { mutableStateOf(p.cosmeticRoleIds.toSet()) }
+    var creating by remember { mutableStateOf(false) }
+    if (creating) { CosmeticCreatePage(vm, { creating = false }); return }
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = dismiss) { Icon(Icons.Default.ArrowBack, "Geri") }; Text("Kozmetik roller", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("Yeni kozmetik rol / rozet oluştur") }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(roles, key = { it.id }) { role ->
+            Row(Modifier.fillMaxWidth().background(Color(0xFFF7F7F7), RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (role.imageUrl.isNotBlank()) AsyncImage(model = runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }.getOrNull(), contentDescription = role.name, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop) else Text(role.icon, modifier = Modifier.size(44.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(role.name, fontWeight = FontWeight.SemiBold); if (role.description.isNotBlank()) Text(role.description, color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
+                Switch(checked = role.id in assignedIds, onCheckedChange = { checked -> assignedIds = if (checked) assignedIds + role.id else assignedIds - role.id; vm.assignCosmetic(p.uid, role.id, checked) })
+            }
+        } }
+    }
+}
+
+@Composable private fun CosmeticCreatePage(vm: AdminViewModel, onBack: () -> Unit) {
     val resolver = androidx.compose.ui.platform.LocalContext.current.contentResolver
     val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf("") }
-    var icon by remember { mutableStateOf("✦") }
-    var description by remember { mutableStateOf("") }
-    var selectedImage by remember { mutableStateOf<android.net.Uri?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }; var icon by remember { mutableStateOf("✦") }; var description by remember { mutableStateOf("") }; var selectedImage by remember { mutableStateOf<android.net.Uri?>(null) }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { if (it != null) selectedImage = it }
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Kozmetik roller") }, text = {
-        Column(Modifier.heightIn(max = 620.dp)) {
-            Text("Hazır roller", fontWeight = FontWeight.Bold)
-            listOf("Yönetici" to "♛", "Moderatör" to "✦", "CEO" to "◆", "Yazar" to "✎", "Doğrulanmış" to "✓").forEach { (preset, presetIcon) ->
-                TextButton(onClick = { name = preset; icon = presetIcon }) { Text(presetIcon + "  " + preset) }
-            }
-            Divider()
-            roles.forEach { role ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    if (role.imageUrl.isNotBlank()) AsyncImage(model = runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }.getOrNull(), contentDescription = role.name, modifier = Modifier.size(32.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                    SwitchRow(role.icon + " " + role.name, role.id in p.cosmeticRoleIds) { vm.assignCosmetic(p.uid, role.id, it) }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text("Yeni rol / rozet", fontWeight = FontWeight.Bold)
-            OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Rol adı") })
-            OutlinedTextField(icon, { icon = it.take(2) }, Modifier.fillMaxWidth(), label = { Text("Simge") })
-            OutlinedTextField(description, { description = it.take(160) }, Modifier.fillMaxWidth(), label = { Text("Açıklama") })
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) { Button(onClick = { picker.launch("image/*") }, enabled = !busy) { Text("Rol fotoğrafı seç") }; if (selectedImage != null) Text(" ✓ seçildi", color = MaterialTheme.colorScheme.primary) }
-            Text("Rol fotoğrafı opsiyonel. Seçersen mevcut R2 sistemine yüklenir.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-        }
-    }, confirmButton = {
-        TextButton(enabled = name.isNotBlank() && !busy, onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    var imageUrl = ""
-                    selectedImage?.let { uri ->
-                        val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } } ?: error("Rol fotoğrafı okunamadı.")
-                        if (bytes.size > 8 * 1024 * 1024) error("Rol fotoğrafı 8 MBdan büyük olamaz.")
-                        val mime = resolver.getType(uri) ?: "image/png"
-                        val ext = mime.substringAfter("/").takeIf { it.isNotBlank() } ?: "png"
-                        val result = ServiceLocator.storageRepository.uploadMedia(StorageUploadRequest("role-" + System.currentTimeMillis() + "." + ext, bytes, mime, "admin/roles")).first()
-                        if (result is AppResult.Error) error(result.error.message)
-                        imageUrl = (result as AppResult.Success).data
-                    }
-                    vm.saveCosmetic(CosmeticRole(name = name.trim(), icon = icon, description = description.trim(), imageUrl = imageUrl))
-                    name = ""; description = ""; selectedImage = null
-                } finally { busy = false }
-            }
-        }) { Text(if (busy) "Yükleniyor..." else "Rolü oluştur") }
-    }, dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Kapat") } })
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.Default.ArrowBack, "Geri") }; Text("Yeni kozmetik rol", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
+        Spacer(Modifier.height(16.dp))
+        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) { if (selectedImage != null) AsyncImage(model = selectedImage, contentDescription = "Rol görseli", modifier = Modifier.size(110.dp).clip(CircleShape), contentScale = ContentScale.Crop) else Text(icon, style = MaterialTheme.typography.displaySmall) }
+        Button(onClick = { picker.launch("image/*") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Galeriden rol görseli seç") }
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Rol adı") }, enabled = !busy)
+        OutlinedTextField(icon, { icon = it.take(2) }, Modifier.fillMaxWidth(), label = { Text("Emoji / yedek simge") }, enabled = !busy)
+        OutlinedTextField(description, { description = it.take(160) }, Modifier.fillMaxWidth(), label = { Text("Açıklama") }, enabled = !busy, minLines = 3)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Button(onClick = { scope.launch { busy = true; try { var imageUrl = ""; selectedImage?.let { uri -> val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } } ?: error("Görsel okunamadı."); if (bytes.size > 8 * 1024 * 1024) error("Görsel 8 MBdan büyük olamaz."); val mime = resolver.getType(uri) ?: "image/png"; val ext = mime.substringAfter("/").ifBlank { "png" }; val result = ServiceLocator.storageRepository.uploadMedia(StorageUploadRequest("role-" + System.currentTimeMillis() + "." + ext, bytes, mime, "admin/roles")).first(); if (result is AppResult.Error) error(result.error.message); imageUrl = (result as AppResult.Success).data }; vm.saveCosmetic(CosmeticRole(name = name.trim(), icon = icon, description = description.trim(), imageUrl = imageUrl)); onBack() } catch (e: Exception) { error = e.localizedMessage } finally { busy = false } } }, enabled = !busy && name.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yükleniyor..." else "Rolü oluştur") }
+    }
 }
 @Composable private fun ContactDialog(p:UserProfile,dismiss:()->Unit){
     val scope=rememberCoroutineScope()
