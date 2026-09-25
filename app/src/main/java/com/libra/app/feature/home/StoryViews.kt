@@ -57,6 +57,7 @@ fun StoryStrip(
     stories: List<Story>,
     currentUserId: String,
     onStoryClick: (Story) -> Unit,
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val latestByAuthor = stories
@@ -110,7 +111,8 @@ fun StoryViewer(
     story: Story,
     onDismiss: () -> Unit,
     onReply: () -> Unit,
-    onLike: () -> Unit
+    onLike: () -> Unit,
+    onOpenProfile: (String) -> Unit = {}
 ) {
     var mediaUrl by remember(story.id, story.mediaUrl) { mutableStateOf("") }
     var liked by remember(story.id) { mutableStateOf(false) }
