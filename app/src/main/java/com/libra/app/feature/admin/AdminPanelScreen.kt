@@ -411,7 +411,32 @@ private fun AdminRoleDialog(uid: String, vm: AdminViewModel, dismiss: () -> Unit
         OutlinedTextField(icon, { icon = it.take(2) }, Modifier.fillMaxWidth(), label = { Text("Emoji / yedek simge") }, enabled = !busy)
         OutlinedTextField(description, { description = it.take(160) }, Modifier.fillMaxWidth(), label = { Text("Açıklama") }, enabled = !busy, minLines = 3)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Button(onClick = { scope.launch { busy = true; try { var imageUrl = ""; selectedImage?.let { uri -> val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } } ?: error("Görsel okunamadı."); if (bytes.size > 8 * 1024 * 1024) error("Görsel 8 MBdan büyük olamaz."); val mime = resolver.getType(uri) ?: "image/png"; val ext = mime.substringAfter("/").ifBlank { "png" }; val result = ServiceLocator.storageRepository.uploadMedia(StorageUploadRequest("role-" + System.currentTimeMillis() + "." + ext, bytes, mime, "admin/roles")).first(); if (result is AppResult.Error) error(result.error.message); imageUrl = (result as AppResult.Success).data }; vm.saveCosmetic(CosmeticRole(name = name.trim(), icon = icon, description = description.trim(), imageUrl = imageUrl)); onBack() } catch (e: Exception) { error = e.localizedMessage } finally { busy = false } } }, enabled = !busy && name.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yükleniyor..." else "Rolü oluştur") }
+        Button(onClick = {
+            scope.launch {
+                busy = true
+                try {
+                    var imageUrl = ""
+                    selectedImage?.let { uri ->
+                        val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } } ?: error("Görsel okunamadı.")
+                        if (bytes.size > 8 * 1024 * 1024) error("Görsel 8 MBdan büyük olamaz.")
+                        val mime = resolver.getType(uri) ?: "image/png"
+                        val ext = mime.substringAfter("/").ifBlank { "png" }
+                        when (val result = ServiceLocator.storageRepository.uploadMedia(StorageUploadRequest("role-" + System.currentTimeMillis() + "." + ext, bytes, mime, "admin/roles")).first()) {
+                            is AppResult.Success -> imageUrl = result.data
+                            is AppResult.Error -> error(result.error.message)
+                        }
+                    }
+                    vm.saveCosmetic(CosmeticRole(name = name.trim(), icon = icon, description = description.trim(), imageUrl = imageUrl))
+                    onBack()
+                } catch (e: Exception) {
+                    error = e.localizedMessage ?: "Rol oluşturulamadı."
+                } finally {
+                    busy = false
+                }
+            }
+        }, enabled = !busy && name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+            Text(if (busy) "Yükleniyor..." else "Rolü oluştur")
+        }
     }
 }
 @Composable private fun ContactDialog(p:UserProfile,dismiss:()->Unit){
