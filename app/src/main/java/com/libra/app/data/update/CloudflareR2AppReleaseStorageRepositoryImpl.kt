@@ -28,6 +28,8 @@ import java.io.FileOutputStream
 import java.net.URL
 import java.util.Date
 import java.util.UUID
+import org.json.JSONObject
+import com.libra.app.domain.model.AppUpdate
 
 class CloudflareR2AppReleaseStorageRepositoryImpl(
     private val context: Context
@@ -114,6 +116,103 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
                     ).toString()
                 }
             }.getOrNull()
+        }
+
+    override suspend fun publishPublicRelease(release: AppUpdate): AppResult<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = JSONObject()
+                    .put("releaseId", release.releaseId)
+                    .put("versionCode", release.versionCode)
+                    .put("versionName", release.versionName)
+                    .put("apkObjectKey", release.apkObjectKey)
+                    .put("apkSize", release.apkSize)
+                    .put("forceUpdate", release.forceUpdate)
+                    .put("createdAt", release.createdAt)
+                    .put("changelog", org.json.JSONArray().apply {
+                        release.changelog.forEach { put(it) }
+                    })
+                    .toString()
+                val expiration = Date(System.currentTimeMillis() + PRESIGNED_URL_LIFETIME_MS)
+                val url = createClient().useS3 { client ->
+                    client.generatePresignedUrl(config.bucketName(context), PUBLIC_RELEASE_OBJECT_KEY, expiration, HttpMethod.PUT)
+                }
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    doOutput = true
+                    doInput = true
+                    useCaches = false
+                    instanceFollowRedirects = true
+                    connectTimeout = HTTP_TIMEOUT_MS
+                    readTimeout = HTTP_TIMEOUT_MS
+                    setFixedLengthStreamingMode(json.toByteArray(Charsets.UTF_8).size.toLong())
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                }
+                try {
+                    connection.connect()
+                    connection.outputStream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    if (code !in 200..299) error("R2 HTTP ${code}")
+                } finally {
+                    connection.disconnect()
+                }
+                AppResult.Success(Unit)
+            } catch (e: Exception) {
+                AppResult.Error(AppError.Storage("Herkese açık güncelleme bilgisi yayınlanamadı.", e))
+            }
+        }
+
+    override suspend fun getPublicRelease(): AppResult<AppUpdate?> =
+        withContext(Dispatchers.IO) {
+            val base = config.publicBaseUrl(context)
+            if (!base.startsWith("https://")) {
+                return@withContext AppResult.Error(AppError.Storage("R2 public URL yapılandırması eksik."))
+            }
+            val connection = try {
+                (URL("$base/$PUBLIC_RELEASE_OBJECT_KEY").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    doInput = true
+                    useCaches = false
+                    instanceFollowRedirects = true
+                    connectTimeout = 10_000
+                    readTimeout = 15_000
+                }
+            } catch (e: Exception) {
+                return@withContext AppResult.Error(AppError.Storage("Güncelleme bilgisi okunamadı.", e))
+            }
+            try {
+                connection.connect()
+                if (connection.responseCode == HttpURLConnection.HTTP_NOT_FOUND) return@withContext AppResult.Success(null)
+                if (connection.responseCode !in 200..299) {
+                    return@withContext AppResult.Error(AppError.Storage("Güncelleme bilgisi HTTP ${connection.responseCode}"))
+                }
+                val json = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val obj = JSONObject(json)
+                val changes = obj.optJSONArray("changelog")
+                val changelog = buildList {
+                    if (changes != null) {
+                        for (index in 0 until changes.length()) {
+                            changes.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+                        }
+                    }
+                }
+                AppResult.Success(
+                    AppUpdate(
+                        releaseId = obj.optString("releaseId"),
+                        versionCode = obj.optLong("versionCode"),
+                        versionName = obj.optString("versionName"),
+                        apkObjectKey = obj.optString("apkObjectKey"),
+                        apkSize = obj.optLong("apkSize"),
+                        changelog = changelog,
+                        forceUpdate = obj.optBoolean("forceUpdate"),
+                        createdAt = obj.optLong("createdAt")
+                    )
+                )
+            } catch (e: Exception) {
+                AppResult.Error(AppError.Storage("Güncelleme bilgisi çözümlenemedi.", e))
+            } finally {
+                connection.disconnect()
+            }
         }
 
     private fun validateApk(uri: Uri): ApkValidation {
@@ -289,6 +388,7 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
 
     private companion object {
         const val MAX_APK_BYTES = 200L * 1024L * 1024L
+        const val PUBLIC_RELEASE_OBJECT_KEY = "releases/latest.json"
         const val MAX_ATTEMPTS = 3
         const val HTTP_TIMEOUT_MS = 60_000
         const val PRESIGNED_URL_LIFETIME_MS = 15L * 60L * 1000L
