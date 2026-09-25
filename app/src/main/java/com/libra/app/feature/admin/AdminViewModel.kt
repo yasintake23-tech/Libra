@@ -72,7 +72,14 @@ class AdminViewModel : ViewModel() {
     }
 
     fun publishAppRelease(
-        uri: Uri, fileName: String, fileSize: Long, changelog: List<String>, forceUpdate: Boolean
+        uri: Uri,
+        fileName: String,
+        fileSize: Long,
+        releaseId: String,
+        versionCode: Long,
+        versionName: String,
+        changelog: List<String>,
+        forceUpdate: Boolean
     ) = viewModelScope.launch {
         _releaseBusy.value = true
         _releaseProgress.value = 0
@@ -84,8 +91,18 @@ class AdminViewModel : ViewModel() {
             _releaseBusy.value = false
             return@launch
         }
-        if (releaseInfo.versionCode <= maxOf(com.libra.app.BuildConfig.VERSION_CODE.toLong(), oldRelease?.versionCode ?: 0L)) {
-            _releaseStatus.value = "Seçilen APK mevcut sürümden daha yeni olmalı."
+        if (releaseId.trim() != releaseInfo.releaseId) {
+            _releaseStatus.value = "Release ID, seçilen APK'nın kimliğiyle eşleşmiyor."
+            _releaseBusy.value = false
+            return@launch
+        }
+        if (versionCode <= maxOf(com.libra.app.BuildConfig.VERSION_CODE.toLong(), oldRelease?.versionCode ?: 0L)) {
+            _releaseStatus.value = "Version code mevcut sürümden daha büyük olmalı."
+            _releaseBusy.value = false
+            return@launch
+        }
+        if (versionName.trim().isBlank()) {
+            _releaseStatus.value = "Sürüm adı boş olamaz."
             _releaseBusy.value = false
             return@launch
         }
@@ -100,7 +117,7 @@ class AdminViewModel : ViewModel() {
             }
 
             val release = AppUpdate(
-                releaseId = releaseInfo.releaseId, versionCode = releaseInfo.versionCode, versionName = releaseInfo.versionName,
+                releaseId = releaseInfo.releaseId, versionCode = versionCode, versionName = versionName.trim(),
                 apkObjectKey = uploaded.data, apkSize = fileSize, changelog = changelog,
                 forceUpdate = forceUpdate, createdAt = System.currentTimeMillis()
             )
