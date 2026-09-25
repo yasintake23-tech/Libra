@@ -253,9 +253,46 @@ class HomeViewModel(
     }
     fun toggleLike(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+
+        // Optimistic UI: update the heart state and count immediately.
+        // The Firestore listener will reconcile the final persisted state.
+        val previousLiked = post.likedByCurrentUser
+        val previousCount = post.likesCount
+        updateHome { data ->
+            data.copy(
+                posts = data.posts.map { current ->
+                    if (current.id == post.id) {
+                        current.copy(
+                            likedByCurrentUser = !previousLiked,
+                            likesCount = (previousCount + if (previousLiked) -1 else 1).coerceAtLeast(0)
+                        )
+                    } else {
+                        current
+                    }
+                }
+            )
+        }
+
         viewModelScope.launch {
             when (val result = postRepository.toggleLike(post.id, userId)) {
-                is AppResult.Error -> _postError.value = result.error.message
+                is AppResult.Error -> {
+                    // Roll back both the visual state and count if persistence fails.
+                    updateHome { data ->
+                        data.copy(
+                            posts = data.posts.map { current ->
+                                if (current.id == post.id) {
+                                    current.copy(
+                                        likedByCurrentUser = previousLiked,
+                                        likesCount = previousCount
+                                    )
+                                } else {
+                                    current
+                                }
+                            }
+                        )
+                    }
+                    _postError.value = result.error.message
+                }
                 is AppResult.Success -> Unit
             }
         }
