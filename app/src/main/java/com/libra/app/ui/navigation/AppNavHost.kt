@@ -33,6 +33,8 @@ import com.libra.app.core.state.UiState
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
+import com.libra.app.domain.model.SharedContent
+import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.auth.AuthViewModel
 import com.libra.app.feature.auth.GoogleAuthHelper
 import com.libra.app.feature.auth.LoginScreen
