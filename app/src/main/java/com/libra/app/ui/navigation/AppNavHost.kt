@@ -70,6 +70,24 @@ fun AppNavHost(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    fun openPublicProfile(uid: String) {
+        if (uid.isBlank()) return
+        scope.launch {
+            when (val result = ServiceLocator.userRepository.getUserProfileFresh(uid)) {
+                is com.libra.app.core.result.AppResult.Success -> {
+                    if (result.data != null) {
+                        selectedPublicProfile = result.data
+                    } else {
+                        Toast.makeText(context, "Bu kullanıcı artık mevcut değil.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                is com.libra.app.core.result.AppResult.Error -> {
+                    Toast.makeText(context, "Kullanıcı profili yüklenemedi.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     val authState by authViewModel.authState.collectAsState()
     val authenticated by authViewModel.isAuthenticated.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
@@ -326,6 +344,7 @@ fun AppNavHost(
                         isPosting = vm.isPosting.collectAsState().value,
                         postError = vm.postError.collectAsState().value,
                         onClearPostError = vm::clearPostError,
+                        onOpenProfile = ::openPublicProfile,
                         onStoryReply = { story ->
                             scope.launch {
                                 when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
@@ -342,7 +361,8 @@ fun AppNavHost(
                             }
                         },
                         onStoryLike = vm::toggleStoryLike,
-                        onStoriesRefresh = vm::refreshStories
+                        onStoriesRefresh = vm::refreshStories,
+                        onOpenProfile = ::openPublicProfile
                     )
                 }
 
