@@ -237,11 +237,21 @@ jobs:
           PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
           VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
           VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
+          RELEASE_ID=$(aapt2 dump xmltree "$APK_PATH" AndroidManifest.xml 2>/dev/null | awk '
+            /E: meta-data/ { in_meta=1; next }
+            in_meta && /A: android:name/ && /com.libra.app.RELEASE_ID/ { found=1; next }
+            found && /A: android:value/ {
+              match($0, /"(rel_[^"]+)"/, m)
+              if (m[1] != "") { print m[1]; exit }
+            }
+            /E: / && !/E: meta-data/ { in_meta=0; found=0 }
+          ' | head -n1)
           [[ -n "$PACKAGE_NAME" ]] || { echo "::error::APK package name okunamadı."; exit 1; }
           [[ -n "$VERSION_NAME" && -n "$VERSION_CODE" ]] || { echo "::error::APK version bilgisi okunamadı."; exit 1; }
+          [[ "$RELEASE_ID" == rel_* ]] || { echo "::error::APK içine release ID yazılmamış: '$RELEASE_ID'"; exit 1; }
 
           mkdir -p artifacts
-          cp "$APK_PATH" "artifacts/Libra-debug-$GITHUB_RUN_NUMBER.apk"
+          cp "$APK_PATH" "artifacts/Libra-debug-$RELEASE_ID.apk"
 
           cat > artifacts/build-info.txt <<EOF
           Libra Android Build
