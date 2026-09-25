@@ -189,7 +189,7 @@ service cloud.firestore {
         && request.resource.data.expiresAt <= request.resource.data.createdAt + 86400000;
       allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
       allow update: if request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount", "commentsCount"])
         && request.resource.data.likesCount is number
         && request.resource.data.likesCount >= 0;
       
@@ -225,7 +225,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount"])
         && request.resource.data.likesCount is number
         && request.resource.data.likesCount >= 0
-        && request.resource.data.likesCount <= 1000000;
+        && request.resource.data.likesCount <= 1000000
+        && request.resource.data.commentsCount is number
+        && request.resource.data.commentsCount >= 0
+        && request.resource.data.commentsCount <= 1000000;
       allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
 
       match /likes/{uid} {
