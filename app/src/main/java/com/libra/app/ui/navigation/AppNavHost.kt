@@ -320,6 +320,7 @@ fun AppNavHost(
                         onCreatePost = vm::createPost,
                         onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
                         onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                        canComment = profile.moderation.canComment,
                         onToggleLike = vm::toggleLike, onToggleSave = vm::toggleSave,
                         onDeletePost = vm::deletePost, onOpenComments = vm::openComments,
                         comments = vm.comments.collectAsState().value, onAddComment = vm::addComment,
