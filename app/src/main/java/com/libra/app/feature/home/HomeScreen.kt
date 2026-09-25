@@ -117,6 +117,7 @@ fun HomeScreen(
     onOpenCreateStory: () -> Unit = {},
     canPost: Boolean = true,
     canStory: Boolean = true,
+    canComment: Boolean = true,
     onToggleLike: (Post) -> Unit = {},
     onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
@@ -204,9 +205,11 @@ fun HomeScreen(
                                         { onDeletePost(post) },
                                         { onToggleSave(post) },
                                         {
-                                            selectedPost = post
-                                            commentText = ""
-                                            onOpenComments(post)
+                                            if (canComment) {
+                                                selectedPost = post
+                                                commentText = ""
+                                                onOpenComments(post)
+                                            }
                                         },
                                         { onOpenProfile(post.authorId) },
                                         {
@@ -573,7 +576,10 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
-                IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
+                IconButton(onClick = onComment, enabled = canComment) {
+                    Icon(Icons.Default.ChatBubbleOutline, "Yorumlar")
+                }
+                Text(post.commentsCount.toString(), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onSave) {
                     Icon(
                         imageVector = if (post.savedByCurrentUser) {
