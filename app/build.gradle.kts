@@ -21,10 +21,10 @@ val generatedReleaseId = System.getenv("LIBRA_RELEASE_ID")
 val generatedVersionCode = System.getenv("LIBRA_VERSION_CODE")
     ?.toLongOrNull()
     ?.takeIf { it > 0L }
-    ?: gitValue("rev-list", "--count", "HEAD")
+    ?: System.getenv("GITHUB_RUN_NUMBER")
         ?.toLongOrNull()
         ?.takeIf { it > 0L }
-    ?: 1L
+    ?: (System.currentTimeMillis() / 1000L).coerceAtLeast(1L)
 
 plugins {
     alias(libs.plugins.android.application)
