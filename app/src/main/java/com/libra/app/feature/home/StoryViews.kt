@@ -90,7 +90,7 @@ fun StoryStrip(
                 ) {
                     UserAvatar(
                         photoUrl = story.authorPhotoUrl,
-                        fallback = story.authorName.take(1).uppercase().ifBlank { "L" },
+                        initials = story.authorName.take(1).uppercase().ifBlank { "L" },
                         size = 53.dp
                     )
                 }
@@ -120,11 +120,9 @@ fun StoryViewer(
         mediaUrl = ""
         progress.snapTo(0f)
         if (story.mediaUrl.isNotBlank()) {
-            mediaUrl = when (val result = runCatching {
+            mediaUrl = runCatching {
                 ServiceLocator.storageRepository.getSignedMediaUrl(story.mediaUrl)
-            }) {
-                is Result -> result.getOrElse { story.mediaUrl }
-            }
+            }.getOrElse { story.mediaUrl }
         }
         progress.animateTo(
             1f,
@@ -168,7 +166,7 @@ fun StoryViewer(
         ) {
             UserAvatar(
                 photoUrl = story.authorPhotoUrl,
-                fallback = story.authorName.take(1).uppercase().ifBlank { "L" },
+                initials = story.authorName.take(1).uppercase().ifBlank { "L" },
                 size = 38.dp
             )
             Spacer(Modifier.width(10.dp))
