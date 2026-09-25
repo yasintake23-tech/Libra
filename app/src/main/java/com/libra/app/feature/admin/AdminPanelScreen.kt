@@ -22,6 +22,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri")
 
@@ -155,11 +156,15 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
     var u by remember{mutableStateOf(p.username)}
     var b by remember{mutableStateOf(p.bio)}
     var photo by remember{mutableStateOf(p.profileImageUrl)}
+    val scope = rememberCoroutineScope()
+    var resetStatus by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=dismiss,title={Text("Hesap ve üyelik işlemleri")},text={Column{
         OutlinedTextField(n,{n=it},label={Text("Hesap ismi")})
         OutlinedTextField(u,{u=it},label={Text("Kullanıcı adı")})
         OutlinedTextField(b,{b=it},label={Text("Hakkımda")})
         OutlinedTextField(photo,{photo=it},label={Text("Profil fotoğrafı URL")})
+        TextButton(onClick={scope.launch{runCatching{com.google.firebase.auth.FirebaseAuth.getInstance().sendPasswordResetEmail(p.email).await()}.onSuccess{resetStatus="Şifre yenileme bağlantısı gönderildi."}.onFailure{resetStatus="Bağlantı gönderilemedi."}}}){Text("Şifre değiştirme bağlantısı gönder")}
+        if(resetStatus.isNotBlank()) Text(resetStatus,color=MaterialTheme.colorScheme.primary)
     }},confirmButton={TextButton({save(p.copy(displayName=n,username=u,bio=b,profileImageUrl=photo));dismiss()}){Text("Kaydet")}},dismissButton={TextButton(dismiss){Text("İptal")}})
 }
 
