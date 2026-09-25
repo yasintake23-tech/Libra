@@ -30,7 +30,7 @@ data class UserProfile(
 
     val initials: String
         get() = displayName.trim()
-            .split(Regex("\s+"))
+            .split(Regex("\\s+"))
             .mapNotNull { it.firstOrNull()?.toString() }
             .take(2)
             .joinToString("")
