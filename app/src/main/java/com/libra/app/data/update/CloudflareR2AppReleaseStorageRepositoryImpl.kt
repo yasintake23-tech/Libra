@@ -265,7 +265,7 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
                 return@withContext AppResult.Error(AppError.Storage("R2 public URL yapılandırması eksik."))
             }
             val connection = try {
-                (URL("$base/$PUBLIC_RELEASE_OBJECT_KEY").openConnection() as HttpURLConnection).apply {
+                (URL("$base/$PUBLIC_RELEASE_OBJECT_KEY?ts=${System.currentTimeMillis()}").openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     doInput = true
                     useCaches = false
