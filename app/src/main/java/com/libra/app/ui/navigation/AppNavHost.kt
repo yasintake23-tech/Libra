@@ -252,6 +252,7 @@ fun AppNavHost(
     if (showGlobalChat) {
         GlobalChatScreen(
             onBack = { showGlobalChat = false },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
