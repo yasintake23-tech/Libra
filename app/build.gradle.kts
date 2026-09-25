@@ -1,5 +1,31 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
+fun gitValue(vararg args: String): String? = runCatching {
+    ProcessBuilder(listOf("git") + args)
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+        .inputStream
+        .bufferedReader()
+        .use { it.readText().trim() }
+        .takeIf { it.isNotBlank() }
+}.getOrNull()
+
+val generatedReleaseId = System.getenv("LIBRA_RELEASE_ID")
+    ?.trim()
+    ?.takeIf { it.isNotBlank() }
+    ?: gitValue("rev-parse", "--short=12", "HEAD")
+        ?.let { "rel_$it" }
+    ?: "rel_local"
+
+val generatedVersionCode = System.getenv("LIBRA_VERSION_CODE")
+    ?.toLongOrNull()
+    ?.takeIf { it > 0L }
+    ?: gitValue("rev-list", "--count", "HEAD")
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+    ?: 1L
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -14,8 +40,12 @@ android {
         applicationId = "com.libra.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
+        versionCode = generatedVersionCode.toInt()
         versionName = "1.0.6"
+
+        buildConfigField("String", "LIBRA_RELEASE_ID", "\"$generatedReleaseId\"")
+        manifestPlaceholders["libraReleaseId"] = generatedReleaseId
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
