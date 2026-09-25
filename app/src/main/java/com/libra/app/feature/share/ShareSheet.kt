@@ -22,7 +22,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 private data class ShareTarget(val key: String, val title: String, val subtitle: String)
-fun sharedContentUrl(type: String, id: String) = "https://libra.app/share/$type/$id"
+private const val LIBRA_WEB_BASE_URL = "https://libra-3bfb9.web.app"
+
+fun sharedContentUrl(type: String, id: String) = "$LIBRA_WEB_BASE_URL/share/$type/$id"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

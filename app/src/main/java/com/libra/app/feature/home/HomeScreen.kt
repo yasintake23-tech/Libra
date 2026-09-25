@@ -205,7 +205,19 @@ fun HomeScreen(
                                             commentText = ""
                                             onOpenComments(post)
                                         },
-                                        { onOpenProfile(post.authorId) }
+                                        { onOpenProfile(post.authorId) },
+                                        {
+                                            shareContent = SharedContent(
+                                                type = "post",
+                                                id = post.id,
+                                                title = post.title.ifBlank { "Gönderi" },
+                                                text = post.text,
+                                                authorId = post.authorId,
+                                                authorName = post.authorName,
+                                                mediaUrl = post.mediaUrl,
+                                                url = sharedContentUrl("post", post.id)
+                                            )
+                                        }
                                     )
                                 }
                             }
@@ -216,11 +228,26 @@ fun HomeScreen(
                                 item { EmptySection("Henüz yayınlanmış kitap yok.") }
                             } else {
                                 items(data.recentBooks.take(20), key = { it.id }) { book ->
-                                    HorizontalBookCard(
-                                        book,
-                                        { onBookClick(book) },
-                                        Modifier.padding(horizontal = 16.dp, vertical = 5.dp)
-                                    )
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        HorizontalBookCard(book, { onBookClick(book) }, Modifier.weight(1f))
+                                        IconButton(onClick = {
+                                            shareContent = SharedContent(
+                                                type = "book",
+                                                id = book.id,
+                                                title = book.title,
+                                                text = book.description,
+                                                authorId = book.ownerId,
+                                                authorName = book.authorName,
+                                                mediaUrl = book.coverImageUrl,
+                                                url = sharedContentUrl("book", book.id)
+                                            )
+                                        }) {
+                                            Icon(Icons.Default.Share, "Paylaş")
+                                        }
+                                    }
                                 }
                             }
                         }
