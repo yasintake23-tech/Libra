@@ -8,6 +8,7 @@ import com.libra.app.domain.model.AdminRole
 import com.libra.app.domain.model.CosmeticRole
 import com.libra.app.domain.model.UserModeration
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.AppReleaseInfo
 import com.libra.app.domain.model.AppUpdate
 import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,8 @@ class AdminViewModel : ViewModel() {
     val releaseBusy: StateFlow<Boolean> = _releaseBusy.asStateFlow()
     private val _releaseStatus = MutableStateFlow<String?>(null)
     val releaseStatus: StateFlow<String?> = _releaseStatus.asStateFlow()
+    private val _selectedReleaseInfo = MutableStateFlow<AppReleaseInfo?>(null)
+    val selectedReleaseInfo: StateFlow<AppReleaseInfo?> = _selectedReleaseInfo.asStateFlow()
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -52,14 +55,40 @@ class AdminViewModel : ViewModel() {
     fun clearError() { _error.value = null }
     fun clearReleaseStatus() { _releaseStatus.value = null }
 
+    fun inspectAppRelease(uri: Uri) = viewModelScope.launch {
+        _selectedReleaseInfo.value = null
+        _releaseStatus.value = "APK sürümü okunuyor..."
+        when (val result = ServiceLocator.appReleaseStorageRepository.inspectApk(uri)) {
+            is AppResult.Success -> {
+                _selectedReleaseInfo.value = result.data
+                _releaseStatus.value = "APK sürümü otomatik algılandı."
+            }
+            is AppResult.Error -> _releaseStatus.value = result.error.message
+        }
+    }
+
+    fun clearSelectedRelease() {
+        _selectedReleaseInfo.value = null
+    }
+
     fun publishAppRelease(
-        uri: Uri, fileName: String, fileSize: Long, releaseId: String,
-        versionCode: Long, versionName: String, changelog: List<String>, forceUpdate: Boolean
+        uri: Uri, fileName: String, fileSize: Long, changelog: List<String>, forceUpdate: Boolean
     ) = viewModelScope.launch {
         _releaseBusy.value = true
         _releaseProgress.value = 0
         _releaseStatus.value = null
         val oldRelease = _activeRelease.value
+        val releaseInfo = _selectedReleaseInfo.value
+        if (releaseInfo == null) {
+            _releaseStatus.value = "Önce geçerli bir Libra APK seçin."
+            _releaseBusy.value = false
+            return@launch
+        }
+        if (releaseInfo.versionCode <= maxOf(com.libra.app.BuildConfig.VERSION_CODE.toLong(), oldRelease?.versionCode ?: 0L)) {
+            _releaseStatus.value = "Seçilen APK mevcut sürümden daha yeni olmalı."
+            _releaseBusy.value = false
+            return@launch
+        }
         try {
             val uploaded = ServiceLocator.appReleaseStorageRepository.uploadApk(
                 uri = uri, fileName = fileName, fileSize = fileSize,
@@ -71,7 +100,7 @@ class AdminViewModel : ViewModel() {
             }
 
             val release = AppUpdate(
-                releaseId = releaseId, versionCode = versionCode, versionName = versionName,
+                releaseId = releaseInfo.releaseId, versionCode = releaseInfo.versionCode, versionName = releaseInfo.versionName,
                 apkObjectKey = uploaded.data, apkSize = fileSize, changelog = changelog,
                 forceUpdate = forceUpdate, createdAt = System.currentTimeMillis()
             )
