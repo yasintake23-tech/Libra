@@ -11,6 +11,8 @@ import com.libra.app.data.storage.CloudflareR2StorageRepositoryImpl
 import com.libra.app.data.story.FirebaseStoryRepositoryImpl
 import com.libra.app.data.user.FirebaseUserRepositoryImpl
 import com.libra.app.data.notification.FirebaseNotificationRepositoryImpl
+import com.libra.app.data.update.CloudflareR2AppReleaseStorageRepositoryImpl
+import com.libra.app.data.update.FirebaseUpdateRepositoryImpl
 import com.libra.app.domain.repository.AdminRepository
 import com.libra.app.domain.repository.AiAssistantRepository
 import com.libra.app.domain.repository.AuthRepository
@@ -22,6 +24,8 @@ import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.StoryRepository
 import com.libra.app.domain.repository.UserRepository
 import com.libra.app.domain.repository.NotificationRepository
+import com.libra.app.domain.repository.UpdateRepository
+import com.libra.app.domain.repository.AppReleaseStorageRepository
 
 object ServiceLocator {
     val userRepository: UserRepository by lazy { FirebaseUserRepositoryImpl() }
@@ -39,5 +43,14 @@ object ServiceLocator {
     }
 
     val storageRepository: StorageRepository by lazy { r2StorageRepository }
+
+    val updateRepository: UpdateRepository by lazy { FirebaseUpdateRepositoryImpl() }
+
+    val appReleaseStorageRepository: AppReleaseStorageRepository by lazy {
+        CloudflareR2AppReleaseStorageRepositoryImpl(
+            com.google.firebase.FirebaseApp.getInstance().applicationContext
+        )
+    }
+
     val aiAssistantRepository: AiAssistantRepository by lazy { AiAssistantRepositoryImpl() }
 }
