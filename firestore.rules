@@ -1,7 +1,7 @@
 rules_version = '2';
 
 service cloud.firestore {
-  match /databases/{database}/documents {
+  match /databases/{database}/documents {\n    function isRootAdmin() { return request.auth != null && request.auth.uid == "ZBkz2js9plg07zrny2PzLW80X3i2"; }\n    function hasAdminPermission(permission) { return isRootAdmin() || (request.auth != null && get(/databases/$(database)/documents/adminRoles/$(request.auth.uid)).data.permissions[permission] == true); }\n
     match /users/{uid} {
       allow read: if request.auth != null;
 
@@ -63,7 +63,7 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
-    match /usernames/{username} {
+    match /adminRoles/{uid} {\n      allow read: if request.auth != null;\n      allow create, update, delete: if isRootAdmin() || (hasAdminPermission("manageAdminRoles") && uid != request.auth.uid);\n    }\n\n    match /cosmeticRoles/{roleId} {\n      allow read: if request.auth != null;\n      allow create, update, delete: if hasAdminPermission("manageCosmetics");\n    }\n\n    match /usernames/{username} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
         && request.resource.data.uid == request.auth.uid;
