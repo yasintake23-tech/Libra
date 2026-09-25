@@ -67,7 +67,7 @@ fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 items(notifications, key = { it.id }) { notification ->
-                    NotificationRow(notification) {
+                    NotificationRow(notification, onOpenProfile) {
                         if (!notification.read) scope.launch { repo.markRead(notification.id) }
                     }
                 }
@@ -77,7 +77,7 @@ fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}
 }
 
 @Composable
-private fun NotificationRow(notification: AppNotification, onClick: () -> Unit) {
+private fun NotificationRow(notification: AppNotification, onOpenProfile: (String) -> Unit = {}, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
