@@ -64,6 +64,7 @@ fun PublicProfileScreen(
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var adminRole by remember { mutableStateOf<AdminRole?>(null) }
     var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
 
     LaunchedEffect(profile.uid, isFollowing) {
         ServiceLocator.userRepository.getFollowers(profile.uid).let {
@@ -136,7 +137,7 @@ fun PublicProfileScreen(
                             }
                         }
                         cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
-                            CosmeticRoleBadge(role) {}
+                            CosmeticRoleBadge(role) { selectedCosmetic = role }
                         }
                     }
 
@@ -232,6 +233,13 @@ fun PublicProfileScreen(
                 }
             }
         }
+    }
+
+    selectedCosmetic?.let { role ->
+        CosmeticRoleReveal(
+            role = role,
+            onDismiss = { selectedCosmetic = null }
+        )
     }
 
     socialDialog?.let { type ->
