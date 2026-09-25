@@ -33,35 +33,43 @@ class AppUpdateViewModel : ViewModel() {
         if (_uiState.value.checking) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(checking = true, error = null)
-            // Public R2 metadata is the primary source so this check also works
-            // while signed out or while the profile setup screen is open.
+            // R2 is the public source, while Firestore is a backup source.
+            // Never let an older Firebase record override a newer R2 release.
             val publicResult = ServiceLocator.appReleaseStorageRepository.getPublicRelease()
-            val result = when (publicResult) {
-                is AppResult.Success -> publicResult
-                is AppResult.Error -> ServiceLocator.updateRepository.getActiveRelease()
+            val firebaseResult = ServiceLocator.updateRepository.getActiveRelease()
+
+            val candidates = buildList {
+                if (publicResult is AppResult.Success) publicResult.data?.let(::add)
+                if (firebaseResult is AppResult.Success) firebaseResult.data?.let(::add)
             }
 
-            when (result) {
-                is AppResult.Success -> {
-                    val release = result.data
-                    val localReleaseId = BuildConfig.LIBRA_RELEASE_ID.trim()
-                    val hasUpdate = release != null &&
-                        release.releaseId.isNotBlank() &&
-                        localReleaseId.isNotBlank() &&
-                        release.releaseId != localReleaseId &&
-                        release.versionCode > BuildConfig.VERSION_CODE.toLong()
-                    _uiState.value = _uiState.value.copy(
-                        checking = false,
-                        release = release?.takeIf { hasUpdate }
-                    )
+            if (candidates.isEmpty()) {
+                val message = when {
+                    publicResult is AppResult.Error -> publicResult.error.message
+                    firebaseResult is AppResult.Error -> firebaseResult.error.message
+                    else -> "Yayınlanmış güncelleme bulunamadı."
                 }
-                is AppResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        checking = false,
-                        error = result.error.message
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    checking = false,
+                    error = message
+                )
+                return@launch
             }
+
+            val release = candidates.maxWithOrNull(
+                compareBy<AppUpdate> { it.versionCode }.thenBy { it.createdAt }
+            )
+            val localReleaseId = BuildConfig.LIBRA_RELEASE_ID.trim()
+            val hasUpdate = release != null &&
+                release.releaseId.isNotBlank() &&
+                localReleaseId.isNotBlank() &&
+                release.releaseId != localReleaseId &&
+                release.versionCode > BuildConfig.VERSION_CODE.toLong()
+
+            _uiState.value = _uiState.value.copy(
+                checking = false,
+                release = release?.takeIf { hasUpdate }
+            )
         }
     }
 
