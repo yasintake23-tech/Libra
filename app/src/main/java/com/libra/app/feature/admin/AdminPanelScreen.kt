@@ -323,7 +323,7 @@ private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfil
                                         fileName = "profile.$ext",
                                         bytes = bytes,
                                         contentType = mime,
-                                        targetDirectory = "users/\${p.uid}"
+                                        targetDirectory = "users/${p.uid}"
                                     )
                                 ).first()
                                 if (result is AppResult.Error) error(result.error.message)
