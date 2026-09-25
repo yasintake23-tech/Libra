@@ -248,6 +248,7 @@ fun DirectMessagesScreen(
     onServersClick: () -> Unit,
     initialUser: UserProfile? = null,
     onInitialUserConsumed: () -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
@@ -278,6 +279,7 @@ fun DirectMessagesScreen(
             onEdit = { id, text -> viewModel.edit(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, text) },
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
+            onOpenProfile = { onOpenProfile(user.uid) },
             modifier = modifier
         )
         return
@@ -405,7 +407,8 @@ fun DirectMessagesScreen(
                                         ) {
                                             Text(
                                                 conversation.otherUserName,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.clickable { onOpenProfile(conversation.otherUserId) }
                                             )
                                             Text(
                                                 "@" + conversation.otherUserUsername,
@@ -465,6 +468,7 @@ private fun DirectConversationScreen(
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
+    onOpenProfile: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
@@ -535,9 +539,9 @@ private fun DirectConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            UserAvatar(user.profileImageUrl, user.initials, size = 40.dp)
+            UserAvatar(user.profileImageUrl, user.initials, size = 40.dp, onClick = onOpenProfile)
             Column(Modifier.padding(start = 10.dp)) {
-                Text(user.displayName, fontWeight = FontWeight.Bold)
+                Text(user.displayName, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpenProfile))
                 Text(user.handle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -623,7 +627,8 @@ private fun DirectConversationScreen(
                         UserAvatar(
                             message.senderPhotoUrl.ifBlank { user.profileImageUrl },
                             message.senderId.take(1).uppercase(),
-                            size = 30.dp
+                            size = 30.dp,
+                            onClick = { onOpenProfile() }
                         )
                         Spacer(Modifier.width(6.dp))
                     }
