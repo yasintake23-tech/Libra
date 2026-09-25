@@ -220,6 +220,14 @@ jobs:
           APK_SIZE=$(stat -c%s "$APK_PATH")
           SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          [[ -n "$AAPT" ]] || { echo "::error::aapt bulunamadı."; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK_PATH")"
+          PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
+          VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
+          VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
+          [[ -n "$PACKAGE_NAME" ]] || { echo "::error::APK package name okunamadı."; exit 1; }
+          [[ -n "$VERSION_NAME" && -n "$VERSION_CODE" ]] || { echo "::error::APK version bilgisi okunamadı."; exit 1; }
 
           mkdir -p artifacts
           cp "$APK_PATH" "artifacts/Libra-debug-$GITHUB_RUN_NUMBER.apk"
@@ -235,8 +243,8 @@ jobs:
           APK SHA-256: $SHA256
           Signing SHA-1: ${{ steps.verify_signing.outputs.sha1 }}
           Signing SHA-256: ${{ steps.verify_signing.outputs.sha256 }}
-          Package: com.libra.app
-          Version: 1.0.0 (1)
+          Package: $PACKAGE_NAME
+          Version: $VERSION_NAME ($VERSION_CODE)
           EOF
 
           echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
