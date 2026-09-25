@@ -27,13 +27,13 @@ import kotlinx.coroutines.tasks.await
 private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri")
 
 @Composable
-fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: AdminViewModel = viewModel()) {
+fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissions: AdminPermissionSet = AdminPermissionSet(true,true,true,true,true,true,true,true,true,true,true), vm: AdminViewModel = viewModel()) {
     var section by remember { mutableStateOf<String?>(null) }
     var member by remember { mutableStateOf<UserProfile?>(null) }
     if (member != null) {
-        MemberAdminScreen(member!!, vm, { member = null }, modifier)
+        MemberAdminScreen(member!!, vm, { member = null }, permissions, modifier)
     } else if (section == "Üye işlemleri") {
-        MembersScreen(vm.members.collectAsState().value, { section = null }, { member = it }, modifier)
+        MembersScreen(vm.members.collectAsState().value, { section = null }, { member = it }, modifier, permissions.manageMembers)
     } else {
         Surface(modifier.fillMaxSize(), color = Color.White) {
             Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -46,7 +46,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
                 }
                 Spacer(Modifier.height(28.dp))
                 sections.forEach { title ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = title == "Üye işlemleri" && enabled) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Icon(Icons.Default.Settings, null, tint = Color.Gray)
                     }
@@ -56,7 +56,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
     }
 }
 
-@Composable private fun MembersScreen(members: List<UserProfile>, onBack: () -> Unit, onSelect: (UserProfile) -> Unit, modifier: Modifier) {
+@Composable private fun MembersScreen(members: List<UserProfile>, onBack: () -> Unit, onSelect: (UserProfile) -> Unit, modifier: Modifier, enabled: Boolean) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("Tümü") }
     val now = System.currentTimeMillis()
@@ -97,7 +97,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
     }
 }
 
-@Composable private fun MemberAdminScreen(member: UserProfile, vm: AdminViewModel, onBack: () -> Unit, modifier: Modifier) {
+@Composable private fun MemberAdminScreen(member: UserProfile, vm: AdminViewModel, onBack: () -> Unit, permissions: AdminPermissionSet, modifier: Modifier) {
     var current by remember(member) { mutableStateOf(member) }
     var dialog by remember { mutableStateOf<String?>(null) }
     Surface(modifier.fillMaxSize(), color = Color.White) {
@@ -110,7 +110,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
                 }
             }
             Spacer(Modifier.height(18.dp))
-            listOf("Ban ve erişim işlemleri","Hesap ve üyelik işlemleri","Kitap işlemleri","Yönetici rolü verme işlemleri","Kozmetik rol","Kullanıcıya geri bildirim / DM").forEach { title ->
+            listOf("Ban ve erişim işlemleri" to permissions.manageBans,"Hesap ve üyelik işlemleri" to permissions.editProfiles,"Kitap işlemleri" to permissions.manageBooks,"Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,"Kozmetik rol" to permissions.manageCosmetics,"Kullanıcıya geri bildirim / DM" to permissions.sendFeedback).filter { it.second }.forEach { (title, allowed) ->
                 Row(Modifier.fillMaxWidth().padding(bottom=10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable { dialog=title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Text(title, fontWeight=FontWeight.SemiBold)
                     Icon(Icons.Default.Settings,null,tint=Color.Gray)
