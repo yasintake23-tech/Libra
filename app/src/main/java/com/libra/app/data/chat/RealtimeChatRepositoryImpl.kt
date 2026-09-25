@@ -540,20 +540,17 @@ class RealtimeChatRepositoryImpl(
             )
         )
 
-        var lastError: Exception? = null
         repeat(3) { attempt ->
             try {
                 root.updateChildren(updates).await()
                 return
-            } catch (e: Exception) {
-                lastError = e
+            } catch (_: Exception) {
                 if (attempt < 2) delay(400L * (attempt + 1))
             }
         }
 
         // The message itself is already persisted. Summary failure is retried
         // here but must never turn a successful message send into a failed send.
-        lastError
     }
 
     override suspend fun editDirectMessage(
