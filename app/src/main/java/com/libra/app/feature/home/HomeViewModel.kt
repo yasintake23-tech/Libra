@@ -263,9 +263,39 @@ class HomeViewModel(
 
     fun toggleSave(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+
+        // Optimistic UI: reflect the bookmark immediately instead of waiting
+        // for the Firestore listener / a screen recreation.
+        val previousSaved = post.savedByCurrentUser
+        updateHome { data ->
+            data.copy(
+                posts = data.posts.map { current ->
+                    if (current.id == post.id) {
+                        current.copy(savedByCurrentUser = !previousSaved)
+                    } else {
+                        current
+                    }
+                }
+            )
+        }
+
         viewModelScope.launch {
             when (val result = postRepository.toggleSave(post.id, userId)) {
-                is AppResult.Error -> _postError.value = result.error.message
+                is AppResult.Error -> {
+                    // Roll back the optimistic state when persistence fails.
+                    updateHome { data ->
+                        data.copy(
+                            posts = data.posts.map { current ->
+                                if (current.id == post.id) {
+                                    current.copy(savedByCurrentUser = previousSaved)
+                                } else {
+                                    current
+                                }
+                            }
+                        )
+                    }
+                    _postError.value = result.error.message
+                }
                 is AppResult.Success -> Unit
             }
         }
