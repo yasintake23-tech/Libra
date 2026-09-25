@@ -74,6 +74,15 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
         }
     }
 
+    override suspend fun isLiked(storyId: String, userId: String): AppResult<Boolean> {
+        if (storyId.isBlank() || userId.isBlank()) return AppResult.Success(false)
+        return try {
+            AppResult.Success(storiesRef.document(storyId).collection("likes").document(userId).get().await().exists())
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Hikâye beğenisi okunamadı.", e))
+        }
+    }
+
     override suspend fun toggleLike(storyId: String, userId: String): AppResult<Boolean> {
         if (storyId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz hikâye."))
         return try {
