@@ -228,6 +228,7 @@ fun AppNavHost(
                 selectedDirectUser = publicProfile
                 selectedTab = BottomNavTab.DM
             },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
