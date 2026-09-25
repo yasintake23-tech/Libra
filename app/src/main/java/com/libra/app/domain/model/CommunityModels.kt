@@ -19,6 +19,21 @@ data class ServerMember(
     val joinedAt: Long = 0L
 )
 
+data class ServerCategory(
+    val id: String = "",
+    val name: String = "",
+    val position: Int = 0
+)
+
+data class ServerChannel(
+    val id: String = "",
+    val categoryId: String = "",
+    val categoryName: String = "",
+    val name: String = "",
+    val type: String = "TEXT",
+    val position: Int = 0
+)
+
 data class ServerMessage(
     val id: String = "",
     val senderId: String = "",
