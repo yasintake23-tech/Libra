@@ -790,7 +790,7 @@ class RealtimeChatRepositoryImpl(
         messageId: String,
         channelId: String
     ): AppResult<Unit> =
-        deleteMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId")
+        deleteMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId"))
 
     override suspend fun toggleServerMessageReaction(
         serverId: String,
