@@ -250,6 +250,7 @@ fun DirectMessagesScreen(
     onInitialUserConsumed: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    canMessage: Boolean = true,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
@@ -280,6 +281,7 @@ fun DirectMessagesScreen(
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
             onOpenProfile = { onOpenProfile(user.uid) },
+            canMessage = canMessage,
             modifier = modifier
         )
         return
@@ -469,6 +471,7 @@ private fun DirectConversationScreen(
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
     onOpenProfile: () -> Unit = {},
+    canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
@@ -818,18 +821,19 @@ private fun DirectConversationScreen(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(enabled = !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
+            IconButton(enabled = canMessage && !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
                 value = draft,
-                onValueChange = { if (it.length <= 1000) draft = it },
+                onValueChange = { if (canMessage && it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text(if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
+                enabled = canMessage,
+                placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
             IconButton(
-                enabled = !sending &&
+                enabled = canMessage && !sending &&
                     (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
                     !mediaUploading,
                 onClick = {
