@@ -130,8 +130,11 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
 @Composable private fun ModerationDialog(m: UserModeration, dismiss:()->Unit, save:(UserModeration)->Unit) {
     var x by remember { mutableStateOf(m) }
     var reason by remember { mutableStateOf(m.banReason) }
+    var duration by remember { mutableStateOf("Kalıcı") }
     AlertDialog(onDismissRequest=dismiss,title={Text("Ban ve erişim işlemleri")},text={ Column(Modifier.heightIn(max=560.dp)) {
         OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Ban sebebi")})
+        Text("Ban süresi", fontWeight=FontWeight.Bold, modifier=Modifier.padding(top=8.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("1 saat","1 gün","7 gün","Kalıcı").forEach { FilterChip(duration == it, { duration = it }, label = { Text(it) }) } }
         SwitchRow("Ban",x.banned){x=x.copy(banned=it)}
         SwitchRow("Gönderi paylaşma engeli",x.postingDisabled){x=x.copy(postingDisabled=it)}
         SwitchRow("Mesaj atma engeli",x.messagingDisabled){x=x.copy(messagingDisabled=it)}
@@ -140,7 +143,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, vm: Admi
         SwitchRow("Kitap paylaşma engeli",x.bookPublishingDisabled){x=x.copy(bookPublishingDisabled=it)}
         SwitchRow("Sunucu oluşturma engeli",x.serverCreationDisabled){x=x.copy(serverCreationDisabled=it)}
         SwitchRow("Sunucu/genel chat mesaj engeli",x.serverMessagingDisabled){x=x.copy(serverMessagingDisabled=it)}
-    }},confirmButton={TextButton({save(x.copy(banReason=reason));dismiss()}){Text("Kaydet")}},dismissButton={TextButton(dismiss){Text("İptal")}})
+    }},confirmButton={TextButton({val until=when(duration){"1 saat"->System.currentTimeMillis()+3600000L;"1 gün"->System.currentTimeMillis()+86400000L;"7 gün"->System.currentTimeMillis()+7L*86400000L;else->0L};save(x.copy(banReason=reason,banUntil=if(x.banned)until else 0L));dismiss()}){Text("Kaydet")}},dismissButton={TextButton(dismiss){Text("İptal")}})
 }
 
 @Composable private fun SwitchRow(t:String,c:Boolean,change:(Boolean)->Unit){
