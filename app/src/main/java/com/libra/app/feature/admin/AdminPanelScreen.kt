@@ -83,6 +83,10 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
     val progress = vm.releaseProgress.collectAsState().value
     val busy = vm.releaseBusy.collectAsState().value
     val status = vm.releaseStatus.collectAsState().value
+
+    var releaseId by remember { mutableStateOf("") }
+    var versionName by remember { mutableStateOf(BuildConfig.VERSION_NAME) }
+    var versionCode by remember { mutableStateOf(BuildConfig.VERSION_CODE.toString()) }
     var changelog by remember { mutableStateOf("") }
     var forceUpdate by remember { mutableStateOf(false) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
@@ -109,7 +113,12 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                 if (cursor.moveToFirst()) cursor.getLong(0) else 0L
             } ?: 0L
         }.getOrDefault(0L)
+
         vm.inspectAppRelease(uri)
+    }
+
+    LaunchedEffect(detected?.releaseId) {
+        detected?.releaseId?.let { releaseId = it }
     }
 
     Column(modifier.fillMaxSize().padding(16.dp)) {
@@ -138,10 +147,10 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text("Mevcut uygulama", fontWeight = FontWeight.Bold)
-                        Text("Kurulu sürüm: ${BuildConfig.VERSION_NAME} (§{BuildConfig.VERSION_CODE})")
-                        Text("Kurulu release ID: §{BuildConfig.LIBRA_RELEASE_ID}", color = Color.Gray)
+                        Text("Kurulu sürüm: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                        Text("Kurulu release ID: ${BuildConfig.LIBRA_RELEASE_ID}", color = Color.Gray)
                         Text("Aktif yayın: " + (active?.versionName ?: "Henüz yayınlanmadı"))
-                        Text("Release ID: " + (active?.releaseId ?: "Henüz yok"), color = Color.Gray)
+                        Text("Aktif Release ID: " + (active?.releaseId ?: "Henüz yok"), color = Color.Gray)
                         active?.releaseId?.takeIf { it.isNotBlank() }?.let { id ->
                             OutlinedButton(onClick = { clipboard.setText(AnnotatedString(id)) }) {
                                 Text("Release IDyi kopyala")
@@ -171,7 +180,7 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (selectedName.isBlank()) "APK seç" else "APK: §{selectedName}")
+                    Text(if (selectedName.isBlank()) "APK seç" else "APK: $selectedName")
                 }
 
                 if (selectedSize > 0L) {
@@ -184,16 +193,50 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
             }
 
             item {
+                OutlinedTextField(
+                    value = releaseId,
+                    onValueChange = { releaseId = it.take(80) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Release ID") },
+                    placeholder = { Text("APK seçildiğinde otomatik gelir") },
+                    singleLine = true,
+                    enabled = false
+                )
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = versionName,
+                        onValueChange = { versionName = it.take(30) },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Sürüm adı") },
+                        enabled = !busy
+                    )
+                    OutlinedTextField(
+                        value = versionCode,
+                        onValueChange = { versionCode = it.filter(Char::isDigit).take(10) },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Version code") },
+                        enabled = !busy
+                    )
+                }
+            }
+
+            item {
                 if (detected != null) {
                     Card(Modifier.fillMaxWidth()) {
                         Column(
                             Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text("APK bilgileri otomatik algılandı", fontWeight = FontWeight.Bold)
-                            Text("Sürüm: §{detected.versionName} (§{detected.versionCode})")
-                            Text("Release ID: §{detected.releaseId}", color = Color.Gray)
-                            Text("Bu bilgiler APK'nın içinden okunur, elle girilmez.")
+                            Text("APK doğrulandı", fontWeight = FontWeight.Bold)
+                            Text("APK Release ID: ${detected.releaseId}")
+                            Text(
+                                "APK'nın package ve imzası doğrulandı. Sürüm adı ve version code'u aşağıdan sen belirleyebilirsin.",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
@@ -201,9 +244,9 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
 
             item {
                 OutlinedTextField(
-                    changelog,
-                    { changelog = it },
-                    Modifier.fillMaxWidth(),
+                    value = changelog,
+                    onValueChange = { changelog = it },
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("Değişiklik notları") },
                     minLines = 4,
                     enabled = !busy
@@ -233,7 +276,7 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                         progress = { progress / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("APK yükleniyor: %§{progress}")
+                    Text("APK yükleniyor: %$progress")
                 }
                 status?.let {
                     Text(
@@ -251,14 +294,17 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
             }
 
             item {
+                val code = versionCode.toLongOrNull() ?: 0L
                 val canPublish = !busy &&
                     selectedUri != null &&
                     selectedSize > 0L &&
                     detected != null &&
-                    detected.versionCode > maxOf(
+                    releaseId.trim() == detected.releaseId &&
+                    code > maxOf(
                         BuildConfig.VERSION_CODE.toLong(),
                         active?.versionCode ?: 0L
-                    )
+                    ) &&
+                    versionName.trim().isNotBlank()
 
                 Button(
                     onClick = {
@@ -267,6 +313,9 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                             uri = uri,
                             fileName = selectedName,
                             fileSize = selectedSize,
+                            releaseId = releaseId.trim(),
+                            versionCode = code,
+                            versionName = versionName.trim(),
                             changelog = changelog.lines()
                                 .map { it.trim() }
                                 .filter { it.isNotBlank() },
