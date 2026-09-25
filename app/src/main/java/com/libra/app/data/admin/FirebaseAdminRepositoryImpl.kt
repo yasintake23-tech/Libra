@@ -31,9 +31,23 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
     }
 
     override suspend fun updateMemberProfile(profile: UserProfile): AppResult<Unit> = try {
-        users.document(profile.uid).update(mapOf("displayName" to profile.displayName.trim(),"username" to profile.username.trim().lowercase(),"bio" to profile.bio.trim(),"profileImageUrl" to profile.profileImageUrl,"updatedAt" to System.currentTimeMillis())).await()
+        val userRef = users.document(profile.uid)
+        val username = profile.username.trim().lowercase()
+        firestore.runTransaction { tx ->
+            val current = tx.get(userRef)
+            val oldUsername = current.getString("username").orEmpty().lowercase()
+            if (username.isNotBlank() && username != oldUsername) {
+                val newRef = firestore.collection("usernames").document(username)
+                val existing = tx.get(newRef)
+                if (existing.exists() && existing.getString("uid") != profile.uid) throw IllegalStateException("Bu kullanıcı adı zaten kullanılıyor.")
+                tx.set(newRef, mapOf("uid" to profile.uid, "username" to username, "createdAt" to System.currentTimeMillis(), "updatedAt" to System.currentTimeMillis()))
+                if (oldUsername.isNotBlank()) tx.delete(firestore.collection("usernames").document(oldUsername))
+            }
+            tx.update(userRef, mapOf("displayName" to profile.displayName.trim(),"username" to username,"bio" to profile.bio.trim(),"profileImageUrl" to profile.profileImageUrl,"updatedAt" to System.currentTimeMillis()))
+            null
+        }.await()
         AppResult.Success(Unit)
-    } catch(e:Exception) { AppResult.Error(AppError.Database("Üye profili güncellenemedi.",e)) }
+    } catch(e:Exception) { AppResult.Error(AppError.Database("Üye profili güncellenemedi: " + (e.localizedMessage ?: "Bilinmeyen hata."),e)) }
 
     override suspend fun updateModeration(uid:String, moderation:UserModeration):AppResult<Unit> = try {
         users.document(uid).update("moderation",moderation).await()
