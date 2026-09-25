@@ -23,12 +23,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
+private const val LIBRA_RTDB_URL =
+    "https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app"
+
 /**
  * Single realtime chat implementation.
  *
- * Important: the default FirebaseDatabase instance is used deliberately.
- * google-services.json contains the active RTDB URL, so there is no second,
- * hard-coded database host that can drift from Firebase configuration.
+ * All chat features are pinned to the regional RTDB instance used by this
+ * Firebase project. This avoids SDK/default-instance resolution differences
+ * across devices and keeps global chat, DMs, and server chat on one database.
  *
  * Message writes are independent from secondary metadata (conversation
  * summaries and notifications). A summary/notification failure must never
@@ -43,7 +46,7 @@ class RealtimeChatRepositoryImpl(
     private val auth = FirebaseAuth.getInstance()
 
     private fun database(): FirebaseDatabase? =
-        runCatching { FirebaseDatabase.getInstance() }.getOrNull()
+        runCatching { FirebaseDatabase.getInstance(LIBRA_RTDB_URL) }.getOrNull()
 
     private fun ref(path: String): DatabaseReference? =
         database()?.getReference(path)
