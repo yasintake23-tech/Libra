@@ -300,7 +300,8 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.senderName ?: "")
+            "replyToSenderName" to (replyTo?.senderName ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -507,7 +508,8 @@ class RealtimeChatRepositoryImpl(
                 ?.ifBlank {
                     if (replyTo.senderId == sender.uid) senderProfile.displayName else ""
                 }
-                ?: "")
+                ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -521,7 +523,7 @@ class RealtimeChatRepositoryImpl(
                 conversationId = conversation,
                 senderProfile = senderProfile,
                 timestamp = now,
-                lastMessage = lastMessage(clean, mediaUrl)
+                lastMessage = lastMessage(clean, mediaUrl, sharedContent)
             )
 
             runCatching {
@@ -758,7 +760,8 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.senderName ?: "")
+            "replyToSenderName" to (replyTo?.senderName ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
@@ -946,8 +949,12 @@ class RealtimeChatRepositoryImpl(
         }
     }
 
-    private fun lastMessage(text: String, mediaUrl: String): String =
-        text.ifBlank { if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "" }
+    private fun lastMessage(text: String, mediaUrl: String, sharedContent: SharedContent? = null): String =
+        text.ifBlank {
+            sharedContent?.title?.ifBlank {
+                if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "Paylaşılan içerik"
+            } ?: if (mediaUrl.isNotBlank()) "📷 Fotoğraf" else "Paylaşılan içerik"
+        }
 
     private fun replyText(text: String?, mediaUrl: String?): String =
         text.orEmpty().ifBlank {
