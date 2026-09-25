@@ -58,6 +58,7 @@ fun StoryStrip(
     currentUserId: String,
     onStoryClick: (Story) -> Unit,
     onOpenProfile: (String) -> Unit = {},
+    onCreateStory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val latestByAuthor = stories
@@ -66,8 +67,9 @@ fun StoryStrip(
         .values
         .sortedWith(compareByDescending<Story> { it.authorId == currentUserId }.thenByDescending { it.createdAt })
 
-    if (latestByAuthor.isEmpty()) return
-
+    // Keep the story rail visible even when there are no active stories.
+    // This also gives the current user the Instagram-style entry point
+    // instead of collapsing the entire section to zero height.
     LazyRow(
         modifier = modifier
             .fillMaxWidth()
@@ -75,6 +77,35 @@ fun StoryStrip(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp)
     ) {
+        item(key = "add-story") {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(66.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(62.dp)
+                        .border(2.5.dp, Color.White, CircleShape)
+                        .padding(3.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onCreateStory),
+                    contentAlignment = Alignment.Center
+                ) {
+                    UserAvatar(
+                        photoUrl = "",
+                        initials = "+",
+                        size = 53.dp
+                    )
+                }
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    "Hikâye ekle",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1
+                )
+            }
+        }
+
         items(latestByAuthor.toList(), key = { it.authorId }) { story ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
