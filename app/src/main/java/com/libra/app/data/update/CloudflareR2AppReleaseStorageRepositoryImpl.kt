@@ -1,0 +1,195 @@
+package com.libra.app.data.update
+
+import android.content.Context
+import com.amazonaws.HttpMethod
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.regions.Region
+import com.amazonaws.regions.Regions
+import com.amazonaws.services.s3.AmazonS3Client
+import com.amazonaws.services.s3.S3ClientOptions
+import com.amazonaws.services.s3.model.DeleteObjectRequest
+import com.libra.app.core.result.AppError
+import com.libra.app.core.result.AppResult
+import com.libra.app.data.storage.CloudflareR2StorageConfig
+import com.libra.app.domain.repository.AppReleaseStorageRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Date
+import java.util.UUID
+
+class CloudflareR2AppReleaseStorageRepositoryImpl(
+    private val context: Context
+) : AppReleaseStorageRepository {
+
+    private val config get() = CloudflareR2StorageConfig
+
+    override fun uploadApk(
+        fileName: String,
+        bytes: ByteArray,
+        onProgress: (Int) -> Unit
+    ): Flow<AppResult<String>> = flow {
+        if (!config.isConfigured(context)) {
+            emit(AppResult.Error(AppError.Storage("Cloudflare R2 yapılandırması eksik.")))
+            return@flow
+        }
+        if (bytes.isEmpty()) {
+            emit(AppResult.Error(AppError.Storage("APK dosyası boş.")))
+            return@flow
+        }
+        if (bytes.size > MAX_APK_BYTES) {
+            emit(AppResult.Error(AppError.Storage("APK dosyası 200 MB'dan büyük olamaz.")))
+            return@flow
+        }
+
+        val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[\\/\\u0000-\\u001F]"), "_")
+            .trim()
+            .ifBlank { "Libra-release.apk" }
+            .take(120)
+
+        val objectKey = "releases/" + UUID.randomUUID() + "-" + safeName
+
+        try {
+            withContext(Dispatchers.IO) {
+                onProgress(0)
+                uploadWithRetry(objectKey, bytes, onProgress)
+                onProgress(100)
+            }
+            emit(AppResult.Success(objectKey))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emit(AppResult.Error(AppError.Storage("APK R2'ye yüklenemedi.", e)))
+        }
+    }
+
+    override suspend fun deleteApk(objectKey: String): AppResult<Unit> =
+        withContext(Dispatchers.IO) {
+            val key = objectKey.trim()
+            if (!key.startsWith("releases/") || key.length <= "releases/".length) {
+                return@withContext AppResult.Error(AppError.Storage("Geçersiz release APK yolu."))
+            }
+            try {
+                createClient().useS3 { client ->
+                    client.deleteObject(DeleteObjectRequest(config.bucketName(context), key))
+                }
+                AppResult.Success(Unit)
+            } catch (e: Exception) {
+                AppResult.Error(AppError.Storage("Eski APK silinemedi.", e))
+            }
+        }
+
+    override suspend fun getSignedApkUrl(objectKey: String): String? =
+        withContext(Dispatchers.IO) {
+            val key = objectKey.trim()
+            if (!key.startsWith("releases/")) return@withContext null
+            runCatching {
+                val expiration = Date(System.currentTimeMillis() + SIGNED_URL_LIFETIME_MS)
+                createClient().useS3 { client ->
+                    client.generatePresignedUrl(
+                        config.bucketName(context),
+                        key,
+                        expiration,
+                        HttpMethod.GET
+                    ).toString()
+                }
+            }.getOrNull()
+        }
+
+    private fun uploadWithRetry(
+        objectKey: String,
+        bytes: ByteArray,
+        onProgress: (Int) -> Unit
+    ) {
+        var lastError: Exception? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                val expiration = Date(System.currentTimeMillis() + PRESIGNED_URL_LIFETIME_MS)
+                val url = createClient().useS3 { client ->
+                    client.generatePresignedUrl(
+                        config.bucketName(context),
+                        objectKey,
+                        expiration,
+                        HttpMethod.PUT
+                    )
+                }
+                putFixedLength(url, bytes, onProgress)
+                return
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < MAX_ATTEMPTS - 1) Thread.sleep(RETRY_DELAYS_MS[attempt])
+            }
+        }
+        throw lastError ?: IllegalStateException("APK yükleme başarısız.")
+    }
+
+    private fun putFixedLength(url: URL, bytes: ByteArray, onProgress: (Int) -> Unit) {
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"
+            doOutput = true
+            doInput = true
+            useCaches = false
+            instanceFollowRedirects = true
+            connectTimeout = HTTP_TIMEOUT_MS
+            readTimeout = HTTP_TIMEOUT_MS
+            setFixedLengthStreamingMode(bytes.size)
+            setRequestProperty("Content-Type", "application/vnd.android.package-archive")
+        }
+
+        try {
+            connection.connect()
+            connection.outputStream.use { output ->
+                val bufferSize = 64 * 1024
+                var offset = 0
+                while (offset < bytes.size) {
+                    val count = minOf(bufferSize, bytes.size - offset)
+                    output.write(bytes, offset, count)
+                    offset += count
+                    onProgress((offset * 100 / bytes.size).coerceIn(1, 99))
+                }
+                output.flush()
+            }
+            val code = connection.responseCode
+            if (code !in 200..299) throw IllegalStateException("R2 HTTP $code")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun createClient(): AmazonS3Client =
+        AmazonS3Client(
+            BasicAWSCredentials(
+                config.accessKeyId(context),
+                config.secretAccessKey(context)
+            ),
+            Region.getRegion(Regions.US_EAST_1)
+        ).also { client ->
+            client.endpoint = config.endpoint(context)
+            client.setSignerRegionOverride("auto")
+            client.setS3ClientOptions(
+                S3ClientOptions.builder()
+                    .setPathStyleAccess(true)
+                    .disableChunkedEncoding()
+                    .setPayloadSigningEnabled(false)
+                    .build()
+            )
+        }
+
+    private inline fun <T> AmazonS3Client.useS3(block: (AmazonS3Client) -> T): T {
+        try { return block(this) } finally { shutdown() }
+    }
+
+    private companion object {
+        const val MAX_APK_BYTES = 200L * 1024L * 1024L
+        const val MAX_ATTEMPTS = 3
+        const val HTTP_TIMEOUT_MS = 60_000
+        const val PRESIGNED_URL_LIFETIME_MS = 15L * 60L * 1000L
+        const val SIGNED_URL_LIFETIME_MS = 15L * 60L * 1000L
+        val RETRY_DELAYS_MS = longArrayOf(1000L, 2500L)
+    }
+}
