@@ -13,6 +13,10 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.UserRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,255 +29,151 @@ import kotlinx.coroutines.tasks.await
 class FirebaseAuthRepositoryImpl(
     private val userRepository: UserRepository
 ) : AuthRepository {
-
     private val firebaseAuth: FirebaseAuth? by lazy {
-        runCatching {
-            FirebaseApp.getInstance()
-            FirebaseAuth.getInstance()
-        }.getOrNull()
+        runCatching { FirebaseApp.getInstance(); FirebaseAuth.getInstance() }.getOrNull()
     }
-
     private val _currentUser = MutableStateFlow<UserProfile?>(null)
     override val currentUser: StateFlow<UserProfile?> = _currentUser.asStateFlow()
-
     private val _isAuthenticated = MutableStateFlow(false)
     override val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var profileWatch: Job? = null
 
     init {
         firebaseAuth?.addAuthStateListener { auth ->
-            if (auth.currentUser == null) {
+            profileWatch?.cancel()
+            val user = auth.currentUser
+            if (user == null) {
                 _currentUser.value = null
                 _isAuthenticated.value = false
+            } else {
+                profileWatch = scope.launch {
+                    userRepository.getUserProfile(user.uid).collect { result ->
+                        when (result) {
+                            is AppResult.Success -> {
+                                val profile = result.data
+                                if (profile != null && profile.moderation.isBanned) {
+                                    _currentUser.value = null
+                                    _isAuthenticated.value = false
+                                    runCatching { auth.signOut() }
+                                } else if (profile != null) {
+                                    _currentUser.value = profile
+                                    _isAuthenticated.value = true
+                                }
+                            }
+                            is AppResult.Error -> Unit
+                        }
+                    }
+                }
             }
         }
     }
 
     override suspend fun checkCurrentSession(): AppResult<UserProfile?> {
-        val auth = firebaseAuth
-            ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
-
-        val firebaseUser = auth.currentUser
-            ?: run {
-                _currentUser.value = null
-                _isAuthenticated.value = false
-                return AppResult.Success(null)
-            }
-
+        val auth = firebaseAuth ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
+        val firebaseUser = auth.currentUser ?: run {
+            _currentUser.value = null
+            _isAuthenticated.value = false
+            return AppResult.Success(null)
+        }
         return runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
             .getOrElse { AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.", cause = it)) }
     }
 
-    override fun signInWithGoogleIdToken(
-        idToken: String,
-        displayName: String?,
-        email: String?,
-        photoUrl: String?
-    ): Flow<AppResult<UserProfile>> = flow {
-        val auth = firebaseAuth
-            ?: run {
-                emit(AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı.")))
-                return@flow
-            }
-
+    override fun signInWithGoogleIdToken(idToken:String, displayName:String?, email:String?, photoUrl:String?):Flow<AppResult<UserProfile>> = flow {
+        val auth = firebaseAuth ?: run { emit(AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))); return@flow }
         try {
             val credential = GoogleAuthProvider.getCredential(idToken, null)
             val authResult = auth.signInWithCredential(credential).await()
-            val firebaseUser = authResult.user
-                ?: throw IllegalStateException("Firebase kullanıcı hesabı alınamadı.")
-
+            val firebaseUser = authResult.user ?: throw IllegalStateException("Firebase kullanıcı hesabı alınamadı.")
             val stored = userRepository.getUserProfile(firebaseUser.uid).first()
             when (stored) {
-                is AppResult.Error -> {
-                    auth.signOut()
-                    emit(AppResult.Error(stored.error))
-                }
+                is AppResult.Error -> { auth.signOut(); emit(AppResult.Error(stored.error)) }
                 is AppResult.Success -> {
                     val existing = stored.data
+                    if (existing?.moderation?.isBanned == true) {
+                        auth.signOut()
+                        emit(AppResult.Error(AppError.Auth("Bu hesap banlandı. Sebep: " + existing.moderation.banReason.ifBlank { "Belirtilmedi." })))
+                        return@flow
+                    }
                     val base = buildProfile(firebaseUser, displayName, email, photoUrl)
-                    val profile = existing?.copy(
-                        uid = firebaseUser.uid,
-                        email = if (email.isNullOrBlank()) existing.email else email,
-                        profileImageUrl = if (existing.profileImageUrl.isBlank()) {
-                            photoUrl.orEmpty().ifBlank { existing.profileImageUrl }
-                        } else {
-                            existing.profileImageUrl
-                        },
-                        updatedAt = System.currentTimeMillis()
-                    ) ?: base
-
-                    when (val saved = userRepository.createOrUpdateProfile(profile)) {
-                        is AppResult.Success -> {
-                            _currentUser.value = saved.data
-                            _isAuthenticated.value = true
-                            emit(AppResult.Success(saved.data))
-                        }
-                        is AppResult.Error -> {
-                            auth.signOut()
-                            emit(AppResult.Error(saved.error))
-                        }
+                    val profile = existing?.copy(uid=firebaseUser.uid,email=if(email.isNullOrBlank()) existing.email else email,profileImageUrl=if(existing.profileImageUrl.isBlank()) photoUrl.orEmpty().ifBlank{existing.profileImageUrl} else existing.profileImageUrl,updatedAt=System.currentTimeMillis()) ?: base
+                    when (val saved=userRepository.createOrUpdateProfile(profile)) {
+                        is AppResult.Success -> { _currentUser.value=saved.data; _isAuthenticated.value=true; emit(AppResult.Success(saved.data)) }
+                        is AppResult.Error -> { auth.signOut(); emit(AppResult.Error(saved.error)) }
                     }
                 }
             }
-        } catch (e: Exception) {
-            _currentUser.value = null
-            _isAuthenticated.value = false
-            emit(
-                AppResult.Error(
-                    AppError.Auth(
-                        "Google ile giriş başarısız: " + (e.localizedMessage ?: "Bilinmeyen hata."),
-                        cause = e
-                    )
-                )
-            )
+        } catch(e:Exception) {
+            _currentUser.value=null; _isAuthenticated.value=false
+            emit(AppResult.Error(AppError.Auth("Google ile giriş başarısız: "+(e.localizedMessage?:"Bilinmeyen hata."),cause=e)))
         }
     }
 
-    override suspend fun signInWithEmailPassword(
-        email: String,
-        password: String
-    ): AppResult<UserProfile> {
-        val auth = firebaseAuth
-            ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
-
-        if (email.isBlank() || password.isBlank()) {
-            return AppResult.Error(AppError.Validation("E-posta ve şifre gerekli."))
-        }
-
+    override suspend fun signInWithEmailPassword(email:String,password:String):AppResult<UserProfile>{
+        val auth=firebaseAuth ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
+        if(email.isBlank()||password.isBlank()) return AppResult.Error(AppError.Validation("E-posta ve şifre gerekli."))
         return try {
-            val result = auth.signInWithEmailAndPassword(email.trim(), password).await()
-            val firebaseUser = result.user
-                ?: return AppResult.Error(AppError.Auth("Kullanıcı hesabı alınamadı."))
-            runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
-                .getOrElse { AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.", cause = it)) }
-        } catch (e: Exception) {
-            AppResult.Error(emailAuthError("E-posta ile giriş başarısız.", e))
-        }
+            val result=auth.signInWithEmailAndPassword(email.trim(),password).await()
+            val firebaseUser=result.user ?: return AppResult.Error(AppError.Auth("Kullanıcı hesabı alınamadı."))
+            runCatching{withTimeout(15_000){loadOrCreateProfile(firebaseUser)}}.getOrElse{AppResult.Error(AppError.Auth("Oturum hazırlanırken zaman aşımı oldu.",cause=it))}
+        } catch(e:Exception){AppResult.Error(emailAuthError("E-posta ile giriş başarısız.",e))}
     }
 
-    override suspend fun createAccountWithEmailPassword(
-        email: String,
-        password: String
-    ): AppResult<UserProfile> {
-        val auth = firebaseAuth
-            ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
-
-        val normalizedEmail = email.trim()
-        if (!normalizedEmail.contains("@") || !normalizedEmail.contains(".")) {
-            return AppResult.Error(AppError.Validation("Geçerli bir e-posta adresi gir."))
-        }
-        if (password.length < 6) {
-            return AppResult.Error(AppError.Validation("Şifre en az 6 karakter olmalı."))
-        }
-
+    override suspend fun createAccountWithEmailPassword(email:String,password:String):AppResult<UserProfile>{
+        val auth=firebaseAuth ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
+        val normalizedEmail=email.trim()
+        if(!normalizedEmail.contains("@")||!normalizedEmail.contains(".")) return AppResult.Error(AppError.Validation("Geçerli bir e-posta adresi gir."))
+        if(password.length<6) return AppResult.Error(AppError.Validation("Şifre en az 6 karakter olmalı."))
         return try {
-            val result = auth.createUserWithEmailAndPassword(normalizedEmail, password).await()
-            val firebaseUser = result.user
-                ?: return AppResult.Error(AppError.Auth("Yeni kullanıcı hesabı oluşturulamadı."))
-
-            runCatching { withTimeout(15_000) { loadOrCreateProfile(firebaseUser) } }
-                .getOrElse { AppResult.Error(AppError.Auth("Hesap hazırlanırken zaman aşımı oldu.", cause = it)) }
-        } catch (e: Exception) {
-            AppResult.Error(emailAuthError("Hesap oluşturulamadı.", e))
-        }
+            val result=auth.createUserWithEmailAndPassword(normalizedEmail,password).await()
+            val firebaseUser=result.user ?: return AppResult.Error(AppError.Auth("Yeni kullanıcı hesabı oluşturulamadı."))
+            runCatching{withTimeout(15_000){loadOrCreateProfile(firebaseUser)}}.getOrElse{AppResult.Error(AppError.Auth("Hesap hazırlanırken zaman aşımı oldu.",cause=it))}
+        } catch(e:Exception){AppResult.Error(emailAuthError("Hesap oluşturulamadı.",e))}
     }
 
-    override suspend fun signOut(): AppResult<Unit> {
-        val auth = firebaseAuth
-            ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
-
-        return try {
-            auth.signOut()
-            _currentUser.value = null
-            _isAuthenticated.value = false
-            AppResult.Success(Unit)
-        } catch (e: Exception) {
-            AppResult.Error(AppError.Auth("Oturum kapatılamadı.", cause = e))
-        }
+    override suspend fun signOut():AppResult<Unit>{
+        val auth=firebaseAuth ?: return AppResult.Error(AppError.Auth("Firebase yapılandırması bulunamadı."))
+        return try { auth.signOut(); _currentUser.value=null; _isAuthenticated.value=false; AppResult.Success(Unit) }
+        catch(e:Exception){AppResult.Error(AppError.Auth("Oturum kapatılamadı.",cause=e))}
     }
 
-    private suspend fun loadOrCreateProfile(firebaseUser: FirebaseUser): AppResult<UserProfile> {
+    private suspend fun loadOrCreateProfile(firebaseUser:FirebaseUser):AppResult<UserProfile>{
         return try {
-            when (val profileResult = userRepository.getUserProfile(firebaseUser.uid).first()) {
-                is AppResult.Error -> {
-                    _currentUser.value = null
-                    _isAuthenticated.value = false
-                    AppResult.Error(profileResult.error)
-                }
-                is AppResult.Success -> {
-                    val profile = profileResult.data ?: buildProfile(firebaseUser)
-                    val saved = if (profileResult.data == null) {
-                        userRepository.createOrUpdateProfile(profile)
+            when(val profileResult=userRepository.getUserProfile(firebaseUser.uid).first()){
+                is AppResult.Error->{_currentUser.value=null;_isAuthenticated.value=false;AppResult.Error(profileResult.error)}
+                is AppResult.Success->{
+                    val existing=profileResult.data
+                    if(existing?.moderation?.isBanned==true){
+                        firebaseAuth?.signOut()
+                        _currentUser.value=null;_isAuthenticated.value=false
+                        AppResult.Error(AppError.Auth("Bu hesap banlandı. Sebep: "+existing.moderation.banReason.ifBlank{"Belirtilmedi."}))
                     } else {
-                        AppResult.Success(profile)
-                    }
-
-                    when (saved) {
-                        is AppResult.Success -> {
-                            _currentUser.value = saved.data
-                            _isAuthenticated.value = true
-                            AppResult.Success(saved.data)
-                        }
-                        is AppResult.Error -> {
-                            _currentUser.value = null
-                            _isAuthenticated.value = false
-                            AppResult.Error(saved.error)
-                        }
+                        val profile=existing ?: buildProfile(firebaseUser)
+                        val saved=if(existing==null) userRepository.createOrUpdateProfile(profile) else AppResult.Success(profile)
+                        when(saved){is AppResult.Success->{_currentUser.value=saved.data;_isAuthenticated.value=true;AppResult.Success(saved.data)};is AppResult.Error->{_currentUser.value=null;_isAuthenticated.value=false;AppResult.Error(saved.error)}}
                     }
                 }
             }
-        } catch (e: Exception) {
-            _currentUser.value = null
-            _isAuthenticated.value = false
-            AppResult.Error(AppError.Database("Kullanıcı profili alınamadı.", e))
-        }
+        } catch(e:Exception){_currentUser.value=null;_isAuthenticated.value=false;AppResult.Error(AppError.Database("Kullanıcı profili alınamadı.",e))}
     }
 
-    private fun emailAuthError(prefix: String, error: Exception): AppError.Auth {
-        val message = when (error) {
-            is FirebaseAuthUserCollisionException ->
-                "Bu e-posta zaten kayıtlı. Giriş yap sekmesinden devam et."
-            is FirebaseAuthInvalidCredentialsException ->
-                "E-posta veya şifre hatalı."
-            is FirebaseAuthInvalidUserException ->
-                "Bu hesap bulunamadı veya artık kullanılamıyor."
-            is FirebaseAuthWeakPasswordException ->
-                "Şifre Firebase'in belirlediği minimum güvenlik koşulunu karşılamıyor."
-            else ->
-                prefix + ": " + (error.localizedMessage ?: "Bilinmeyen hata.")
+    private fun emailAuthError(prefix:String,error:Exception):AppError.Auth{
+        val message=when(error){
+            is FirebaseAuthUserCollisionException->"Bu e-posta zaten kayıtlı. Giriş yap sekmesinden devam et."
+            is FirebaseAuthInvalidCredentialsException->"E-posta veya şifre hatalı."
+            is FirebaseAuthInvalidUserException->"Bu hesap bulunamadı veya artık kullanılamıyor."
+            is FirebaseAuthWeakPasswordException->"Şifre Firebase'in belirlediği minimum güvenlik koşulunu karşılamıyor."
+            else->prefix+": "+(error.localizedMessage?:"Bilinmeyen hata.")
         }
-
-        return AppError.Auth(message, cause = error)
+        return AppError.Auth(message,cause=error)
     }
 
-    private fun buildProfile(
-        firebaseUser: FirebaseUser,
-        displayName: String? = null,
-        email: String? = null,
-        photoUrl: String? = null
-    ): UserProfile {
-        val resolvedEmail = email ?: firebaseUser.email.orEmpty()
-        val emailLocalPart = resolvedEmail.substringBefore("@")
-        val fallbackName = emailLocalPart
-            .replace(".", " ")
-            .replace("_", " ")
-            .trim()
-            .ifBlank { "Libra Okuru" }
-
-        val now = System.currentTimeMillis()
-
-        return UserProfile(
-            uid = firebaseUser.uid,
-            displayName = displayName.orEmpty().ifBlank {
-                firebaseUser.displayName.orEmpty().ifBlank { fallbackName }
-            },
-            username = "",
-            email = resolvedEmail,
-            profileImageUrl = photoUrl.orEmpty().ifBlank {
-                firebaseUser.photoUrl?.toString().orEmpty()
-            },
-            profileCompleted = false,
-            createdAt = now,
-            updatedAt = now
-        )
+    private fun buildProfile(firebaseUser:FirebaseUser,displayName:String?=null,email:String?=null,photoUrl:String?=null):UserProfile{
+        val resolvedEmail=email?:firebaseUser.email.orEmpty()
+        val emailLocalPart=resolvedEmail.substringBefore("@")
+        val fallbackName=emailLocalPart.replace("."," ").replace("_"," ").trim().ifBlank{"Libra Okuru"}
+        val now=System.currentTimeMillis()
+        return UserProfile(uid=firebaseUser.uid,displayName=displayName.orEmpty().ifBlank{firebaseUser.displayName.orEmpty().ifBlank{fallbackName}},username="",email=resolvedEmail,profileImageUrl=photoUrl.orEmpty().ifBlank{firebaseUser.photoUrl?.toString().orEmpty()},profileCompleted=false,createdAt=now,updatedAt=now)
     }
 }
