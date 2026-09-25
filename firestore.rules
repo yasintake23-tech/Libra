@@ -93,7 +93,9 @@ service cloud.firestore {
     }
 
     match /appUpdates/{releaseId} {
-      allow read: if request.auth != null;
+      // Release metadata is intentionally public so update checks can run
+      // before authentication/profile setup.
+      allow read: if true;
       allow create, update, delete: if hasAdminPermission("manageUpdates");
     }
 
