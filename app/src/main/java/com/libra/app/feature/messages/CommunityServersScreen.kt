@@ -543,7 +543,7 @@ private fun ServerChatScreen(
                     val text = draft.trim()
                     val edit = editingMessage
                     if (edit != null) {
-                        scope.launch { chatRepository.editServerMessage(server.id, edit.id, text) }
+                        scope.launch { chatRepository.editServerMessage(server.id, edit.id, text, channelId = channel.id) }
                         editingMessage = null
                     } else if (pendingUrl.isNotBlank()) {
                         scope.launch { chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget, channelId = channel.id) }
@@ -565,7 +565,7 @@ private fun ServerChatScreen(
             canDelete = message.senderId == currentUid,
             onDismiss = { actionMessage = null },
             onReply = { replyTarget = message; actionMessage = null },
-            onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji) }; actionMessage = null },
+            onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji, channelId = channel.id) }; actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
             onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id, channelId = channel.id) }; actionMessage = null }
         )
