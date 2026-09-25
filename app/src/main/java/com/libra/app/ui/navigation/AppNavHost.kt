@@ -429,6 +429,7 @@ fun AppNavHost(
                         },
                         initialUser = selectedDirectUser,
                         onInitialUserConsumed = { selectedDirectUser = null },
+                        onOpenProfile = ::openPublicProfile,
                         onServersClick = {
                             showCommunityServers = true
                         }
