@@ -11,7 +11,8 @@ data class AdminPermissionSet(
     val manageGlobalChat: Boolean = false,
     val manageAdminRoles: Boolean = false,
     val manageCosmetics: Boolean = false,
-    val sendFeedback: Boolean = false
+    val sendFeedback: Boolean = false,
+    val manageUpdates: Boolean = false
 )
 
 data class AdminRole(
