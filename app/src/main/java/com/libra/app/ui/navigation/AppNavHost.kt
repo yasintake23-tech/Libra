@@ -1,6 +1,7 @@
 package com.libra.app.ui.navigation
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -173,6 +174,28 @@ fun AppNavHost(
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
         return
+    }
+
+    // The app uses state-based navigation, so Android's system back button
+    // must unwind those states explicitly instead of finishing the Activity.
+    BackHandler {
+        when {
+            selectedBook != null -> selectedBook = null
+            createContentMode != null -> createContentMode = null
+            selectedWritingBook != null -> selectedWritingBook = null
+            selectedPublicProfile != null -> selectedPublicProfile = null
+            showNotifications -> showNotifications = false
+            showCommunityServers -> showCommunityServers = false
+            showGlobalChat -> showGlobalChat = false
+            showAdminPanel -> showAdminPanel = false
+            showProfileEdit -> showProfileEdit = false
+            showSettings -> showSettings = false
+            selectedDirectUser != null -> selectedDirectUser = null
+            selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
+            else -> {
+                // No in-app screen is open. Let Android finish the Activity.
+            }
+        }
     }
 
     var hasAdminAccess by remember(profile.uid) { mutableStateOf(profile.uid == LIBRA_ADMIN_UID) }
