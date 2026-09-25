@@ -73,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -114,6 +115,8 @@ fun HomeScreen(
     onCreatePost: (String) -> Unit = {},
     onOpenCreatePost: () -> Unit = {},
     onOpenCreateStory: () -> Unit = {},
+    canPost: Boolean = true,
+    canStory: Boolean = true,
     onToggleLike: (Post) -> Unit = {},
     onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
@@ -273,6 +276,8 @@ fun HomeScreen(
                     )
                 ) {
                     CreateChoiceMenu(
+                        canStory = canStory,
+                        canPost = canPost,
                         onStory = {
                             showCreateMenu = false
                             onOpenCreateStory()
@@ -434,6 +439,8 @@ private fun EmptySection(text: String) {
 
 @Composable
 private fun CreateChoiceMenu(
+    canStory: Boolean = true,
+    canPost: Boolean = true,
     onStory: () -> Unit,
     onPost: () -> Unit
 ) {
@@ -449,7 +456,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onStory)
+                     .clickable(enabled = canStory, onClick = onStory).alpha(if (canStory) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -461,7 +468,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onPost)
+                     .clickable(enabled = canPost, onClick = onPost).alpha(if (canPost) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
