@@ -671,6 +671,47 @@ private fun DirectConversationScreen(
                                     Spacer(Modifier.height(5.dp))
                                 }
 
+                                message.sharedContent?.let { shared ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
+                                        )
+                                    ) {
+                                        Column(Modifier.padding(8.dp)) {
+                                            Text(
+                                                when (shared.type) {
+                                                    "story" -> "Hikâyeden bahsetti"
+                                                    "post" -> "Bir gönderi paylaştı"
+                                                    "book" -> "Bir kitap paylaştı"
+                                                    else -> "Bir içerik paylaştı"
+                                                },
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (shared.mediaUrl.isNotBlank()) {
+                                                var sharedUrl by remember(shared.id) { mutableStateOf<String?>(null) }
+                                                LaunchedEffect(shared.id, shared.mediaUrl) {
+                                                    sharedUrl = ServiceLocator.storageRepository.getSignedMediaUrl(shared.mediaUrl)
+                                                }
+                                                sharedUrl?.let {
+                                                    AsyncImage(
+                                                        model = it,
+                                                        contentDescription = "Paylaşılan içerik",
+                                                        modifier = Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(9.dp)),
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                    )
+                                                }
+                                            }
+                                            Text(shared.title.ifBlank { "Libra içeriği" }, fontWeight = FontWeight.SemiBold)
+                                            if (shared.text.isNotBlank()) {
+                                                Text(shared.text, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if (message.mediaUrl.isNotBlank()) {
                                     var resolvedMediaUrl by remember(message.mediaUrl) { mutableStateOf<String?>(null) }
                                     var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
