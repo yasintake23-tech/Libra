@@ -84,6 +84,7 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
+import com.libra.app.domain.model.Story
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
@@ -122,7 +123,10 @@ fun HomeScreen(
     onCloseComments: () -> Unit = {},
     isPosting: Boolean = false,
     postError: String? = null,
-    onClearPostError: () -> Unit = {}
+    onClearPostError: () -> Unit = {},
+    onStoryReply: (Story) -> Unit = {},
+    onStoryLike: (Story) -> Unit = {},
+    onStoriesRefresh: () -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -134,6 +138,7 @@ fun HomeScreen(
             var commentText by remember { mutableStateOf("") }
             var showCreateMenu by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
+            var selectedStory by remember { mutableStateOf<Story?>(null) }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -145,10 +150,19 @@ fun HomeScreen(
                     }
 
                     item {
+                        StoryStrip(
+                            stories = data.stories,
+                            currentUserId = data.currentUser?.uid.orEmpty(),
+                            onStoryClick = { selectedStory = it },
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+
+                    item {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             HomeSectionButton(
@@ -262,6 +276,21 @@ fun HomeScreen(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+
+                selectedStory?.let { story ->
+                    StoryViewer(
+                        story = story,
+                        onDismiss = {
+                            selectedStory = null
+                            onStoriesRefresh()
+                        },
+                        onReply = {
+                            onStoryReply(story)
+                            selectedStory = null
+                        },
+                        onLike = { onStoryLike(story) }
+                    )
                 }
 
                 selectedPost?.let { post ->
