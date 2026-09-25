@@ -11,6 +11,30 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.auth.uid == uid;
 
+      // First-time profile completion is a one-time transition from the
+      // auth-created placeholder profile. It needs to be able to set the
+      // username/display name and mark profileCompleted=true without being
+      // subject to the normal 180-day/30-day edit limits.
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && resource.data.profileCompleted == false
+        && request.resource.data.profileCompleted == true
+        && request.resource.data.username is string
+        && request.resource.data.username.matches("^[a-z0-9._]{3,20}$")
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName",
+          "username",
+          "bio",
+          "profileImageUrl",
+          "email",
+          "profileCompleted",
+          "updatedAt"
+        ]);
+
       allow update: if request.auth != null
         && request.auth.uid == uid
         && request.resource.data.uid == resource.data.uid
