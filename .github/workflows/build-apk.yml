@@ -275,7 +275,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Libra-APK-${{ github.run_number }}
-          path: artifacts/Libra-debug-${{ github.run_number }}.apk
+          path: artifacts/Libra-debug-rel_*.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
