@@ -5,6 +5,8 @@ import com.libra.app.core.result.AppResult
 import kotlinx.coroutines.flow.Flow
 
 interface AppReleaseStorageRepository {
+    suspend fun inspectApk(uri: Uri): AppResult<com.libra.app.domain.model.AppReleaseInfo>
+
     fun uploadApk(
         uri: Uri,
         fileName: String,
