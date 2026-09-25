@@ -134,7 +134,7 @@ fun AppNavHost(
 
     // Update checks must run independently of authentication/profile setup.
     // This lets a fresh install see a mandatory/new release before login or registration.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(currentUser?.uid) {
         updateVm.checkForUpdate()
     }
 
