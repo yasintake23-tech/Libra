@@ -63,6 +63,8 @@ import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.ui.components.LoadingView
+import com.libra.app.feature.update.AppUpdatePrompt
+import com.libra.app.feature.update.AppUpdateViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -111,6 +113,12 @@ fun AppNavHost(
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
+    val updateVm: AppUpdateViewModel = viewModel()
+    val updateState by updateVm.uiState.collectAsState()
+
+    LaunchedEffect(currentUser?.uid) {
+        if (currentUser?.profileCompleted == true) updateVm.checkForUpdate()
+    }
 
     LaunchedEffect(currentUser?.uid, selectedTab) {
         if (selectedTab == BottomNavTab.DISCOVER && currentUser?.uid?.isNotBlank() == true) {
@@ -513,6 +521,20 @@ fun AppNavHost(
                 }
             }
         }
+    }
+
+    updateState.release?.let { release ->
+        AppUpdatePrompt(
+            release = release,
+            progress = updateState.progress,
+            downloading = updateState.downloading,
+            error = updateState.error,
+            forceUpdate = release.forceUpdate,
+            onDownload = { updateVm.download(context) },
+            onDismiss = updateVm::dismissUpdate,
+            onClearError = updateVm::clearError,
+            downloadedFile = updateState.downloadedFile
+        )
     }
 
     selectedBook?.let { book ->
