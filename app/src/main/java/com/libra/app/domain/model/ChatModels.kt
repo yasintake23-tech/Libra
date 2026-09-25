@@ -15,5 +15,6 @@ data class GlobalChatMessage(
     val replyToText: String = "",
     val replyToSenderId: String = "",
     val replyToSenderName: String = "",
-    val reactions: Map<String, String> = emptyMap()
+    val reactions: Map<String, String> = emptyMap(),
+    val sharedContent: SharedContent? = null
 )
