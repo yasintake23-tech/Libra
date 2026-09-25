@@ -4,7 +4,62 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
       allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid;
+
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName",
+          "username",
+          "bio",
+          "profileImageUrl",
+          "email",
+          "updatedAt",
+          "usernameLastChangedAt",
+          "displayNameChangeWindowStart",
+          "displayNameChangesInWindow"
+        ])
+        && (
+          request.resource.data.username == resource.data.username
+          || (
+            request.resource.data.username is string
+            && request.resource.data.username.matches("^[a-z0-9._]{3,20}$")
+            && request.resource.data.usernameLastChangedAt is timestamp
+            && request.resource.data.usernameLastChangedAt == request.time
+            && (
+              !resource.data.keys().hasAny(["usernameLastChangedAt"])
+              || resource.data.usernameLastChangedAt + duration.value(180, "d") <= request.time
+            )
+          )
+        )
+        && (
+          request.resource.data.displayName == resource.data.displayName
+          || (
+            request.resource.data.displayName is string
+            && request.resource.data.displayName.size() >= 2
+            && request.resource.data.displayName.size() <= 40
+            && request.resource.data.displayNameChangeWindowStart is timestamp
+            && request.resource.data.displayNameChangesInWindow is int
+            && request.resource.data.displayNameChangeWindowStart == request.time
+            && request.resource.data.displayNameChangesInWindow == 1
+              && (
+                !resource.data.keys().hasAny(["displayNameChangeWindowStart"])
+                || request.time >= resource.data.displayNameChangeWindowStart + duration.value(30, "d")
+              )
+              || (
+                resource.data.keys().hasAny(["displayNameChangeWindowStart"])
+                && request.time < resource.data.displayNameChangeWindowStart + duration.value(30, "d")
+                && resource.data.keys().hasAny(["displayNameChangesInWindow"])
+                && request.resource.data.displayNameChangesInWindow == resource.data.displayNameChangesInWindow + 1
+                && request.resource.data.displayNameChangesInWindow <= 3
+                && request.resource.data.displayNameChangeWindowStart == resource.data.displayNameChangeWindowStart
+              )
+          )
+        );
+
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
