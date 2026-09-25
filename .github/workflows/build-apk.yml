@@ -150,7 +150,9 @@ jobs:
           test ! -d cloudflare/r2-worker
           ! grep -R --line-number --exclude-dir=.git -E 'FirebaseStorageRepositoryImpl|HybridStorageRepositoryImpl|FirebaseStorage|getInstance\\(.*firebase.*storage|libra-r2-worker' app cloudflare 2>/dev/null
           grep -q 'class RealtimeChatRepositoryImpl' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
-          grep -q 'FirebaseDatabase.getInstance' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
+          grep -q 'FirebaseDatabase.getInstance(LIBRA_RTDB_URL)' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
+          ! grep -q 'FirebaseDatabase.getInstance()' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
+          grep -q 'https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app' app/src/main/java/com/libra/app/data/chat/RealtimeChatRepositoryImpl.kt
           grep -q 'aws-android-sdk-s3' gradle/libs.versions.toml
           echo "Backend architecture: Firebase Auth/Firestore + RTDB chat + direct Cloudflare R2."
 
