@@ -28,6 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.libra.app.BuildConfig
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libra.app.core.di.ServiceLocator
@@ -37,12 +40,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 
-private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri")
+private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri","Güncelleme ayarları")
 
 @Composable
-fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissions: AdminPermissionSet = AdminPermissionSet(true,true,true,true,true,true,true,true,true,true,true), vm: AdminViewModel = viewModel()) {
+fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissions: AdminPermissionSet = AdminPermissionSet(manageMembers=true,manageBans=true,editProfiles=true,manageBooks=true,managePosts=true,manageStories=true,manageServers=true,manageGlobalChat=true,manageAdminRoles=true,manageCosmetics=true,sendFeedback=true,manageUpdates=true), vm: AdminViewModel = viewModel()) {
     var section by remember { mutableStateOf<String?>(null) }
     var member by remember { mutableStateOf<UserProfile?>(null) }
+    if (section == "Güncelleme ayarları") { UpdateSettingsPage(vm, { section = null }, modifier); return }
     if (member != null) {
         MemberAdminScreen(member!!, vm, { member = null }, permissions, modifier)
     } else if (section == "Üye işlemleri") {
@@ -59,7 +63,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
                 }
                 Spacer(Modifier.height(28.dp))
                 sections.forEach { title ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = title == "Üye işlemleri" && permissions.manageMembers) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = when (title) { "Üye işlemleri" -> permissions.manageMembers; "Güncelleme ayarları" -> permissions.manageUpdates; else -> false }) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Icon(Icons.Default.Settings, null, tint = Color.Gray)
                     }
@@ -69,6 +73,67 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
     }
 }
 
+@Composable
+private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier: Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val resolver = context.contentResolver
+    val clipboard = LocalClipboardManager.current
+    val active = vm.activeRelease.collectAsState().value
+    val progress = vm.releaseProgress.collectAsState().value
+    val busy = vm.releaseBusy.collectAsState().value
+    val status = vm.releaseStatus.collectAsState().value
+    var releaseId by remember { mutableStateOf("") }
+    var versionName by remember { mutableStateOf(BuildConfig.VERSION_NAME) }
+    var versionCode by remember { mutableStateOf(BuildConfig.VERSION_CODE.toString()) }
+    var changelog by remember { mutableStateOf("") }
+    var forceUpdate by remember { mutableStateOf(false) }
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedName by remember { mutableStateOf("") }
+    var selectedSize by remember { mutableStateOf(0L) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        selectedUri = uri
+        selectedName = uri.lastPathSegment?.substringAfterLast("/")?.ifBlank { "Libra-release.apk" } ?: "Libra-release.apk"
+        selectedSize = runCatching {
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            } ?: 0L
+        }.getOrDefault(0L)
+    }
+    Column(modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.Default.ArrowBack, "Geri") }
+            Column { Text("Güncelleme ayarları", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)); Text("APK yayınlama ve sürüm yönetimi", color = Color.Gray) }
+        }
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+            item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Mevcut uygulama", fontWeight = FontWeight.Bold)
+                Text("Kurulu sürüm: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
+                Text("Aktif yayın: " + (active?.versionName ?: "Henüz yayınlanmadı"))
+                Text("Release ID: " + (active?.releaseId ?: "Henüz yok"), color = Color.Gray)
+                active?.releaseId?.takeIf { it.isNotBlank() }?.let { id -> OutlinedButton(onClick = { clipboard.setText(AnnotatedString(id)) }) { Text("Release IDyi kopyala") } }
+            } } }
+            item { Text("Yeni yayın", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
+            item { OutlinedTextField(releaseId, { releaseId = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Yeni release ID") }, placeholder = { Text("Örn. rel_8f3a91c2") }, singleLine = true, enabled = !busy) }
+            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(versionName, { versionName = it.take(30) }, Modifier.weight(1f), label = { Text("Sürüm adı") }, enabled = !busy)
+                OutlinedTextField(versionCode, { versionCode = it.filter(Char::isDigit).take(10) }, Modifier.weight(1f), label = { Text("Version code") }, enabled = !busy)
+            } }
+            item { OutlinedTextField(changelog, { changelog = it }, Modifier.fillMaxWidth(), label = { Text("Değişiklik notları") }, minLines = 4, enabled = !busy) }
+            item {
+                Button(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (selectedName.isBlank()) "APK seç" else "APK: " + selectedName) }
+                if (selectedSize > 0L) Text("Boyut: %.1f MB".format(selectedSize / 1024f / 1024f), color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+            }
+            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Zorunlu güncelleme", fontWeight = FontWeight.SemiBold); Text("Eski sürümlerde uygulamayı güncelleme ekranında tutar.", color = Color.Gray, style = MaterialTheme.typography.bodySmall) }; Switch(forceUpdate, { forceUpdate = it }, enabled = !busy) } }
+            item { if (busy) { LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth()); Text("APK yükleniyor: %" + progress) }; status?.let { Text(it, color = if (it.startsWith("Yeni sürüm")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) } }
+            item { Button(onClick = {
+                val code = versionCode.toLongOrNull() ?: return@Button
+                val uri = selectedUri ?: return@Button
+                vm.publishAppRelease(uri, selectedName, selectedSize, releaseId.trim(), code, versionName.trim(), changelog.lines().map { it.trim() }.filter { it.isNotBlank() }, forceUpdate)
+            }, enabled = !busy && selectedUri != null && selectedSize > 0L && releaseId.isNotBlank() && versionName.isNotBlank() && (versionCode.toLongOrNull() ?: 0L) > BuildConfig.VERSION_CODE, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yayınlanıyor..." else "Yayınla") } }
+        }
+    }
+}
 @Composable private fun MembersScreen(members: List<UserProfile>, onBack: () -> Unit, onSelect: (UserProfile) -> Unit, modifier: Modifier, enabled: Boolean) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("Tümü") }
