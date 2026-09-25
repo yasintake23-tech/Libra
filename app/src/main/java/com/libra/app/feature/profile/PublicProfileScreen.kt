@@ -48,6 +48,7 @@ import com.libra.app.domain.model.AdminRole
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.ui.components.CosmeticRoleReveal
 
 @Composable
 fun PublicProfileScreen(
