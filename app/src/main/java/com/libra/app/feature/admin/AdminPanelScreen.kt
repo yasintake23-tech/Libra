@@ -5,16 +5,26 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Locale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -224,21 +234,114 @@ private fun ModerationPage(member: UserProfile, onBack: () -> Unit, onSave: (Use
     Row(Modifier.fillMaxWidth(),Arrangement.SpaceBetween,Alignment.CenterVertically){Text(t,Modifier.weight(1f));Switch(c,change)}
 }
 
-@Composable private fun ProfileDialog(p:UserProfile,dismiss:()->Unit,save:(UserProfile)->Unit){
-    var n by remember{mutableStateOf(p.displayName)}
-    var u by remember{mutableStateOf(p.username)}
-    var b by remember{mutableStateOf(p.bio)}
-    var photo by remember{mutableStateOf(p.profileImageUrl)}
+@Composable
+private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfile) -> Unit) {
+    val resolver = androidx.compose.ui.platform.LocalContext.current.contentResolver
     val scope = rememberCoroutineScope()
-    var resetStatus by remember{mutableStateOf("")}
-    AlertDialog(onDismissRequest=dismiss,title={Text("Hesap ve üyelik işlemleri")},text={Column{
-        OutlinedTextField(n,{n=it},label={Text("Hesap ismi")})
-        OutlinedTextField(u,{u=it},label={Text("Kullanıcı adı")})
-        OutlinedTextField(b,{b=it},label={Text("Hakkımda")})
-        OutlinedTextField(photo,{photo=it},label={Text("Profil fotoğrafı URL")})
-        TextButton(onClick={scope.launch{runCatching{com.google.firebase.auth.FirebaseAuth.getInstance().sendPasswordResetEmail(p.email).await()}.onSuccess{resetStatus="Şifre yenileme bağlantısı gönderildi."}.onFailure{resetStatus="Bağlantı gönderilemedi."}}}){Text("Şifre değiştirme bağlantısı gönder")}
-        if(resetStatus.isNotBlank()) Text(resetStatus,color=MaterialTheme.colorScheme.primary)
-    }},confirmButton={TextButton({save(p.copy(displayName=n,username=u,bio=b,profileImageUrl=photo));dismiss()}){Text("Kaydet")}},dismissButton={TextButton(dismiss){Text("İptal")}})
+    var name by remember { mutableStateOf(p.displayName) }
+    var username by remember { mutableStateOf(p.username) }
+    var bio by remember { mutableStateOf(p.bio) }
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var photoPreview by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) selectedUri = uri
+    }
+
+    LaunchedEffect(p.uid, p.profileImageUrl) {
+        photoPreview = p.profileImageUrl.takeIf { it.isNotBlank() }?.let {
+            runCatching { ServiceLocator.storageRepository.getSignedMediaUrl(it) }.getOrNull()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) dismiss() },
+        title = { Text("Hesap ve üyelik işlemleri") },
+        text = {
+            Column {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    AsyncImage(
+                        model = selectedUri ?: photoPreview,
+                        contentDescription = "Profil fotoğrafı",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(100.dp).clip(CircleShape).background(Color(0xFFF1F1F1))
+                    )
+                    IconButton(
+                        onClick = { picker.launch("image/*") },
+                        enabled = !saving,
+                        modifier = Modifier.offset(x = 44.dp, y = 38.dp)
+                    ) { Icon(Icons.Default.AddAPhoto, "Galeriden seç") }
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(name, { name = it }, label = { Text("Hesap ismi") }, enabled = !saving)
+                OutlinedTextField(
+                    username,
+                    { username = it.lowercase(Locale.ROOT).filter { ch -> ch in 'a'..'z' || ch in '0'..'9' || ch == '.' || ch == '_' }.take(20) },
+                    label = { Text("Kullanıcı adı") }, enabled = !saving
+                )
+                OutlinedTextField(bio, { bio = it.take(160) }, label = { Text("Hakkımda") }, enabled = !saving, minLines = 3)
+                if (selectedUri != null) Text("Yeni fotoğraf seçildi. Kaydettiğinde mevcut R2 sistemi kullanılacak.", color = MaterialTheme.colorScheme.primary)
+                status?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            runCatching {
+                                com.google.firebase.auth.FirebaseAuth.getInstance().sendPasswordResetEmail(p.email).await()
+                            }.onSuccess { status = "Şifre yenileme bağlantısı gönderildi." }
+                             .onFailure { status = "Şifre yenileme bağlantısı gönderilemedi." }
+                        }
+                    },
+                    enabled = !saving
+                ) { Text("Şifre değiştirme bağlantısı gönder") }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving && name.trim().length >= 2 && username.matches(Regex("[a-z0-9._]{3,20}")),
+                onClick = {
+                    scope.launch {
+                        saving = true
+                        status = null
+                        try {
+                            var photo = p.profileImageUrl
+                            selectedUri?.let { uri ->
+                                val bytes = withContext(Dispatchers.IO) {
+                                    resolver.openInputStream(uri)?.use { it.readBytes() }
+                                } ?: error("Profil fotoğrafı okunamadı.")
+                                if (bytes.size > 8 * 1024 * 1024) error("Profil fotoğrafı 8 MB'dan büyük olamaz.")
+                                val mime = resolver.getType(uri) ?: "image/jpeg"
+                                val ext = when (mime.lowercase(Locale.ROOT)) {
+                                    "image/png" -> "png"
+                                    "image/webp" -> "webp"
+                                    "image/heic" -> "heic"
+                                    "image/heif" -> "heif"
+                                    else -> "jpg"
+                                }
+                                val result = ServiceLocator.storageRepository.uploadMedia(
+                                    StorageUploadRequest(
+                                        fileName = "profile.$ext",
+                                        bytes = bytes,
+                                        contentType = mime,
+                                        targetDirectory = "users/\${p.uid}"
+                                    )
+                                ).first()
+                                if (result is AppResult.Error) error(result.error.message)
+                                photo = (result as AppResult.Success).data
+                            }
+                            save(p.copy(displayName = name.trim(), username = username.trim(), bio = bio.trim(), profileImageUrl = photo))
+                            dismiss()
+                        } catch (e: Exception) {
+                            status = e.localizedMessage ?: "Profil güncellenemedi."
+                        } finally {
+                            saving = false
+                        }
+                    }
+                }
+            ) { Text(if (saving) "Kaydediliyor..." else "Kaydet") }
+        },
+        dismissButton = { TextButton(onClick = dismiss, enabled = !saving) { Text("İptal") } }
+    )
 }
 
 @Composable private fun AdminRoleDialog(uid:String,vm:AdminViewModel,dismiss:()->Unit){
