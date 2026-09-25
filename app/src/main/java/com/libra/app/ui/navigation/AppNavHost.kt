@@ -35,6 +35,7 @@ import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.feature.share.sharedContentUrl
+import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
 import com.libra.app.feature.auth.GoogleAuthHelper
 import com.libra.app.feature.auth.LoginScreen
@@ -79,6 +80,7 @@ fun AppNavHost(
 
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var showSettings by remember { mutableStateOf(false) }
+    var showAdminPanel by remember { mutableStateOf(false) }
     var showProfileEdit by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
     var showCommunityServers by remember { mutableStateOf(false) }
@@ -259,6 +261,18 @@ fun AppNavHost(
             onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
+        return
+    }
+
+    if (showAdminPanel) {
+        if (profile.uid == LIBRA_ADMIN_UID) {
+            AdminPanelScreen(
+                onBack = { showAdminPanel = false },
+                modifier = modifier.fillMaxSize()
+            )
+        } else {
+            showAdminPanel = false
+        }
         return
     }
 
@@ -482,7 +496,8 @@ fun AppNavHost(
                             selectedTab = BottomNavTab.HOME
                         },
                         vm::loadProfile,
-                        onSettingsClick = { showSettings = true }
+                        onSettingsClick = { showSettings = true },
+                        onAdminClick = { showAdminPanel = true }
                     )
                 }
             }
