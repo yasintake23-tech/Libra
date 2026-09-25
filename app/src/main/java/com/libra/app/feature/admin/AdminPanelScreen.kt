@@ -46,7 +46,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
                 }
                 Spacer(Modifier.height(28.dp))
                 sections.forEach { title ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = title == "Üye işlemleri" && enabled) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = title == "Üye işlemleri" && permissions.manageMembers) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Icon(Icons.Default.Settings, null, tint = Color.Gray)
                     }
@@ -215,11 +215,11 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
         TextButton(enabled=text.isNotBlank(),onClick={scope.launch{
             val r=ServiceLocator.notificationRepository.create(AppNotification(recipientId=p.uid,actorId=me,actorName="Libra Yönetim",type="ADMIN_FEEDBACK",title="Yönetimden bildirim",body=text.trim(),createdAt=System.currentTimeMillis()))
             status=if(r is AppResult.Success)"Bildirim gönderildi." else "Bildirim gönderilemedi."
-        }){Text("Bildirim gönder")}
+        }}) { Text("Bildirim gönder") }
         TextButton(enabled=text.isNotBlank(),onClick={scope.launch{
             val r=ServiceLocator.chatRepository.sendDirectMessage(p.uid,text.trim())
             status=if(r is AppResult.Success)"DM gönderildi." else "DM gönderilemedi."
-        }){Text("DM gönder")}
+        }}) { Text("DM gönder") }
     }},dismissButton={TextButton(dismiss){Text("Kapat")}})
 }
 
