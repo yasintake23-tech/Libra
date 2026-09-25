@@ -3,6 +3,9 @@ package com.libra.app.feature.home
 import com.libra.app.core.di.ServiceLocator
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -70,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -205,8 +209,18 @@ fun HomeScreen(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = 76.dp, end = 18.dp),
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut()
+                    enter = fadeIn(
+                        animationSpec = tween(140)
+                    ) + scaleIn(
+                        initialScale = 0.88f,
+                        animationSpec = tween(180, easing = FastOutSlowInEasing)
+                    ),
+                    exit = fadeOut(
+                        animationSpec = tween(100)
+                    ) + scaleOut(
+                        targetScale = 0.92f,
+                        animationSpec = tween(120, easing = FastOutSlowInEasing)
+                    )
                 ) {
                     CreateChoiceMenu(
                         onStory = {
@@ -220,18 +234,34 @@ fun HomeScreen(
                     )
                 }
 
-                androidx.compose.material3.FloatingActionButton(
+                val createButtonRotation by animateFloatAsState(
+                    targetValue = if (showCreateMenu) 45f else 0f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    label = "createButtonRotation"
+                )
+
+                androidx.compose.material3.Surface(
                     onClick = { showCreateMenu = !showCreateMenu },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 12.dp, end = 18.dp),
-                    containerColor = MaterialTheme.colorScheme.onBackground,
-                    contentColor = MaterialTheme.colorScheme.background
+                        .padding(top = 14.dp, end = 20.dp)
+                        .size(42.dp)
+                        .graphicsLayer {
+                            rotationZ = createButtonRotation
+                        },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    contentColor = MaterialTheme.colorScheme.background,
+                    shadowElevation = 3.dp,
+                    tonalElevation = 0.dp
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        if (showCreateMenu) "Kapat" else "Oluştur"
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.Add,
+                            if (showCreateMenu) "Kapat" else "Oluştur",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 selectedPost?.let { post ->
