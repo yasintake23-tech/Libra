@@ -355,6 +355,23 @@ fun AppNavHost(
                                         result.data?.let {
                                             selectedDirectUser = it
                                             selectedTab = BottomNavTab.DM
+                                            scope.launch {
+                                                val shared = SharedContent(
+                                                    type = "story",
+                                                    id = story.id,
+                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                                    text = story.text,
+                                                    authorId = story.authorId,
+                                                    authorName = story.authorName,
+                                                    mediaUrl = story.mediaUrl,
+                                                    url = sharedContentUrl("story", story.id)
+                                                )
+                                                ServiceLocator.chatRepository.sendDirectMessage(
+                                                    recipientId = story.authorId,
+                                                    text = "Hikâyenden bahsetti.",
+                                                    sharedContent = shared
+                                                )
+                                            }
                                         }
                                     }
                                     is com.libra.app.core.result.AppResult.Error -> {
