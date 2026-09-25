@@ -2,6 +2,9 @@ package com.libra.app.data.update
 
 import android.content.Context
 import android.net.Uri
+import android.content.pm.PackageManager
+import android.os.Build
+import java.security.MessageDigest
 import com.amazonaws.HttpMethod
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.regions.Region
@@ -54,6 +57,14 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
             .trim()
             .ifBlank { "Libra-release.apk" }
             .take(120)
+        when (val validation = validateApk(uri)) {
+            is ApkValidation.Invalid -> {
+                emit(AppResult.Error(AppError.Storage(validation.message)))
+                return@flow
+            }
+            ApkValidation.Valid -> Unit
+        }
+
         val objectKey = "releases/" + UUID.randomUUID() + "-" + safeName
 
         try {
@@ -102,6 +113,52 @@ class CloudflareR2AppReleaseStorageRepositoryImpl(
                 }
             }.getOrNull()
         }
+
+    private fun validateApk(uri: Uri): ApkValidation {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val info = pm.getPackageArchiveInfo(uri.toString(), flags)
+            ?: return ApkValidation.Invalid("Seçilen dosya geçerli bir APK değil.")
+        if (info.packageName != context.packageName) {
+            return ApkValidation.Invalid("Bu APK Libra uygulamasına ait değil.")
+        }
+
+        val installed = runCatching {
+            val pi = pm.getPackageInfo(context.packageName, flags)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pi.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+            } else {
+                pi.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+            }
+        }.getOrElse {
+            return ApkValidation.Invalid("Mevcut Libra imza bilgisi okunamadı.")
+        }
+
+        val uploaded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+        } else {
+            info.signatures?.map { sha256(it.toByteArray()) }?.toSet().orEmpty()
+        }
+
+        if (installed.isEmpty() || uploaded.isEmpty() || installed.intersect(uploaded).isEmpty()) {
+            return ApkValidation.Invalid("APK, yüklü Libra sürümüyle aynı imzalama anahtarını kullanmıyor.")
+        }
+        return ApkValidation.Valid
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02X".format(it) }
+
+    private sealed interface ApkValidation {
+        data object Valid : ApkValidation
+        data class Invalid(val message: String) : ApkValidation
+    }
 
     private fun uploadWithRetry(
         uri: Uri,
