@@ -1,9 +1,11 @@
 package com.libra.app.feature.profile
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +44,7 @@ import com.libra.app.domain.model.Post
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun ProfileScreen(
@@ -89,6 +93,8 @@ private fun ProfileContent(
     var showSavedPosts by remember { mutableStateOf(false) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
