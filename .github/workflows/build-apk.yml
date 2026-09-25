@@ -164,11 +164,7 @@ jobs:
           gradle --version
 
       - name: Run unit tests
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain 2>&1 | tee artifacts/unit-test.log
+        run: gradle :app:testDebugUnitTest --stacktrace --no-daemon --console=plain
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
@@ -279,7 +275,6 @@ jobs:
           path: |
             app/build/reports/tests/**
             app/build/test-results/**
-            artifacts/unit-test.log
           if-no-files-found: ignore
           retention-days: 7
 
