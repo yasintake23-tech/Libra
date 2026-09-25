@@ -15,4 +15,8 @@ interface AppReleaseStorageRepository {
     suspend fun deleteApk(objectKey: String): AppResult<Unit>
 
     suspend fun getSignedApkUrl(objectKey: String): String?
+
+    suspend fun publishPublicRelease(release: com.libra.app.domain.model.AppUpdate): AppResult<Unit>
+
+    suspend fun getPublicRelease(): AppResult<com.libra.app.domain.model.AppUpdate?>
 }
