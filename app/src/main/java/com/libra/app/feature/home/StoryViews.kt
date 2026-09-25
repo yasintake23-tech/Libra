@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,11 +178,11 @@ fun StoryViewer(
 
     LaunchedEffect(story.id, paused) {
         if (paused) return@LaunchedEffect
-        val remaining = ((1f - progress.value) * 6000L).coerceAtLeast(1L)
+        val remaining = ((1f - progress.value) * 6000f).coerceAtLeast(1f).toInt()
         progress.animateTo(
             1f,
             animationSpec = tween(
-                durationMillis = remaining.toInt(),
+                durationMillis = remaining,
                 easing = FastOutSlowInEasing
             )
         )
@@ -194,7 +196,7 @@ fun StoryViewer(
             .fillMaxSize()
             .background(Color.Black)
             .pointerInput(story.id) {
-                androidx.compose.foundation.gestures.detectTapGestures(
+                detectTapGestures(
                     onLongPress = { paused = true },
                     onTap = {
                         if (index < stories.lastIndex) {
