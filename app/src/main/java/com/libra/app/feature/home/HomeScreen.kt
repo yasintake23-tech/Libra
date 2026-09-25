@@ -88,6 +88,9 @@ import com.libra.app.domain.model.Story
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
+import com.libra.app.domain.model.SharedContent
+import com.libra.app.feature.share.ShareSheet
+import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.ui.components.BookCover
 import com.libra.app.ui.components.HorizontalBookCard
 import com.libra.app.ui.components.LoadingView
@@ -139,7 +142,8 @@ fun HomeScreen(
             var commentText by remember { mutableStateOf("") }
             var showCreateMenu by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
-            var selectedStory by remember { mutableStateOf<Story?>(null) }
+            var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
+            var shareContent by remember { mutableStateOf<SharedContent?>(null) }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -154,7 +158,7 @@ fun HomeScreen(
                         StoryStrip(
                             stories = data.stories,
                             currentUserId = data.currentUser?.uid.orEmpty(),
-                            onStoryClick = { selectedStory = it },
+                            onStoryClick = { story -> selectedStoryIndex = data.stories.indexOfFirst { it.id == story.id }.takeIf { it >= 0 } },
                             onOpenProfile = onOpenProfile,
                             onCreateStory = onOpenCreateStory,
                             modifier = Modifier.padding(top = 2.dp)
@@ -282,20 +286,38 @@ fun HomeScreen(
                     }
                 }
 
-                selectedStory?.let { story ->
+                selectedStoryIndex?.let { index ->
                     StoryViewer(
-                        story = story,
+                        stories = data.stories,
+                        initialIndex = index,
+                        currentUserId = data.currentUser?.uid.orEmpty(),
                         onDismiss = {
-                            selectedStory = null
+                            selectedStoryIndex = null
                             onStoriesRefresh()
                         },
-                        onReply = {
+                        onReply = { story ->
                             onStoryReply(story)
-                            selectedStory = null
+                            selectedStoryIndex = null
                         },
-                        onLike = { onStoryLike(story) },
-                        onOpenProfile = onOpenProfile
+                        onLike = onStoryLike,
+                        onOpenProfile = onOpenProfile,
+                        onShare = { story ->
+                            shareContent = SharedContent(
+                                "story",
+                                story.id,
+                                if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                story.text,
+                                story.authorId,
+                                story.authorName,
+                                story.mediaUrl,
+                                sharedContentUrl("story", story.id)
+                            )
+                        }
                     )
+                }
+
+                shareContent?.let { content ->
+                    ShareSheet(content = content, onDismiss = { shareContent = null })
                 }
 
                 selectedPost?.let { post ->
@@ -424,7 +446,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -438,6 +460,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                     Text(post.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onOpenProfile))
                     Text("@${post.authorUsername.ifBlank { "kullanici" }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Paylaş") }
                 if (post.authorId == currentUserId) {
                     IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, "Gönderiyi sil") }
                 }
