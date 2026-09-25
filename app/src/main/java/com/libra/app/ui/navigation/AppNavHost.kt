@@ -71,6 +71,18 @@ fun AppNavHost(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val authState by authViewModel.authState.collectAsState()
+    val authenticated by authViewModel.isAuthenticated.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
+
+    var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showProfileEdit by remember { mutableStateOf(false) }
+    var showGlobalChat by remember { mutableStateOf(false) }
+    var showCommunityServers by remember { mutableStateOf(false) }
+    var showNotifications by remember { mutableStateOf(false) }
+    var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     fun openPublicProfile(uid: String) {
         if (uid.isBlank()) return
         scope.launch {
@@ -88,18 +100,6 @@ fun AppNavHost(
             }
         }
     }
-    val authState by authViewModel.authState.collectAsState()
-    val authenticated by authViewModel.isAuthenticated.collectAsState()
-    val currentUser by authViewModel.currentUser.collectAsState()
-
-    var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showProfileEdit by remember { mutableStateOf(false) }
-    var showGlobalChat by remember { mutableStateOf(false) }
-    var showCommunityServers by remember { mutableStateOf(false) }
-    var showNotifications by remember { mutableStateOf(false) }
-    var selectedBook by remember { mutableStateOf<Book?>(null) }
-    var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var createContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
@@ -364,8 +364,7 @@ fun AppNavHost(
                             }
                         },
                         onStoryLike = vm::toggleStoryLike,
-                        onStoriesRefresh = vm::refreshStories,
-                        onOpenProfile = ::openPublicProfile
+                        onStoriesRefresh = vm::refreshStories
                     )
                 }
 
