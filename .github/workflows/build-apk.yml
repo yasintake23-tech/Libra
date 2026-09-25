@@ -95,6 +95,7 @@ jobs:
           R2_KEY_ID: ${{ secrets.R2_KEY_ID || vars.R2_KEY_ID }}
           R2_SECRET: ${{ secrets.R2_SECRET || vars.R2_SECRET }}
           R2_PUBLIC: ${{ secrets.R2_PUBLIC || vars.R2_PUBLIC }}
+          LIBRA_RELEASE_ID: rel_${{ github.run_id }}
         run: |
           set -euo pipefail
           [[ -n "$R2_KEY_ID" ]] || { echo "::error::R2_KEY_ID eksik."; exit 1; }
