@@ -63,6 +63,9 @@ class HomeViewModel(
     private var postsJob: Job? = null
     private var commentsJob: Job? = null
 
+    // Firestore's secondary like query can briefly lag behind the post listener.
+    private val pendingLikeOverrides = mutableMapOf<String, Boolean>()
+
     init { loadHomeData() }
 
     fun loadHomeData() {
@@ -117,7 +120,28 @@ class HomeViewModel(
         postsJob = viewModelScope.launch {
             postRepository.observeFeed(userId).collect { result ->
                 if (result is AppResult.Success) {
-                    updateHome { it.copy(posts = result.data) }
+                    updateHome {
+                        it.copy(
+                            posts = result.data.map { post ->
+                                val desired = pendingLikeOverrides[post.id]
+                                when {
+                                    desired == null -> post
+                                    desired == post.likedByCurrentUser -> {
+                                        pendingLikeOverrides.remove(post.id)
+                                        post
+                                    }
+                                    desired -> post.copy(
+                                        likedByCurrentUser = true,
+                                        likesCount = post.likesCount + 1
+                                    )
+                                    else -> post.copy(
+                                        likedByCurrentUser = false,
+                                        likesCount = (post.likesCount - 1).coerceAtLeast(0)
+                                    )
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
