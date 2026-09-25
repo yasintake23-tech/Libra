@@ -277,7 +277,6 @@ private fun ProfileContent(
     }
 }
 
-    CosmeticRoleReveal(selectedCosmetic) { selectedCosmetic = null }
 }
 
 @Composable
