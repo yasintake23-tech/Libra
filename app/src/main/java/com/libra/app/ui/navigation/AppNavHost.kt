@@ -83,6 +83,8 @@ fun AppNavHost(
     var showNotifications by remember { mutableStateOf(false) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
+    var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     fun openPublicProfile(uid: String) {
         if (uid.isBlank()) return
         scope.launch {
@@ -100,8 +102,6 @@ fun AppNavHost(
             }
         }
     }
-    var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
-    var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var createContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
