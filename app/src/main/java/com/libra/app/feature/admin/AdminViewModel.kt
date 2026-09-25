@@ -85,6 +85,17 @@ class AdminViewModel : ViewModel() {
                 is AppResult.Success -> Unit
             }
 
+            // Mirror the active release to a public R2 JSON document so update
+            // checks can run even before authentication/profile setup.
+            when (val mirrored = ServiceLocator.appReleaseStorageRepository.publishPublicRelease(release)) {
+                is AppResult.Error -> {
+                    _activeRelease.value = release
+                    _releaseStatus.value = "Yayınlandı, ancak genel güncelleme bilgisi yenilenemedi: ${mirrored.error.message}"
+                    return@launch
+                }
+                is AppResult.Success -> Unit
+            }
+
             _activeRelease.value = release
             oldRelease?.apkObjectKey
                 ?.takeIf { it.isNotBlank() && it != release.apkObjectKey }
