@@ -242,23 +242,26 @@ class RealtimeChatRepositoryImpl(
 
     override suspend fun sendGlobalMessage(
         text: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendGlobalInternal(text, "", "", replyTo)
+        sendGlobalInternal(text, "", "", replyTo, sharedContent)
 
     override suspend fun sendGlobalMediaMessage(
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendGlobalInternal(text, mediaUrl, mediaType, replyTo)
+        sendGlobalInternal(text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendGlobalInternal(
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: GlobalChatMessage?
+        replyTo: GlobalChatMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Sohbet için giriş yapmalısın."))
@@ -434,25 +437,28 @@ class RealtimeChatRepositoryImpl(
     override suspend fun sendDirectMessage(
         recipientId: String,
         text: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendDirectInternal(recipientId, text, "", "", replyTo)
+        sendDirectInternal(recipientId, text, "", "", replyTo, sharedContent)
 
     override suspend fun sendDirectMediaMessage(
         recipientId: String,
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendDirectInternal(recipientId, text, mediaUrl, mediaType, replyTo)
+        sendDirectInternal(recipientId, text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendDirectInternal(
         recipientId: String,
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: DirectMessage?
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val sender = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
@@ -689,25 +695,28 @@ class RealtimeChatRepositoryImpl(
     override suspend fun sendServerMessage(
         serverId: String,
         text: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, "", "", replyTo)
+        sendServerInternal(serverId, text, "", "", replyTo, sharedContent)
 
     override suspend fun sendServerMediaMessage(
         serverId: String,
         mediaUrl: String,
         mediaType: String,
         text: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo)
+        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent)
 
     private suspend fun sendServerInternal(
         serverId: String,
         text: String,
         mediaUrl: String,
         mediaType: String,
-        replyTo: ServerMessage?
+        replyTo: ServerMessage?,
+        sharedContent: SharedContent?
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
