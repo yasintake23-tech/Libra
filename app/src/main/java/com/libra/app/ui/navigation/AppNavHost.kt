@@ -162,7 +162,7 @@ fun AppNavHost(
     LaunchedEffect(profile.uid) {
         if (profile.uid == LIBRA_ADMIN_UID) {
             hasAdminAccess = true
-            adminPermissions = AdminPermissionSet(true,true,true,true,true,true,true,true,true,true,true)
+            adminPermissions = AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true)
         } else {
             val role = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
             hasAdminAccess = role != null
