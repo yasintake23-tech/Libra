@@ -2,6 +2,7 @@ package com.libra.app.data.user
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.ListenerRegistration
 import com.libra.app.core.result.AppError
@@ -230,6 +231,95 @@ class FirebaseUserRepositoryImpl : UserRepository {
         )
     }
 
+    override suspend fun updateProfileDetails(
+        profile: UserProfile,
+        photoUrl: String?
+    ): AppResult<UserProfile> {
+        val uid = profile.uid.trim()
+        if (uid.isBlank()) return AppResult.Error(AppError.Auth("Profil sahibi belirlenemedi."))
+        val displayName = profile.displayName.trim()
+        val username = normalizeUsername(profile.username)
+        val bio = profile.bio.trim()
+        if (displayName.length < 2) return AppResult.Error(AppError.Validation("Takma isim en az 2 karakter olmalı."))
+        if (!isValidUsername(username)) return AppResult.Error(AppError.Validation("Kullanıcı adı 3-20 karakter olmalı; sadece İngilizce harf, rakam, nokta ve alt çizgi kullanabilirsin."))
+
+        val userRef = usersRef.document(uid)
+        val now = System.currentTimeMillis()
+        val usernameLimitMs = 180L * 24 * 60 * 60 * 1000
+        val displayWindowMs = 30L * 24 * 60 * 60 * 1000
+
+        return try {
+            firestore.runTransaction { transaction ->
+                val currentSnapshot = transaction.get(userRef)
+                if (!currentSnapshot.exists()) throw ProfileEditException("Profil bulunamadı.")
+
+                val currentUsername = normalizeUsername(currentSnapshot.getString("username").orEmpty())
+                val currentDisplayName = currentSnapshot.getString("displayName").orEmpty()
+                val usernameChanged = username != currentUsername
+                val displayNameChanged = displayName != currentDisplayName
+
+                if (usernameChanged) {
+                    val lastChanged = currentSnapshot.getTimestamp("usernameLastChangedAt")?.toDate()?.time ?: 0L
+                    if (lastChanged > 0L && now - lastChanged < usernameLimitMs) {
+                        throw UsernameChangeCooldownException(lastChanged + usernameLimitMs)
+                    }
+                    val newUsernameRef = usernamesRef.document(username)
+                    val usernameSnapshot = transaction.get(newUsernameRef)
+                    if (usernameSnapshot.exists() && usernameSnapshot.getString("uid") != uid) throw UsernameTakenException()
+                    transaction.set(newUsernameRef, mapOf(
+                        "uid" to uid,
+                        "username" to username,
+                        "createdAt" to (usernameSnapshot.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ))
+                    if (currentUsername.isNotBlank()) transaction.delete(usernamesRef.document(currentUsername))
+                }
+
+                var displayChangeCount = currentSnapshot.getLong("displayNameChangesInWindow")?.toInt() ?: 0
+                val windowStart = currentSnapshot.getTimestamp("displayNameChangeWindowStart")?.toDate()?.time ?: 0L
+                var resetDisplayWindow = false
+                if (displayNameChanged) {
+                    if (windowStart <= 0L || now - windowStart >= displayWindowMs) {
+                        displayChangeCount = 1
+                        resetDisplayWindow = true
+                    } else {
+                        if (displayChangeCount >= 3) throw DisplayNameChangeLimitException(windowStart + displayWindowMs)
+                        displayChangeCount += 1
+                    }
+                }
+
+                val updates = mutableMapOf<String, Any>(
+                    "displayName" to displayName,
+                    "username" to username,
+                    "bio" to bio,
+                    "updatedAt" to now
+                )
+                if (photoUrl != null) updates["profileImageUrl"] = photoUrl
+                if (usernameChanged) updates["usernameLastChangedAt"] = FieldValue.serverTimestamp()
+                if (displayNameChanged) {
+                    updates["displayNameChangesInWindow"] = displayChangeCount
+                    if (resetDisplayWindow) updates["displayNameChangeWindowStart"] = FieldValue.serverTimestamp()
+                }
+                transaction.update(userRef, updates)
+                null
+            }.await()
+
+            val fresh = usersRef.document(uid).get(Source.SERVER).await()
+            val saved = fresh.toObject(UserProfile::class.java) ?: throw ProfileEditException("Profil güncellemesi okunamadı.")
+            cache[uid] = saved
+            AppResult.Success(saved)
+        } catch (e: UsernameTakenException) {
+            AppResult.Error(AppError.Validation("Bu kullanıcı adı zaten kullanılıyor."))
+        } catch (e: UsernameChangeCooldownException) {
+            AppResult.Error(AppError.Validation("Kullanıcı adını 6 ayda bir değiştirebilirsin. Bir sonraki değişiklik tarihi: " + java.text.SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(java.util.Date(e.availableAt))))
+        } catch (e: DisplayNameChangeLimitException) {
+            AppResult.Error(AppError.Validation("Takma adını 30 günde en fazla 3 kez değiştirebilirsin. Limit " + java.text.SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(java.util.Date(e.availableAt)) + " tarihinde yenilenir."))
+        } catch (e: ProfileEditException) {
+            AppResult.Error(AppError.Validation(e.message ?: "Profil güncellenemedi."))
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Profil güncellenemedi.", e))
+        }
+    }
     override suspend fun getFollowingIds(uid: String): AppResult<Set<String>> {
         if (uid.isBlank()) return AppResult.Success(emptySet())
 
@@ -462,4 +552,7 @@ class FirebaseUserRepositoryImpl : UserRepository {
         value.matches(Regex("[a-z0-9._]{3,20}"))
 
     private class UsernameTakenException : Exception()
+    private class ProfileEditException(message: String) : Exception(message)
+    private class UsernameChangeCooldownException(val availableAt: Long) : Exception()
+    private class DisplayNameChangeLimitException(val availableAt: Long) : Exception()
 }

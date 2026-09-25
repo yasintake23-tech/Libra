@@ -12,6 +12,10 @@ interface UserRepository {
     suspend fun isUsernameAvailable(username: String, currentUid: String? = null): AppResult<Boolean>
     suspend fun updateBio(uid: String, bio: String): AppResult<Unit>
     suspend fun updateProfilePhoto(uid: String, photoUrl: String): AppResult<Unit>
+    suspend fun updateProfileDetails(
+        profile: UserProfile,
+        photoUrl: String? = null
+    ): AppResult<UserProfile>
     fun searchUsers(query: String): Flow<AppResult<List<UserProfile>>>
     suspend fun getFollowingIds(uid: String): AppResult<Set<String>>
     suspend fun isFollowing(followerId: String, followingId: String): AppResult<Boolean>

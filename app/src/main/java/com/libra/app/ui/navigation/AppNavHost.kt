@@ -52,6 +52,7 @@ import com.libra.app.feature.notifications.NotificationsScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
 import com.libra.app.feature.profile.ProfileSetupScreen
+import com.libra.app.feature.profile.ProfileEditScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.BookEditorScreen
@@ -75,6 +76,7 @@ fun AppNavHost(
 
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
     var showSettings by remember { mutableStateOf(false) }
+    var showProfileEdit by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
     var showCommunityServers by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
@@ -237,11 +239,25 @@ fun AppNavHost(
         return
     }
 
+    if (showProfileEdit) {
+        ProfileEditScreen(
+            profile = profile,
+            onSaved = {
+                showProfileEdit = false
+                authViewModel.checkSession()
+            },
+            onBack = { showProfileEdit = false },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
     if (showSettings) {
         SettingsScreen(
             profile = profile,
             darkTheme = darkTheme,
             onDarkThemeChanged = onDarkThemeChanged,
+            onEditProfile = { showProfileEdit = true },
             onSignOut = {
                 showSettings = false
                 authViewModel.signOut()
