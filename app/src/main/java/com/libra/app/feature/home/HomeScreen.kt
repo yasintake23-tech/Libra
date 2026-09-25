@@ -126,7 +126,8 @@ fun HomeScreen(
     onClearPostError: () -> Unit = {},
     onStoryReply: (Story) -> Unit = {},
     onStoryLike: (Story) -> Unit = {},
-    onStoriesRefresh: () -> Unit = {}
+    onStoriesRefresh: () -> Unit = {},
+    onOpenProfile: (String) -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -196,7 +197,8 @@ fun HomeScreen(
                                             selectedPost = post
                                             commentText = ""
                                             onOpenComments(post)
-                                        }
+                                        },
+                                        { onOpenProfile(post.authorId) }
                                     )
                                 }
                             }
@@ -419,7 +421,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -427,10 +429,10 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UserAvatar(post.authorPhotoUrl, post.authorName.take(1).uppercase().ifBlank { "L" }, size = 42.dp)
+                UserAvatar(post.authorPhotoUrl, post.authorName.take(1).uppercase().ifBlank { "L" }, size = 42.dp, onClick = onOpenProfile)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(post.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                    Text(post.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onOpenProfile))
                     Text("@${post.authorUsername.ifBlank { "kullanici" }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (post.authorId == currentUserId) {
