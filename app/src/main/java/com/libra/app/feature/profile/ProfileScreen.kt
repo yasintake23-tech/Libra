@@ -2,6 +2,7 @@ package com.libra.app.feature.profile
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
@@ -95,11 +96,18 @@ private fun ProfileContent(
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
     var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
             ServiceLocator.userRepository.getFollowers(profile.uid).let {
                 if (it is com.libra.app.core.result.AppResult.Success) followers = it.data
+            }
+        }
+        launch {
+            ServiceLocator.adminRepository.observeCosmeticRoles().first().let { result ->
+                if (result is com.libra.app.core.result.AppResult.Success) cosmeticRoles = result.data
             }
         }
         launch {
@@ -180,6 +188,17 @@ private fun ProfileContent(
                 )
             )
 
+            if (profile.cosmeticRoleIds.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                        Surface(shape = RoundedCornerShape(10.dp), color = Color(role.color), modifier = Modifier.clickable { selectedCosmetic = role }) {
+                            Text(role.icon + " " + role.name, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+
             Text(
                 profile.handle,
                 style = MaterialTheme.typography.bodySmall,
@@ -252,6 +271,10 @@ private fun ProfileContent(
                 userId = profile.uid,
                 onDismiss = { showSavedPosts = false }
             )
+        }
+
+        selectedCosmetic?.let { role ->
+            AlertDialog(onDismissRequest = { selectedCosmetic = null }, title = { Text(role.icon + " " + role.name) }, text = { Text(role.description.ifBlank { "Libra kozmetik rozeti" }) }, confirmButton = { TextButton(onClick = { selectedCosmetic = null }) { Text("Tamam") } })
         }
 
         TextButton(
