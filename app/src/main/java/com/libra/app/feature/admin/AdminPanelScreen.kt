@@ -63,7 +63,7 @@ fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissi
                 }
                 Spacer(Modifier.height(28.dp))
                 sections.forEach { title ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = when (title) { "Üye işlemleri" -> permissions.manageMembers; "Güncelleme ayarları" -> permissions.manageUpdates; else -> false }) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = when (title) { "Üye işlemleri" -> permissions.manageMembers; "Kitap işlemleri" -> permissions.manageBooks; "Gönderi işlemleri" -> permissions.managePosts; "Hikâye işlemleri" -> permissions.manageStories; "Sunucu işlemleri" -> permissions.manageServers; "Genel chat işlemleri" -> permissions.manageGlobalChat; "Güncelleme ayarları" -> permissions.manageUpdates; else -> false }) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Icon(Icons.Default.Settings, null, tint = Color.Gray)
                     }
@@ -130,7 +130,7 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                 val code = versionCode.toLongOrNull() ?: return@Button
                 val uri = selectedUri ?: return@Button
                 vm.publishAppRelease(uri, selectedName, selectedSize, releaseId.trim(), code, versionName.trim(), changelog.lines().map { it.trim() }.filter { it.isNotBlank() }, forceUpdate)
-            }, enabled = !busy && selectedUri != null && selectedSize > 0L && releaseId.isNotBlank() && versionName.isNotBlank() && (versionCode.toLongOrNull() ?: 0L) > BuildConfig.VERSION_CODE, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yayınlanıyor..." else "Yayınla") } }
+            }, enabled = !busy && selectedUri != null && selectedSize > 0L && releaseId.isNotBlank() && versionName.isNotBlank() && (versionCode.toLongOrNull() ?: 0L) > maxOf(BuildConfig.VERSION_CODE.toLong(), active?.versionCode ?: 0L), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Yayınlanıyor..." else "Yayınla") } }
         }
     }
 }
@@ -424,7 +424,7 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
         "Sunucu Moderatörü" to AdminPermissionSet(manageMembers = true, manageBans = true, manageServers = true, manageGlobalChat = true),
         "İçerik Editörü" to AdminPermissionSet(managePosts = true, manageStories = true, manageBooks = true),
         "Yönetici" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, sendFeedback = true),
-        "CEO" to AdminPermissionSet(true, true, true, true, true, true, true, true, true, true, true)
+        "CEO" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true)
     )
     val permissionItems = listOf(
         "Üye yönetimi" to Triple("Üyeleri görüntüleme ve üye yönetim ekranlarını kullanma.", perms.manageMembers, { v: Boolean -> perms = perms.copy(manageMembers = v) }),
@@ -437,7 +437,8 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
         "Genel chat yönetimi" to Triple("Genel chat moderasyonu ve mesaj yönetimi.", perms.manageGlobalChat, { v: Boolean -> perms = perms.copy(manageGlobalChat = v) }),
         "Yönetici rolü verme" to Triple("Yönetici rolleri verme, düzenleme ve kaldırma.", perms.manageAdminRoles, { v: Boolean -> perms = perms.copy(manageAdminRoles = v) }),
         "Kozmetik rol yönetimi" to Triple("Kozmetik rozet oluşturma ve kullanıcıya atama.", perms.manageCosmetics, { v: Boolean -> perms = perms.copy(manageCosmetics = v) }),
-        "Geri bildirim / DM" to Triple("Yönetim bildirimi ve doğrudan mesaj gönderme.", perms.sendFeedback, { v: Boolean -> perms = perms.copy(sendFeedback = v) })
+        "Geri bildirim / DM" to Triple("Yönetim bildirimi ve doğrudan mesaj gönderme.", perms.sendFeedback, { v: Boolean -> perms = perms.copy(sendFeedback = v) }),
+        "Uygulama güncellemeleri" to Triple("Yeni APK yayınlama ve aktif sürüm yönetimi.", perms.manageUpdates, { v: Boolean -> perms = perms.copy(manageUpdates = v) })
     )
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
