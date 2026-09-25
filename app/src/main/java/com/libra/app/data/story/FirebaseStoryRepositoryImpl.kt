@@ -53,18 +53,22 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
         if (authorIds.isEmpty()) return AppResult.Success(emptyList())
         return try {
             val now = System.currentTimeMillis()
-            val stories = authorIds.toList().chunked(10).flatMap { chunk ->
-                storiesRef
-                    .whereIn("authorId", chunk)
-                    .whereGreaterThan("expiresAt", now)
-                    .limit(100)
-                    .get()
-                    .await()
-                    .documents.mapNotNull { doc ->
-                        doc.toObject(Story::class.java)?.copy(id = doc.id)
-                    }
-            }
-            AppResult.Success(stories.sortedBy { it.createdAt })
+
+            // Query only by expiry so story loading does not depend on a
+            // Firestore composite index for authorId + expiresAt.
+            val stories = storiesRef
+                .whereGreaterThan("expiresAt", now)
+                .limit(200)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc ->
+                    doc.toObject(Story::class.java)?.copy(id = doc.id)
+                }
+                .filter { it.authorId in authorIds }
+                .sortedBy { it.createdAt }
+
+            AppResult.Success(stories)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Hikâyeler yüklenemedi.", e))
         }
