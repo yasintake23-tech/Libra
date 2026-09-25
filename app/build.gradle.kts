@@ -18,14 +18,6 @@ val generatedReleaseId = System.getenv("LIBRA_RELEASE_ID")
         ?.let { "rel_$it" }
     ?: "rel_local"
 
-val generatedVersionCode = System.getenv("LIBRA_VERSION_CODE")
-    ?.toLongOrNull()
-    ?.takeIf { it > 0L }
-    ?: System.getenv("GITHUB_RUN_NUMBER")
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-    ?: (System.currentTimeMillis() / 1000L).coerceAtLeast(1L)
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -40,7 +32,7 @@ android {
         applicationId = "com.libra.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = generatedVersionCode.toInt()
+        versionCode = 7
         versionName = "1.0.6"
 
         buildConfigField("String", "LIBRA_RELEASE_ID", "\"$generatedReleaseId\"")
