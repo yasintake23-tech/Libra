@@ -158,6 +158,12 @@ fun AppNavHost(
         return
     }
 
+    var hasAdminAccess by remember(profile.uid) { mutableStateOf(profile.uid == LIBRA_ADMIN_UID) }
+    LaunchedEffect(profile.uid) {
+        if (profile.uid == LIBRA_ADMIN_UID) hasAdminAccess = true
+        else hasAdminAccess = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data != null
+    }
+
     createContentMode?.let { mode ->
         val vm: HomeViewModel = viewModel()
         CreateContentScreen(
@@ -266,7 +272,7 @@ fun AppNavHost(
     }
 
     if (showAdminPanel) {
-        if (profile.uid == LIBRA_ADMIN_UID) {
+        if (hasAdminAccess) {
             AdminPanelScreen(
                 onBack = { showAdminPanel = false },
                 modifier = modifier.fillMaxSize()
@@ -499,7 +505,7 @@ fun AppNavHost(
                         },
                         vm::loadProfile,
                         onSettingsClick = { showSettings = true },
-                        onAdminClick = if (profile.uid == LIBRA_ADMIN_UID) { { showAdminPanel = true } } else null
+                        onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null
                     )
                 }
             }
