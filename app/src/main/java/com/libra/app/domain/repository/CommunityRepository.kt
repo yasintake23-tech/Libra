@@ -13,6 +13,7 @@ interface CommunityRepository {
     suspend fun updateCommunityServer(serverId: String, name: String, description: String): AppResult<Unit>
     suspend fun joinCommunityServer(serverId: String): AppResult<Unit>
     suspend fun isServerMember(serverId: String): AppResult<Boolean>
+    suspend fun ensureServerStructure(serverId: String): AppResult<Unit>
     fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>>
     fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>>
     fun observeServerChannels(serverId: String): Flow<AppResult<List<ServerChannel>>>
