@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,13 +17,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.libra.app.domain.model.AppUpdate
 import java.io.File
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+
+private const val UPDATE_ADMIN_PASSWORD = "Libra+8369#"
+private const val ADMIN_HOLD_MILLIS = 10_000L
 
 @Composable
 fun AppUpdatePrompt(
@@ -36,6 +48,10 @@ fun AppUpdatePrompt(
     downloadedFile: File?
 ) {
     val context = LocalContext.current
+    var showAdminLogin by remember { mutableStateOf(false) }
+    var adminPassword by remember { mutableStateOf("") }
+    var adminPasswordError by remember { mutableStateOf(false) }
+    var holdStarted by remember { mutableStateOf(false) }
 
     fun openInstaller(file: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
@@ -97,7 +113,37 @@ fun AppUpdatePrompt(
                     Text("Kurulumu Aç")
                 }
                 downloading -> Unit
-                else -> Button(onClick = onDownload) { Text("İndir") }
+                else -> {
+                    Button(
+                        onClick = onDownload,
+                        modifier = Modifier.pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                if (!down.pressed) return@awaitEachGesture
+
+                                holdStarted = true
+                                val reachedTenSeconds = withTimeoutOrNull(ADMIN_HOLD_MILLIS) {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.none { it.pressed }) {
+                                            return@withTimeoutOrNull false
+                                        }
+                                        delay(16)
+                                    }
+                                } ?: true
+
+                                holdStarted = false
+                                if (reachedTenSeconds) {
+                                    adminPassword = ""
+                                    adminPasswordError = false
+                                    showAdminLogin = true
+                                }
+                            }
+                        }
+                    ) {
+                        Text(if (holdStarted) "10 saniye basılı tut..." else "İndir")
+                    }
+                }
             }
         },
         dismissButton = {
@@ -108,4 +154,50 @@ fun AppUpdatePrompt(
             }
         }
     )
+    if (showAdminLogin) {
+        AlertDialog(
+            onDismissRequest = { showAdminLogin = false },
+            title = { Text("Admin girişi") },
+            text = {
+                Column {
+                    Text("Güncelleme uyarısını kapatmak için admin şifresini gir.")
+                    androidx.compose.material3.OutlinedTextField(
+                        value = adminPassword,
+                        onValueChange = {
+                            adminPassword = it
+                            adminPasswordError = false
+                        },
+                        label = { Text("Şifre") },
+                        singleLine = true,
+                        isError = adminPasswordError
+                    )
+                    if (adminPasswordError) {
+                        Text("Şifre yanlış.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (adminPassword == UPDATE_ADMIN_PASSWORD) {
+                            showAdminLogin = false
+                            adminPassword = ""
+                            adminPasswordError = false
+                            onDismiss()
+                        } else {
+                            adminPasswordError = true
+                        }
+                    }
+                ) {
+                    Text("Giriş")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdminLogin = false }) {
+                    Text("İptal")
+                }
+            }
+        )
+    }
+
 }
