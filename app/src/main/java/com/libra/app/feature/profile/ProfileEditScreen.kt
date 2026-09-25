@@ -70,7 +70,7 @@ fun ProfileEditScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(112.dp).clip(CircleShape)
                 )
-                else -> UserAvatar("", state.profile.initials, 112.dp)
+                else -> UserAvatar("", state.profile.initials, size = 112.dp)
             }
             IconButton(
                 onClick = { picker.launch("image/*") },
