@@ -97,11 +97,27 @@ class FirebaseAuthRepositoryImpl(
                         emit(AppResult.Error(AppError.Auth("Bu hesap banlandı. Sebep: " + existing.moderation.banReason.ifBlank { "Belirtilmedi." })))
                         return@flow
                     }
-                    val base = buildProfile(firebaseUser, displayName, email, photoUrl)
-                    val profile = existing?.copy(uid=firebaseUser.uid,email=if(email.isNullOrBlank()) existing.email else email,profileImageUrl=if(existing.profileImageUrl.isBlank()) photoUrl.orEmpty().ifBlank{existing.profileImageUrl} else existing.profileImageUrl,updatedAt=System.currentTimeMillis()) ?: base
-                    when (val saved=userRepository.createOrUpdateProfile(profile)) {
-                        is AppResult.Success -> { _currentUser.value=saved.data; _isAuthenticated.value=true; emit(AppResult.Success(saved.data)) }
-                        is AppResult.Error -> { auth.signOut(); emit(AppResult.Error(saved.error)) }
+                    // Existing profiles must not be written back as a complete UserProfile here.
+                    // The model contains admin/moderation fields whose addition would be rejected by
+                    // the user's Firestore update rules when an older profile does not contain them.
+                    // Google authentication itself is already complete, so reuse the stored profile.
+                    if (existing != null) {
+                        _currentUser.value = existing
+                        _isAuthenticated.value = true
+                        emit(AppResult.Success(existing))
+                    } else {
+                        val profile = buildProfile(firebaseUser, displayName, email, photoUrl)
+                        when (val saved = userRepository.createOrUpdateProfile(profile)) {
+                            is AppResult.Success -> {
+                                _currentUser.value = saved.data
+                                _isAuthenticated.value = true
+                                emit(AppResult.Success(saved.data))
+                            }
+                            is AppResult.Error -> {
+                                auth.signOut()
+                                emit(AppResult.Error(saved.error))
+                            }
+                        }
                     }
                 }
             }
