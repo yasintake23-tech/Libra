@@ -347,8 +347,8 @@ fun AppNavHost(
                         { showNotifications = true },
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
-                        onOpenCreatePost = { createContentMode = CreateContentMode.POST },
-                        onOpenCreateStory = { createContentMode = CreateContentMode.STORY },
+                        onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                        onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
                         onToggleLike = vm::toggleLike,
                         onToggleSave = vm::toggleSave,
                         onDeletePost = vm::deletePost,
@@ -465,6 +465,7 @@ fun AppNavHost(
                         initialUser = selectedDirectUser,
                         onInitialUserConsumed = { selectedDirectUser = null },
                         onOpenProfile = ::openPublicProfile,
+                        canMessage = profile.moderation.canMessage,
                         onServersClick = {
                             showCommunityServers = true
                         }
