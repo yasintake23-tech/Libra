@@ -51,6 +51,7 @@ fun SettingsScreen(
     darkTheme: Boolean,
     onDarkThemeChanged: (Boolean) -> Unit,
     onSignOut: () -> Unit,
+    onEditProfile: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -100,13 +101,13 @@ fun SettingsScreen(
                 SettingsRow(
                     title = profile.displayName.ifBlank { "Profil" },
                     subtitle = profile.handle + " • " + profile.email,
-                    onClick = {}
+                    onClick = onEditProfile
                 )
                 HorizontalDivider()
                 SettingsRow(
                     title = "Profil bilgileri",
-                    subtitle = "Takma isim, kullanıcı adı ve biyografi",
-                    onClick = {}
+                    subtitle = "Fotoğraf, takma isim, kullanıcı adı ve biyografi",
+                    onClick = onEditProfile
                 )
             }
         }
