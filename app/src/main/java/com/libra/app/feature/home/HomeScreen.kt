@@ -223,7 +223,8 @@ fun HomeScreen(
                                                 mediaUrl = post.mediaUrl,
                                                 url = sharedContentUrl("post", post.id)
                                             )
-                                        }
+                                        },
+                                        canComment = canComment
                                     )
                                 }
                             }
@@ -484,7 +485,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
