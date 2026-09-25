@@ -1,5 +1,7 @@
 package com.libra.app.domain.model
 
+import com.google.firebase.firestore.Exclude
+
 data class AdminPermissionSet(
     val manageMembers: Boolean = false,
     val manageBans: Boolean = false,
@@ -56,12 +58,27 @@ data class UserModeration(
     private fun active(enabled: Boolean, until: Long): Boolean =
         enabled && (until <= 0L || until > System.currentTimeMillis())
 
+    @get:Exclude
     val isBanned: Boolean get() = active(banned, banUntil)
+
+    @get:Exclude
     val canPost: Boolean get() = !active(postingDisabled, postingDisabledUntil)
+
+    @get:Exclude
     val canMessage: Boolean get() = !active(messagingDisabled, messagingDisabledUntil)
+
+    @get:Exclude
     val canStory: Boolean get() = !active(storyDisabled, storyDisabledUntil)
+
+    @get:Exclude
     val canComment: Boolean get() = !active(commentingDisabled, commentingDisabledUntil)
+
+    @get:Exclude
     val canPublishBook: Boolean get() = !active(bookPublishingDisabled, bookPublishingDisabledUntil)
+
+    @get:Exclude
     val canCreateServer: Boolean get() = !active(serverCreationDisabled, serverCreationDisabledUntil)
+
+    @get:Exclude
     val canMessageInServer: Boolean get() = !active(serverMessagingDisabled, serverMessagingDisabledUntil)
 }
