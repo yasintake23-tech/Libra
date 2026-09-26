@@ -42,8 +42,8 @@ class FirebaseCommunityRepositoryImpl(
     }
 
     private fun generateInviteKey(): String {
-        return buildString(8) {
-            repeat(8) { append(inviteAlphabet[inviteRandom.nextInt(inviteAlphabet.length)]) }
+        return buildString(9) {
+            repeat(9) { append(inviteAlphabet[inviteRandom.nextInt(inviteAlphabet.length)]) }
         }
     }
 
@@ -60,7 +60,7 @@ class FirebaseCommunityRepositoryImpl(
         inviteKey: String
     ): AppResult<CommunityServer> {
         val cleanKey = normalizeInviteKey(inviteKey)
-        if (cleanKey.length != 8) {
+        if (cleanKey.length != 9) {
             return AppResult.Error(AppError.Validation("Geçerli bir sunucu anahtarı yaz. Örnek: libra.sc/Je9jehowm"))
         }
 
@@ -77,9 +77,6 @@ class FirebaseCommunityRepositoryImpl(
             val server = doc.toObject(CommunityServer::class.java)?.copy(id = doc.id)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
 
-            if (isServerBanned(server.id) is AppResult.Success && (isServerBanned(server.id) as AppResult.Success<Boolean>).data) {
-                return AppResult.Error(AppError.Auth("Bu sunucuya katılmana izin verilmiyor."))
-            }
 
             AppResult.Success(server)
         } catch (e: Exception) {
