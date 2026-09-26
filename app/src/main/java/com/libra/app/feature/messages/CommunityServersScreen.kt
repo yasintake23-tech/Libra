@@ -1428,7 +1428,15 @@ private fun ServerChatScreen(
     }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isEmpty()) return@LaunchedEffect
+
+        val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val shouldStickToBottom =
+            lastVisibleIndex < 0 || lastVisibleIndex >= messages.lastIndex - 3
+
+        if (shouldStickToBottom) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
     }
 
     Column(modifier.fillMaxSize()) {
