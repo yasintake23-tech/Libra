@@ -249,8 +249,27 @@ fun CommunityServersScreen(
                         }
                     }, shape = RoundedCornerShape(18.dp)) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-                                Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            Box(
+                                Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (server.avatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
+                                        contentDescription = server.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        server.name.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                }
                             }
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                 Text(server.name, fontWeight = FontWeight.Bold)
