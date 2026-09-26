@@ -5,7 +5,10 @@ data class CommunityServer(
     val name: String = "",
     val description: String = "",
     val ownerId: String = "",
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    // R2 object keys. Older server documents may not contain these fields.
+    val avatarUrl: String = "",
+    val bannerUrl: String = ""
 )
 
 enum class ServerRole { OWNER, ADMIN, MEMBER }
