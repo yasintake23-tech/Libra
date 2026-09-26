@@ -41,6 +41,7 @@ import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
+import com.libra.app.domain.model.ServerChannelPermissionOverride
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.Dispatchers
