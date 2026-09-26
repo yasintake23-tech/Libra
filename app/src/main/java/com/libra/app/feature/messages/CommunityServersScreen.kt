@@ -1341,27 +1341,49 @@ private fun ServerChatScreen(
     }
 
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Column(Modifier.weight(1f)) {
-                Text("# " + channel.name, fontWeight = FontWeight.Bold)
-                Text(
-                    serverName + " • " + members.size + " üye",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { showServerInfo = true }
-                )
-            }
-            if (server.ownerId == currentUid) {
-                IconButton(onClick = { showManage = true }) {
-                    Icon(Icons.Default.Settings, "Sunucu yönetimi")
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, "Kanallara dön")
                 }
-            }
-            IconButton(onClick = { showMembers = true }) {
-                Icon(Icons.Default.People, "Üyeler")
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showServerInfo = true }
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        "# " + channel.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        serverName + " • " + members.size + " üye",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                if (server.ownerId == currentUid) {
+                    IconButton(onClick = { showManage = true }) {
+                        Icon(Icons.Default.Settings, "Sunucu yönetimi")
+                    }
+                }
+                IconButton(onClick = { showMembers = true }) {
+                    Icon(Icons.Default.People, "Üyeler")
+                }
             }
         }
 
