@@ -267,6 +267,9 @@ private fun ServerWorkspace(
     val isOwner = currentUid == server.ownerId
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
     var showInfo by remember { mutableStateOf(false) }
+    var showServerSettings by remember { mutableStateOf(false) }
+    var editServerName by remember(server.id) { mutableStateOf(server.name) }
+    var editServerDescription by remember(server.id) { mutableStateOf(server.description) }
     var showCreateCategory by remember { mutableStateOf(false) }
     var showCreateChannel by remember { mutableStateOf<ServerCategory?>(null) }
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
@@ -376,8 +379,57 @@ private fun ServerWorkspace(
                     if (isOwner) Text("Sunucu sahibi olarak kanal, kategori ve izinleri yönetebilirsin.", style = MaterialTheme.typography.bodySmall)
                 }
             },
-            confirmButton = { TextButton(onClick = { showInfo = false }) { Text(if (isOwner) "Yönetim seçenekleri aşağıda" else "Tamam") } },
+            confirmButton = {
+                if (isOwner) {
+                    TextButton(onClick = { showInfo = false; showServerSettings = true }) { Text("Sunucu ayarları") }
+                } else {
+                    TextButton(onClick = { showInfo = false }) { Text("Tamam") }
+                }
+            },
             dismissButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") } }
+        )
+    }
+
+    if (showServerSettings && isOwner) {
+        AlertDialog(
+            onDismissRequest = { showServerSettings = false },
+            title = { Text("Sunucu ayarları") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editServerName,
+                        onValueChange = { if (it.length <= 40) editServerName = it },
+                        label = { Text("Sunucu adı") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editServerDescription,
+                        onValueChange = { if (it.length <= 160) editServerDescription = it },
+                        label = { Text("Açıklama") },
+                        minLines = 3,
+                        maxLines = 5
+                    )
+                    Text(
+                        "Sunucu sahibi olarak kanal, kategori ve kanal izinlerini de bu ekrandan yönetebilirsin.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = editServerName.trim().length >= 2,
+                    onClick = {
+                        scope.launch {
+                            when (val result = repo.updateCommunityServer(server.id, editServerName, editServerDescription)) {
+                                is AppResult.Success -> showServerSettings = false
+                                is AppResult.Error -> error = result.error.message
+                            }
+                        }
+                    }
+                ) { Text("Kaydet") }
+            },
+            dismissButton = { TextButton(onClick = { showServerSettings = false }) { Text("İptal") } }
         )
     }
 
