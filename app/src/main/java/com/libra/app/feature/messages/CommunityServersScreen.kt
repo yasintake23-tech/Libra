@@ -134,11 +134,8 @@ fun CommunityServersScreen(
     }
 
     LaunchedEffect(selectedServer?.id, channels) {
-        if (selectedServer != null && selectedChannel == null && channels.isNotEmpty()) {
-            selectedChannel = channels.first()
-        }
         if (selectedChannel != null && channels.none { it.id == selectedChannel?.id }) {
-            selectedChannel = channels.firstOrNull()
+            selectedChannel = null
         }
     }
 
@@ -238,26 +235,36 @@ fun CommunityServersScreen(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(sortedServers, key = { it.id }) { server ->
-                    Card(Modifier.fillMaxWidth().clickable {
-                        scope.launch {
-                            when (val member = communityRepository.isServerMember(server.id)) {
-                                is AppResult.Success -> if (member.data) {
-                                    selectedServer = server
-                                    selectedChannel = null
-                                    communityRepository.ensureServerStructure(server.id)
-                                } else {
-                                    previewIsMember = false
-                                    previewServer = server
+                    Card(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch {
+                                    when (val member = communityRepository.isServerMember(server.id)) {
+                                        is AppResult.Success -> if (member.data) {
+                                            selectedServer = server
+                                            selectedChannel = null
+                                            communityRepository.ensureServerStructure(server.id)
+                                        } else {
+                                            previewIsMember = false
+                                            previewServer = server
+                                        }
+                                        is AppResult.Error -> error = member.error.message
+                                    }
                                 }
-                                is AppResult.Error -> error = member.error.message
-                            }
-                        }
-                    }, shape = RoundedCornerShape(18.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Box(
                                 Modifier
-                                    .size(54.dp)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -279,20 +286,54 @@ fun CommunityServersScreen(
                                     )
                                 }
                             }
-                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(server.name, fontWeight = FontWeight.Bold)
-                                if (server.description.isNotBlank()) Text(server.description, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(5.dp))
-                                Text("Topluluk sunucusu • Katılmak için dokun", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 12.dp)
+                            ) {
+                                Text(
+                                    server.name,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    server.description.ifBlank { "Açıklama eklenmemiş." },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    "Sunucu • Katılmak için dokun",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                TextButton(onClick = {
-                                    val next = pinnedServerIds.toMutableSet()
-                                    if (!next.add(server.id)) next.remove(server.id)
-                                    pinnedServerIds = next.toSet()
-                                    pinPrefs.edit().putStringSet("ids", next).apply()
-                                }) { Text(if (pinnedServerIds.contains(server.id)) "Sabit" else "Sabitle") }
-                                Icon(Icons.Default.ChevronRight, "Sunucuyu aç")
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        val next = pinnedServerIds.toMutableSet()
+                                        if (!next.add(server.id)) next.remove(server.id)
+                                        pinnedServerIds = next.toSet()
+                                        pinPrefs.edit().putStringSet("ids", next).apply()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        if (pinnedServerIds.contains(server.id)) "Sabit" else "Sabitle",
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = "Sunucuyu aç",
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
                             }
                         }
                     }
