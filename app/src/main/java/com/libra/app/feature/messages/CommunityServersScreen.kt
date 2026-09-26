@@ -1,5 +1,7 @@
 package com.libra.app.feature.messages
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -57,6 +59,16 @@ fun CommunityServersScreen(
 ) {
     val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
+
+    BackHandler(enabled = selectedServer != null || selectedChannel != null) {
+        if (selectedChannel != null) {
+            selectedChannel = null
+        } else {
+            selectedServer = null
+            categories = emptyList()
+            channels = emptyList()
+        }
+    }
 
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
