@@ -1,5 +1,6 @@
 package com.libra.app.feature.messages
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -111,9 +112,12 @@ fun ServerOwnerSettingsDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = false
         )
     ) {
+        BackHandler { back() }
+
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
