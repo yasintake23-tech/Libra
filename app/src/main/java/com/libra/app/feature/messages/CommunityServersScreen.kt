@@ -857,21 +857,48 @@ private fun ServerWorkspace(
 
 @Composable
 private fun MessageDateSeparator(createdAt: Long) {
+    val locale = java.util.Locale.getDefault()
+    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = createdAt }
+    val now = java.util.Calendar.getInstance()
+
     val text = remember(createdAt) {
-        java.text.SimpleDateFormat("dd MMM yyyy • HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(createdAt))
+        val sameDay = calendar.get(java.util.Calendar.ERA) == now.get(java.util.Calendar.ERA) &&
+            calendar.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
+            calendar.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR)
+
+        val yesterday = java.util.Calendar.getInstance().apply {
+            timeInMillis = now.timeInMillis
+            add(java.util.Calendar.DAY_OF_YEAR, -1)
+        }
+
+        val isYesterday = calendar.get(java.util.Calendar.ERA) == yesterday.get(java.util.Calendar.ERA) &&
+            calendar.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR) &&
+            calendar.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)
+
+        when {
+            sameDay -> "Bugün"
+            isYesterday -> "Dün"
+            else -> java.text.SimpleDateFormat("dd MMMM yyyy", locale).format(java.util.Date(createdAt))
+        }
     }
+
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         HorizontalDivider(Modifier.weight(1f))
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 10.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(999.dp)
+        ) {
+            Text(
+                text,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         HorizontalDivider(Modifier.weight(1f))
     }
 }
