@@ -19,6 +19,10 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -256,28 +260,89 @@ private fun ServerWorkspace(
     onChannelClick: (ServerChannel) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val repo = ServiceLocator.communityRepository
+    val scope = rememberCoroutineScope()
+    val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+    val isOwner = currentUid == server.ownerId
+    var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
+    var showInfo by remember { mutableStateOf(false) }
+    var showCreateCategory by remember { mutableStateOf(false) }
+    var showCreateChannel by remember { mutableStateOf<ServerCategory?>(null) }
+    var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
+    var channelMenu by remember { mutableStateOf<ServerChannel?>(null) }
+    var categoryMenu by remember { mutableStateOf<ServerCategory?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(server.id) {
+        repo.observeServerMembers(server.id).collect { result ->
+            if (result is AppResult.Success) members = result.data
+        }
+    }
+
     Row(modifier.fillMaxSize()) {
-        Surface(modifier = Modifier.width(122.dp).fillMaxHeight(), tonalElevation = 3.dp) {
+        Surface(modifier = Modifier.width(180.dp).fillMaxHeight(), tonalElevation = 3.dp) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Sunucu listesinden çık") }
+                    Spacer(Modifier.weight(1f))
                 }
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).size(70.dp).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-                    Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showInfo = true }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                        Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                        Text(server.name, maxLines = 1, fontWeight = FontWeight.Bold)
+                        Text("Sunucu bilgileri", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
                 }
-                Text(server.name, modifier = Modifier.fillMaxWidth().padding(8.dp), maxLines = 1, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
                 HorizontalDivider()
+
+                if (isOwner) {
+                    TextButton(onClick = { showCreateCategory = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("+ Kategori ekle")
+                    }
+                }
+
                 if (categories.isEmpty() || channels.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                         categories.forEach { category ->
                             item(key = "category-" + category.id) {
-                                Text(category.name, modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(category.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (isOwner) {
+                                        IconButton(onClick = { showCreateChannel = category }, modifier = Modifier.size(30.dp)) {
+                                            Icon(Icons.Default.Add, "Kanal ekle", modifier = Modifier.size(17.dp))
+                                        }
+                                        IconButton(onClick = { categoryMenu = category }, modifier = Modifier.size(30.dp)) {
+                                            Icon(Icons.Default.MoreVert, "Kategori seçenekleri", modifier = Modifier.size(17.dp))
+                                        }
+                                    }
+                                }
                             }
                             channels.filter { it.categoryId == category.id }.forEach { channel ->
                                 item(key = "channel-" + channel.id) {
-                                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onChannelClick(channel) }.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                            .pointerInput(channel.id + "-menu") {
+                                                detectTapGestures(
+                                                    onTap = { onChannelClick(channel) },
+                                                    onLongPress = { if (isOwner) channelMenu = channel }
+                                                )
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text("#", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Spacer(Modifier.width(6.dp))
                                         Text(channel.name, maxLines = 1, style = MaterialTheme.typography.labelMedium)
@@ -289,17 +354,188 @@ private fun ServerWorkspace(
                 }
             }
         }
+
         Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                 Text(server.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Text("Bir kanal seçerek topluluğa gir.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(12.dp))
-                Text("# kanal seç", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
+
+    if (showInfo) {
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text(server.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(server.description.ifBlank { "Bu sunucunun henüz bir açıklaması yok." })
+                    Text("\${members.size} üye • \${channels.size} kanal • \${categories.size} kategori", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (isOwner) Text("Sunucu sahibi olarak kanal, kategori ve izinleri yönetebilirsin.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showInfo = false }) { Text(if (isOwner) "Yönetim seçenekleri aşağıda" else "Tamam") } },
+            dismissButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") } }
+        )
+    }
+
+    if (showCreateCategory) {
+        NameDialog("Kategori oluştur", "Kategori adı", "Oluştur", { showCreateCategory = false }) { name ->
+            scope.launch {
+                when (val result = repo.createServerCategory(server.id, name)) {
+                    is AppResult.Success -> showCreateCategory = false
+                    is AppResult.Error -> error = result.error.message
+                }
+            }
+        }
+    }
+
+    showCreateChannel?.let { category ->
+        NameDialog("Kanal oluştur", "# kanal adı", "Oluştur", { showCreateChannel = null }) { name ->
+            scope.launch {
+                when (val result = repo.createServerChannel(server.id, category.id, name)) {
+                    is AppResult.Success -> showCreateChannel = null
+                    is AppResult.Error -> error = result.error.message
+                }
+            }
+        }
+    }
+
+    channelMenu?.let { channel ->
+        AlertDialog(
+            onDismissRequest = { channelMenu = null },
+            title = { Text("# \${channel.name}") },
+            text = { Text("Kanal yönetimi") },
+            confirmButton = { TextButton(onClick = { channelMenu = null; permissionChannel = channel }) { Text("İzinler") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        when (val result = repo.deleteServerChannel(server.id, channel.id)) {
+                            is AppResult.Success -> channelMenu = null
+                            is AppResult.Error -> error = result.error.message
+                        }
+                    }
+                }) { Text("Kanalı sil") }
+            }
+        )
+    }
+
+    categoryMenu?.let { category ->
+        AlertDialog(
+            onDismissRequest = { categoryMenu = null },
+            title = { Text(category.name) },
+            text = { Text("Bu kategorideki kanallar da silinecek.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        when (val result = repo.deleteServerCategory(server.id, category.id)) {
+                            is AppResult.Success -> categoryMenu = null
+                            is AppResult.Error -> error = result.error.message
+                        }
+                    }
+                }) { Text("Kategoriyi sil") }
+            },
+            dismissButton = { TextButton(onClick = { categoryMenu = null }) { Text("Vazgeç") } }
+        )
+    }
+
+    permissionChannel?.let { channel ->
+        ChannelPermissionDialog(server.id, channel, members) { permissionChannel = null }
+    }
+
+    error?.let {
+        AlertDialog(onDismissRequest = { error = null }, title = { Text("İşlem başarısız") }, text = { Text(it) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Tamam") } })
+    }
 }
+
+@Composable
+private fun NameDialog(
+    title: String,
+    label: String,
+    confirm: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var value by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { OutlinedTextField(value, { if (it.length <= 40) value = it }, label = { Text(label) }, singleLine = true) },
+        confirmButton = { TextButton(enabled = value.trim().isNotEmpty(), onClick = { onConfirm(value.trim()) }) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } }
+    )
+}
+
+@Composable
+private fun ChannelPermissionDialog(
+    serverId: String,
+    channel: ServerChannel,
+    members: List<ServerMember>,
+    onDismiss: () -> Unit
+) {
+    val repo = ServiceLocator.communityRepository
+    val scope = rememberCoroutineScope()
+    var permissions by remember(channel.id) { mutableStateOf<List<ServerChannelPermissionOverride>>(emptyList()) }
+    var selected by remember { mutableStateOf<ServerChannelPermissionOverride?>(null) }
+
+    LaunchedEffect(channel.id) {
+        repo.observeChannelPermissions(serverId, channel.id).collect { result ->
+            if (result is AppResult.Success) permissions = result.data
+        }
+    }
+
+    val subjects = remember(members) {
+        listOf(
+            ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "EVERYONE", subjectName = "@everyone"),
+            ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "ADMIN", subjectName = "@admin"),
+            ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "MEMBER", subjectName = "@member")
+        ) + members.map {
+            ServerChannelPermissionOverride(subjectType = "USER", subjectId = it.uid, subjectName = "@" + it.username.ifBlank { it.displayName })
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("# \${channel.name} • İzinler") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Rol veya kişi seç. Sonra kanalı görme ve mesaj yazma izinlerini ayarla.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(Modifier.heightIn(max = 240.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(subjects, key = { it.subjectType + ":" + it.subjectId }) { subject ->
+                        val active = selected?.subjectType == subject.subjectType && selected?.subjectId == subject.subjectId
+                        Surface(color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().clickable {
+                            selected = permissions.firstOrNull { it.subjectType == subject.subjectType && it.subjectId == subject.subjectId } ?: subject
+                        }) { Text(subject.subjectName, modifier = Modifier.padding(10.dp)) }
+                    }
+                }
+                selected?.let { target ->
+                    var canView by remember(target.id, target.subjectId) { mutableStateOf(target.canView) }
+                    var canSend by remember(target.id, target.subjectId) { mutableStateOf(target.canSend) }
+                    Text("Seçili: \${target.subjectName}", fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = canView == true, onCheckedChange = { canView = if (it) true else false })
+                        Text("Kanalı görebilir")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = canSend == true, onCheckedChange = { canSend = if (it) true else false })
+                        Text("Mesaj yazabilir")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            scope.launch { repo.setChannelPermission(serverId, channel.id, target.copy(canView = canView, canSend = canSend)) }
+                        }) { Text("Kaydet") }
+                        OutlinedButton(onClick = {
+                            if (target.id.isNotBlank()) scope.launch { repo.deleteChannelPermission(serverId, channel.id, target.id) }
+                        }) { Text("Varsayılana dön") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
+    )
+}
+
 @Composable
 private fun CreateServerDialog(
     onDismiss: () -> Unit,
