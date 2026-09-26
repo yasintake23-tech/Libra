@@ -18,6 +18,7 @@ interface CommunityRepository {
     fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>>
     fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>>
     fun observeServerChannels(serverId: String): Flow<AppResult<List<ServerChannel>>>
+    suspend fun getChannelPermissions(serverId: String, channelId: String): AppResult<List<ServerChannelPermissionOverride>>
     fun observeChannelPermissions(serverId: String, channelId: String): Flow<AppResult<List<ServerChannelPermissionOverride>>>
     suspend fun createServerCategory(serverId: String, name: String): AppResult<ServerCategory>
     suspend fun deleteServerCategory(serverId: String, categoryId: String): AppResult<Unit>
