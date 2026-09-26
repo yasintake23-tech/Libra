@@ -257,6 +257,9 @@ class FirebaseCommunityRepositoryImpl(
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
             if (server.ownerId != user.uid) {
+                if (serverRef.collection("bans").document(user.uid).get().await().exists()) {
+                    return AppResult.Error(AppError.Auth("Bu sunucudan yasaklandın."))
+                }
                 val member = serverRef.collection("members").document(user.uid).get().await()
                 if (!member.exists()) {
                     return AppResult.Error(AppError.Auth("Bu sunucuya erişimin yok."))
