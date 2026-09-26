@@ -46,6 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntOffset
 import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
@@ -1049,7 +1050,7 @@ private fun ServerWorkspace(
     }
 
     editChannel?.let { channel ->
-        NameDialog("Kanalı düzenle", "# kanal adı", "Kaydet", { editChannel = null }, channel.name) { name ->
+        NameDialog("Kanalı düzenle", "# kanal adı", "Kaydet", { editChannel = null }, initialValue = channel.name) { name ->
             scope.launch {
                 when (val result = repo.updateServerChannel(server.id, channel.id, name)) {
                     is AppResult.Success -> editChannel = null
@@ -1060,7 +1061,7 @@ private fun ServerWorkspace(
     }
 
     editCategory?.let { category ->
-        NameDialog("Kategoriyi düzenle", "Kategori adı", "Kaydet", { editCategory = null }, category.name) { name ->
+        NameDialog("Kategoriyi düzenle", "Kategori adı", "Kaydet", { editCategory = null }, initialValue = category.name) { name ->
             scope.launch {
                 when (val result = repo.updateServerCategory(server.id, category.id, name)) {
                     is AppResult.Success -> editCategory = null
