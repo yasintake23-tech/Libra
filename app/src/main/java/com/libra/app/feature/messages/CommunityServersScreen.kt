@@ -318,6 +318,7 @@ private fun ServerWorkspace(
     var editServerDescription by remember(server.id) { mutableStateOf(server.description) }
     var showCreateCategory by remember { mutableStateOf(false) }
     var showCreateChannel by remember { mutableStateOf<ServerCategory?>(null) }
+    var showOwnerManagement by remember { mutableStateOf(false) }
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var channelMenu by remember { mutableStateOf<ServerChannel?>(null) }
     var categoryMenu by remember { mutableStateOf<ServerCategory?>(null) }
@@ -447,7 +448,7 @@ private fun ServerWorkspace(
             },
             confirmButton = {
                 if (isOwner) {
-                    TextButton(onClick = { showInfo = false; showServerSettings = true }) { Text("Sunucu ayarları") }
+                    TextButton(onClick = { showInfo = false; showOwnerManagement = true }) { Text("Sunucu ayarları") }
                 } else {
                     TextButton(onClick = { showInfo = false }) { Text("Tamam") }
                 }
@@ -561,6 +562,18 @@ private fun ServerWorkspace(
 
     permissionChannel?.let { channel ->
         ChannelPermissionDialog(server.id, channel, members) { permissionChannel = null }
+    }
+
+    if (showOwnerManagement && isOwner) {
+        ServerOwnerSettingsDialog(
+            server = server,
+            members = members,
+            categories = categories,
+            channels = channels,
+            onDismiss = { showOwnerManagement = false },
+            onDeleted = { showOwnerManagement = false; onBack() },
+            onError = { error = it }
+        )
     }
 
     error?.let {
