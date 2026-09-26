@@ -400,3 +400,20 @@ fun ServerOwnerSettingsDialog(
         ChannelPermissionDialog(server.id, channel, members) { permissionChannel = null }
     }
 }
+
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Text(
+            text,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
