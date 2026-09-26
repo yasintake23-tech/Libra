@@ -183,6 +183,37 @@ fun ServerOwnerSettingsDialog(
         )
     }
 
+    editRole?.let { role ->
+        var roleName by remember(role.id) { mutableStateOf(role.name) }
+        var permissions by remember(role.id) { mutableStateOf(role.permissions.toSet()) }
+        AlertDialog(
+            onDismissRequest = { editRole = null },
+            title = { Text("Rolü düzenle") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(value = roleName, onValueChange = { if (it.length <= 30) roleName = it }, label = { Text("Rol adı") }, singleLine = true)
+                    listOf("VIEW_CHANNEL" to "Kanalı görebilir", "SEND_MESSAGES" to "Mesaj gönderebilir", "MANAGE_CHANNELS" to "Kanalları yönetebilir", "MANAGE_MEMBERS" to "Üyeleri yönetebilir", "BAN_MEMBERS" to "Üyeleri banlayabilir").forEach { (permission, label) ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Checkbox(checked = permission in permissions, onCheckedChange = { checked -> permissions = permissions.toMutableSet().apply { if (checked) add(permission) else remove(permission) } })
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = roleName.trim().isNotEmpty(), onClick = {
+                    scope.launch {
+                        when (val r = repo.updateServerRole(server.id, role.id, roleName.trim(), permissions.toList())) {
+                            is AppResult.Error -> onError(r.error.message)
+                            is AppResult.Success -> editRole = null
+                        }
+                    }
+                }) { Text("Kaydet") }
+            },
+            dismissButton = { TextButton(onClick = { editRole = null }) { Text("İptal") } }
+        )
+    }
+
     roleMember?.let { member ->
         AlertDialog(
             onDismissRequest = { roleMember = null },
