@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -521,6 +524,8 @@ private fun ServerWorkspace(
     var channelMenu by remember { mutableStateOf<ServerChannel?>(null) }
     var categoryMenu by remember { mutableStateOf<ServerCategory?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var channelSearch by remember(server.id) { mutableStateOf("") }
+    var collapsedCategories by remember(server.id) { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(server.id) {
         repo.observeServerMembers(server.id).collect { result ->
@@ -552,7 +557,8 @@ private fun ServerWorkspace(
     val currentMember = members.firstOrNull { it.uid == currentUid }
     val currentRolePermissions = serverRoles.firstOrNull { it.id == currentMember?.role }?.permissions.orEmpty()
     val visibleChannels = channels.filter { channel ->
-        isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember, currentRolePermissions)
+        (isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember, currentRolePermissions)) &&
+            channel.name.contains(channelSearch.trim(), ignoreCase = true)
     }
 
     Row(modifier.fillMaxSize()) {
@@ -573,12 +579,22 @@ private fun ServerWorkspace(
                     }
                     Column(Modifier.weight(1f).padding(start = 9.dp)) {
                         Text(server.name, maxLines = 1, fontWeight = FontWeight.Bold)
-                        Text("Sunucu bilgileri", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Kanal ve sunucu bilgileri", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
                 }
 
                 HorizontalDivider()
+
+                OutlinedTextField(
+                    value = channelSearch,
+                    onValueChange = { channelSearch = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, "Kanal ara") },
+                    placeholder = { Text("Kanal ara") },
+                    shape = RoundedCornerShape(12.dp)
+                )
 
                 if (isOwner) {
                     TextButton(onClick = { showCreateCategory = true }, modifier = Modifier.fillMaxWidth()) {
@@ -593,8 +609,14 @@ private fun ServerWorkspace(
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
                         categories.forEach { category ->
+                            val collapsed = collapsedCategories.contains(category.id)
                             item(key = "category-" + category.id) {
                                 Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = {
+                                        collapsedCategories = if (collapsed) collapsedCategories - category.id else collapsedCategories + category.id
+                                    }, modifier = Modifier.size(30.dp)) {
+                                        Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, "Kategoriyi aç/kapat", modifier = Modifier.size(17.dp))
+                                    }
                                     Text(category.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     if (isOwner) {
                                         IconButton(onClick = { showCreateChannel = category }, modifier = Modifier.size(30.dp)) {
@@ -606,7 +628,7 @@ private fun ServerWorkspace(
                                     }
                                 }
                             }
-                            visibleChannels.filter { it.categoryId == category.id }.forEach { channel ->
+                            if (!collapsed) visibleChannels.filter { it.categoryId == category.id }.forEach { channel ->
                                 item(key = "channel-" + channel.id) {
                                     Row(
                                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
