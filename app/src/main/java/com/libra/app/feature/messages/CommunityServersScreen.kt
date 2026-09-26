@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -854,6 +855,27 @@ private fun ServerWorkspace(
     }
 }
 
+@Composable
+private fun MessageDateSeparator(createdAt: Long) {
+    val text = remember(createdAt) {
+        java.text.SimpleDateFormat("dd MMM yyyy • HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(createdAt))
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HorizontalDivider(Modifier.weight(1f))
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 10.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        HorizontalDivider(Modifier.weight(1f))
+    }
+}
+
 private fun canViewServerChannel(
     channel: ServerChannel,
     permissions: List<ServerChannelPermissionOverride>,
@@ -1155,7 +1177,14 @@ private fun ServerChatScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { message ->
+            itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
+                val previous = messages.getOrNull(index - 1)
+                val groupedWithPrevious = previous != null &&
+                    previous.senderId == message.senderId &&
+                    message.createdAt - previous.createdAt in 0..300_000L
+                if (!groupedWithPrevious) {
+                    MessageDateSeparator(message.createdAt)
+                }
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
                 Row(
                     Modifier.fillMaxWidth()
@@ -1170,7 +1199,11 @@ private fun ServerChatScreen(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     if (message.senderId != currentUid) {
-                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp)
+                        if (groupedWithPrevious) {
+                            Spacer(Modifier.width(36.dp))
+                        } else {
+                            UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp)
+                        }
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
