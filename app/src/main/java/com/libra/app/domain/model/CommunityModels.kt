@@ -66,3 +66,19 @@ data class ServerMessage(
     val mentionsEveryone: Boolean = false,
     val mentionsHere: Boolean = false
 )
+
+
+data class ServerRoleDefinition(
+    val id: String = "",
+    val name: String = "",
+    val permissions: List<String> = emptyList(),
+    val position: Int = 0
+)
+
+data class ServerBan(
+    val uid: String = "",
+    val displayName: String = "",
+    val username: String = "",
+    val bannedAt: Long = 0L,
+    val reason: String = ""
+)
