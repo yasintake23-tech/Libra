@@ -755,6 +755,24 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 
+    override suspend fun updateServerRole(serverId: String, roleId: String, name: String, permissions: List<String>): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim()
+        if (clean.length !in 1..30) return AppResult.Error(AppError.Validation("Rol adı 1-30 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol düzenleyebilir."))
+            serverRef.collection("roles").document(roleId).update(
+                mapOf("name" to clean, "permissions" to permissions.distinct())
+            ).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Rol güncellenemedi.", e))
+        }
+    }
+
     override suspend fun deleteServerRole(serverId: String, roleId: String): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
