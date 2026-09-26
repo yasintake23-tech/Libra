@@ -44,12 +44,14 @@ import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.ServerChannelPermissionOverride
+import com.libra.app.domain.model.ServerRoleDefinition
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.platform.LocalContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -59,8 +61,11 @@ fun CommunityServersScreen(
 ) {
     val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val pinPrefs = remember { context.getSharedPreferences("libra_server_pins", android.content.Context.MODE_PRIVATE) }
 
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
+    var pinnedServerIds by remember { mutableStateOf(pinPrefs.getStringSet("ids", emptySet()).orEmpty().toSet()) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
     var selectedChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var categories by remember { mutableStateOf<List<ServerCategory>>(emptyList()) }
@@ -167,8 +172,22 @@ fun CommunityServersScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(servers, key = { it.id }) { server ->
-                    Card(Modifier.fillMaxWidth().clickable { previewServer = server }, shape = RoundedCornerShape(18.dp)) {
+                items(servers.distinctBy { it.id }.sortedWith(compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }.thenByDescending { it.createdAt }), key = { it.id }) { server ->
+                    Card(Modifier.fillMaxWidth().clickable {
+                        scope.launch {
+                            when (val member = communityRepository.isServerMember(server.id)) {
+                                is AppResult.Success -> if (member.data) {
+                                    selectedServer = server
+                                    selectedChannel = null
+                                    communityRepository.ensureServerStructure(server.id)
+                                } else {
+                                    previewIsMember = false
+                                    previewServer = server
+                                }
+                                is AppResult.Error -> error = member.error.message
+                            }
+                        }
+                    }, shape = RoundedCornerShape(18.dp)) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                                 Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -179,7 +198,15 @@ fun CommunityServersScreen(
                                 Spacer(Modifier.height(5.dp))
                                 Text("Topluluk sunucusu • Katılmak için dokun", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
-                            Icon(Icons.Default.ChevronRight, "Sunucuyu görüntüle")
+                            Column(horizontalAlignment = Alignment.End) {
+                                TextButton(onClick = {
+                                    val next = pinnedServerIds.toMutableSet()
+                                    if (!next.add(server.id)) next.remove(server.id)
+                                    pinnedServerIds = next.toSet()
+                                    pinPrefs.edit().putStringSet("ids", next).apply()
+                                }) { Text(if (pinnedServerIds.contains(server.id)) "Sabit" else "Sabitle") }
+                                Icon(Icons.Default.ChevronRight, "Sunucuyu aç")
+                            }
                         }
                     }
                 }
