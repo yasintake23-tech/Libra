@@ -85,7 +85,7 @@ fun CommunityServersScreen(
     LaunchedEffect(Unit) {
         communityRepository.observeCommunityServers().collect { result ->
             when (result) {
-                is AppResult.Success -> servers = result.data
+                is AppResult.Success -> servers = result.data.distinctBy { it.id }
                 is AppResult.Error -> error = result.error.message
             }
         }
