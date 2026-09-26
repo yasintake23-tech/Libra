@@ -807,7 +807,7 @@ private fun ServerChatScreen(
         }
     }
 
-    LaunchedEffect(channel.id, members) {
+    LaunchedEffect(channel.id, members, serverRoles) {
         val currentMember = members.firstOrNull { it.uid == currentUid }
         when (val result = communityRepository.getChannelPermissions(server.id, channel.id)) {
             is AppResult.Success -> {
