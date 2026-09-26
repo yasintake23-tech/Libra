@@ -690,6 +690,7 @@ private fun ServerChatScreen(
     var mediaError by remember { mutableStateOf<String?>(null) }
     var showMembers by remember { mutableStateOf(false) }
     var showManage by remember { mutableStateOf(false) }
+    var showServerInfo by remember { mutableStateOf(false) }
     var actionError by remember(server.id) { mutableStateOf<String?>(null) }
     var serverName by remember(server.id) { mutableStateOf(server.name) }
     var serverDescription by remember(server.id) { mutableStateOf(server.description) }
@@ -769,7 +770,12 @@ private fun ServerChatScreen(
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column(Modifier.weight(1f)) {
                 Text("# " + channel.name, fontWeight = FontWeight.Bold)
-                Text(serverName + " • " + members.size + " üye", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    serverName + " • " + members.size + " üye",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable { showServerInfo = true }
+                )
             }
             if (server.ownerId == currentUid) {
                 IconButton(onClick = { showManage = true }) {
@@ -926,6 +932,27 @@ private fun ServerChatScreen(
             onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji, channelId = channel.id) }; actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
             onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id, channelId = channel.id) }; actionMessage = null }
+        )
+    }
+
+    if (showServerInfo) {
+        AlertDialog(
+            onDismissRequest = { showServerInfo = false },
+            title = { Text(serverName) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(serverDescription.ifBlank { "Bu sunucunun henüz bir açıklaması yok." })
+                    Text("${members.size} üye • Sunucu sahibi: ${if (server.ownerId == currentUid) "sensin" else "başka bir kullanıcı"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                if (server.ownerId == currentUid) {
+                    TextButton(onClick = { showServerInfo = false; showManage = true }) { Text("Sunucu ayarları") }
+                } else {
+                    TextButton(onClick = { showServerInfo = false }) { Text("Tamam") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showServerInfo = false }) { Text("Kapat") } }
         )
     }
 
