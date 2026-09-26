@@ -160,20 +160,33 @@ fun CommunityServersScreen(
     if (selectedServer != null) {
         val server = selectedServer!!
 
-        Box(modifier.fillMaxSize()) {
-            ServerWorkspace(
-                server = server,
-                categories = categories,
-                channels = channels,
-                onBack = {
-                    selectedServer = null
-                    selectedChannel = null
-                    categories = emptyList()
-                    channels = emptyList()
-                },
-                onChannelClick = { selectedChannel = it },
-                modifier = Modifier.fillMaxSize()
-            )
+        AnimatedContent(
+            targetState = selectedChannel,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "serverChannelTransition"
+        ) { channel ->
+            if (channel != null) {
+                ServerChatScreen(
+                    server = server,
+                    channel = channel,
+                    onBack = { selectedChannel = null },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                ServerWorkspace(
+                    server = server,
+                    categories = categories,
+                    channels = channels,
+                    onBack = {
+                        selectedServer = null
+                        selectedChannel = null
+                        categories = emptyList()
+                        channels = emptyList()
+                    },
+                    onChannelClick = { selectedChannel = it },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
         return
     }
