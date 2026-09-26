@@ -316,8 +316,10 @@ class HomeViewModel(
                     _postError.value = result.error.message
                 }
                 is AppResult.Success -> {
-                    // Keep the override until the feed snapshot confirms it.
-                    pendingLikeOverrides[post.id] = result.data
+                    // A slower earlier request must never overwrite a newer tap.
+                    if (pendingLikeOverrides[post.id] == desiredLiked) {
+                        pendingLikeOverrides[post.id] = result.data
+                    }
                 }
             }
         }
