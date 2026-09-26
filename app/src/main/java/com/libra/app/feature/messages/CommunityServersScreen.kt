@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -122,27 +123,66 @@ fun CommunityServersScreen(
 
     if (selectedServer != null) {
         val server = selectedServer!!
-        if (selectedChannel != null) {
-            ServerChatScreen(
-                server = server,
-                channel = selectedChannel!!,
-                onBack = { selectedChannel = null },
-                modifier = modifier
-            )
-        } else {
-            ServerWorkspace(
-                server = server,
-                categories = categories,
-                channels = channels,
-                onBack = {
+
+        Row(modifier.fillMaxSize()) {
+            ServerRail(
+                servers = servers
+                    .distinctBy { it.id }
+                    .sortedWith(
+                        compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }
+                            .thenByDescending { it.createdAt }
+                    ),
+                selectedServerId = server.id,
+                onBackToCommunity = {
                     selectedServer = null
                     selectedChannel = null
                     categories = emptyList()
                     channels = emptyList()
                 },
-                onChannelClick = { selectedChannel = it },
-                modifier = modifier
+                onCreateServer = { showCreate = true },
+                onServerClick = { target ->
+                    if (target.id == server.id) return@ServerRail
+                    scope.launch {
+                        when (val member = communityRepository.isServerMember(target.id)) {
+                            is AppResult.Success -> {
+                                if (member.data) {
+                                    selectedServer = target
+                                    selectedChannel = null
+                                } else {
+                                    previewIsMember = false
+                                    previewServer = target
+                                }
+                            }
+                            is AppResult.Error -> error = member.error.message
+                        }
+                    }
+                }
             )
+
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                if (selectedChannel != null) {
+                    ServerChatScreen(
+                        server = server,
+                        channel = selectedChannel!!,
+                        onBack = { selectedChannel = null },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    ServerWorkspace(
+                        server = server,
+                        categories = categories,
+                        channels = channels,
+                        onBack = {
+                            selectedServer = null
+                            selectedChannel = null
+                            categories = emptyList()
+                            channels = emptyList()
+                        },
+                        onChannelClick = { selectedChannel = it },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
         return
     }
@@ -260,6 +300,162 @@ fun CommunityServersScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ServerRail(
+    servers: List<CommunityServer>,
+    selectedServerId: String,
+    onBackToCommunity: () -> Unit,
+    onCreateServer: () -> Unit,
+    onServerClick: (CommunityServer) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .width(72.dp)
+            .fillMaxHeight(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 4.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .navigationBarsPadding()
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            RailActionButton(
+                icon = Icons.Default.ArrowBack,
+                contentDescription = "Topluluklara dön",
+                onClick = onBackToCommunity
+            )
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(
+                modifier = Modifier
+                    .width(34.dp)
+                    .padding(vertical = 2.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                items(servers, key = { it.id }) { server ->
+                    ServerRailItem(
+                        server = server,
+                        selected = server.id == selectedServerId,
+                        onClick = { onServerClick(server) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            RailActionButton(
+                icon = Icons.Default.Add,
+                contentDescription = "Sunucu oluştur veya ekle",
+                onClick = onCreateServer,
+                accent = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun RailActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    accent: Boolean = false
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(
+                if (accent) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.background
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (accent) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+        )
+    }
+}
+
+@Composable
+private fun ServerRailItem(
+    server: CommunityServer,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(64.dp)
+            .height(58.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(4.dp)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(if (selected) 48.dp else 44.dp)
+                .clip(RoundedCornerShape(if (selected) 16.dp else 14.dp))
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.background
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (server.avatarUrl.isNotBlank()) {
+                var avatarUrl by remember(server.id, server.avatarUrl) { mutableStateOf<String?>(null) }
+
+                LaunchedEffect(server.id, server.avatarUrl) {
+                    avatarUrl = ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl)
+                }
+
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = server.name,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(if (selected) 16.dp else 14.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(
+                    server.name.take(1).uppercase().ifBlank { "?" },
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            }
+        }
     }
 }
 
