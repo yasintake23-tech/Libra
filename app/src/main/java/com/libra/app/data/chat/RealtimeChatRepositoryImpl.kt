@@ -767,6 +767,10 @@ class RealtimeChatRepositoryImpl(
             return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
         }
 
+        if (channelId.isNotBlank() && !canUseServerChannel(serverId, channelId, user.uid, send = true)) {
+            return AppResult.Error(AppError.Auth("Bu kanalda mesaj gönderme iznin yok."))
+        }
+
         val clean = text.trim()
         if (clean.isBlank() && mediaUrl.isBlank()) {
             return AppResult.Error(AppError.Validation("Mesaj boş olamaz."))
@@ -951,6 +955,51 @@ class RealtimeChatRepositoryImpl(
                 )
             ).await()
         }
+    }
+
+    private suspend fun canUseServerChannel(
+        serverId: String,
+        channelId: String,
+        uid: String,
+        send: Boolean
+    ): Boolean {
+        return runCatching {
+            val firestore = FirebaseFirestore.getInstance()
+            val serverRef = firestore.collection("communityServers").document(serverId)
+            val server = serverRef.get().await()
+            if (!server.exists()) return@runCatching false
+            if (server.getString("ownerId") == uid) return@runCatching true
+
+            val member = serverRef.collection("members").document(uid).get().await()
+            if (!member.exists()) return@runCatching false
+            val role = member.getString("role").orEmpty()
+
+            val channel = serverRef.collection("channels").document(channelId).get().await()
+            if (!channel.exists()) return@runCatching false
+
+            var allowed = if (send) {
+                channel.getBoolean("allowEveryoneSend") ?: true
+            } else {
+                channel.getBoolean("allowEveryoneView") ?: true
+            }
+
+            val overrides = serverRef.collection("channels").document(channelId)
+                .collection("permissions").get().await().documents
+
+            fun apply(subjectType: String, subjectId: String) {
+                overrides.firstOrNull {
+                    it.getString("subjectType") == subjectType && it.getString("subjectId") == subjectId
+                }?.let { doc ->
+                    val value = if (send) doc.getBoolean("canSend") else doc.getBoolean("canView")
+                    if (value != null) allowed = value
+                }
+            }
+
+            apply("ROLE", "EVERYONE")
+            apply("ROLE", role)
+            apply("USER", uid)
+            allowed
+        }.getOrDefault(false)
     }
 
     private data class ServerMentionInfo(
