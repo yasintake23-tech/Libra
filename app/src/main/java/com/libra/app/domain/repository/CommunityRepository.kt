@@ -38,8 +38,11 @@ interface CommunityRepository {
     suspend fun getChannelPermissions(serverId: String, channelId: String): AppResult<List<ServerChannelPermissionOverride>>
     fun observeChannelPermissions(serverId: String, channelId: String): Flow<AppResult<List<ServerChannelPermissionOverride>>>
     suspend fun createServerCategory(serverId: String, name: String): AppResult<ServerCategory>
+    suspend fun updateServerCategory(serverId: String, categoryId: String, name: String): AppResult<Unit>
     suspend fun deleteServerCategory(serverId: String, categoryId: String): AppResult<Unit>
     suspend fun createServerChannel(serverId: String, categoryId: String, name: String): AppResult<ServerChannel>
+    suspend fun updateServerChannel(serverId: String, channelId: String, name: String): AppResult<Unit>
+    suspend fun moveServerChannelToCategory(serverId: String, channelId: String, categoryId: String): AppResult<Unit>
     suspend fun deleteServerChannel(serverId: String, channelId: String): AppResult<Unit>
     suspend fun setChannelPermission(serverId: String, channelId: String, override: ServerChannelPermissionOverride): AppResult<Unit>
     suspend fun deleteChannelPermission(serverId: String, channelId: String, overrideId: String): AppResult<Unit>
