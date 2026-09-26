@@ -267,6 +267,7 @@ private fun ServerWorkspace(
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val isOwner = currentUid == server.ownerId
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
+    var canSendInChannel by remember(channel.id) { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
     var showServerSettings by remember { mutableStateOf(false) }
     var editServerName by remember(server.id) { mutableStateOf(server.name) }
@@ -730,6 +731,18 @@ private fun ServerChatScreen(
         }
     }
 
+    LaunchedEffect(channel.id, members) {
+        val currentMember = members.firstOrNull { it.uid == currentUid }
+        when (val result = communityRepository.getChannelPermissions(server.id, channel.id)) {
+            is AppResult.Success -> {
+                canSendInChannel = currentMember?.let {
+                    canSendServerChannel(channel, result.data, it)
+                } ?: true
+            }
+            is AppResult.Error -> canSendInChannel = true
+        }
+    }
+
     LaunchedEffect(server.id) {
         chatRepository.observeServerMessages(server.id, channelId = channel.id).collect { result ->
             when (result) {
@@ -874,11 +887,11 @@ private fun ServerChatScreen(
                 value = draft,
                 onValueChange = { if (it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Topluluğa mesaj yaz…") },
+                placeholder = { Text(if (canSendInChannel) "Topluluğa mesaj yaz…" else "Bu kanalda mesaj yazma iznin yok.") },
                 maxLines = 4
             )
             IconButton(
-                enabled = (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
+                enabled = canSendInChannel && (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
                 onClick = {
                     val text = draft.trim()
                     val edit = editingMessage
