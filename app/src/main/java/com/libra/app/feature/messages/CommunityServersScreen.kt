@@ -736,11 +736,113 @@ private fun ServerWorkspace(
             }
         }
 
-        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-                Text(server.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(32.dp))
+                Box(
+                    Modifier
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (server.avatarUrl.isNotBlank()) {
+                        AsyncImage(
+                            ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
+                            contentDescription = server.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            server.name.take(1).uppercase().ifBlank { "L" },
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    server.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
                 Spacer(Modifier.height(6.dp))
-                Text("Bir kanal seçerek topluluğa gir.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    server.description.ifBlank {
+                        "Libra topluluğuna hoş geldin. Bir kanal seçerek sohbete başlayabilirsin."
+                    },
+                    modifier = Modifier.widthIn(max = 520.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(22.dp))
+
+                Row(
+                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Üye", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(members.size.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Kanal", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(visibleChannels.size.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(22.dp))
+
+                Surface(
+                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text(
+                            "Topluluğa giriş",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (visibleChannels.isEmpty()) {
+                                "Görüntülenebilen bir kanal bulunmuyor."
+                            } else {
+                                "Soldan bir kanal seç. Metin kanallarında gerçek zamanlı sohbet başlayacak."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }
