@@ -76,7 +76,12 @@ fun ServerOwnerSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {\n            Column {\n                Text("Sunucu ayarları", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)\n                Text("Yönetim ve topluluk", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)\n            }\n        },
+        title = {
+            Column {
+                Text("Sunucu ayarları", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text("Yönetim ve topluluk", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 560.dp),
