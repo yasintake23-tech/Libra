@@ -17,31 +17,23 @@ import com.libra.app.domain.model.*
 import kotlinx.coroutines.launch
 
 
-@Composable
-private fun RoleDragHandle(
+private fun Modifier.longPressReorder(
     itemKey: String,
     onMove: (Int) -> Unit
-) {
-    var triggered by remember(itemKey) { mutableStateOf(false) }
-
-    Text(
-        text = "Basılı tut ve sürükle",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .pointerInput(itemKey) {
-                detectDragGesturesAfterLongPress(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        if (!triggered && kotlin.math.abs(dragAmount.y) >= 18f) {
-                            triggered = true
-                            onMove(if (dragAmount.y < 0) -1 else 1)
-                        }
-                    },
-                    onDragEnd = { triggered = false },
-                    onDragCancel = { triggered = false }
-                )
+): Modifier = pointerInput(itemKey) {
+    var accumulatedY = 0f
+    var triggered = false
+    detectDragGesturesAfterLongPress(
+        onDrag = { change, dragAmount ->
+            change.consume()
+            if (!triggered) {
+                accumulatedY += dragAmount.y
+                if (kotlin.math.abs(accumulatedY) >= 36f) {
+                    triggered = true
+                    onMove(if (accumulatedY < 0f) -1 else 1)
+                }
             }
+        }
     )
 }
 
@@ -95,14 +87,10 @@ fun ServerOwnerSettingsDialog(
                     Button(onClick = { showRoleCreate = true }) { Text("Rol oluştur") }
                 }
                 items(roles, key = { "role-" + it.id }) { role ->
-                    Row(Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f)) {
-                            Text(role.name)
-                            Text(role.permissions.joinToString(", ").ifBlank { "İzin yok" }, style = MaterialTheme.typography.labelSmall)
-                        }
-                        RoleDragHandle(
-                            itemKey = role.id,
-                            onMove = { direction ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .longPressReorder(role.id) { direction ->
                                 scope.launch {
                                     when (val r = repo.moveServerRole(server.id, role.id, direction)) {
                                         is AppResult.Error -> onError(r.error.message)
@@ -110,7 +98,11 @@ fun ServerOwnerSettingsDialog(
                                     }
                                 }
                             }
-                        )
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(role.name)
+                            Text(role.permissions.joinToString(", ").ifBlank { "İzin yok" }, style = MaterialTheme.typography.labelSmall)
+                        }
                         TextButton(onClick = { editRole = role }) { Text("Düzenle") }
                         TextButton(onClick = {
                             scope.launch {
@@ -172,24 +164,16 @@ fun ServerOwnerSettingsDialog(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .pointerInput(category.id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        if (kotlin.math.abs(dragAmount.y) >= 18f) {
-                                            scope.launch {
-                                                when (val r = repo.moveServerCategory(server.id, category.id, if (dragAmount.y < 0) -1 else 1)) {
-                                                    is AppResult.Error -> onError(r.error.message)
-                                                    is AppResult.Success -> Unit
-                                                }
-                                            }
-                                        }
+                            .longPressReorder(category.id) { direction ->
+                                scope.launch {
+                                    when (val r = repo.moveServerCategory(server.id, category.id, direction)) {
+                                        is AppResult.Error -> onError(r.error.message)
+                                        is AppResult.Success -> Unit
                                     }
-                                )
+                                }
                             }
                     ) {
                         Text(category.name, Modifier.weight(1f))
-                        Text("Basılı tut ve sürükle", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = {
                             scope.launch {
                                 when (val r = repo.deleteServerCategory(server.id, category.id)) {
@@ -206,20 +190,13 @@ fun ServerOwnerSettingsDialog(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .pointerInput(channel.id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        if (kotlin.math.abs(dragAmount.y) >= 18f) {
-                                            scope.launch {
-                                                when (val r = repo.moveServerChannel(server.id, channel.id, if (dragAmount.y < 0) -1 else 1)) {
-                                                    is AppResult.Error -> onError(r.error.message)
-                                                    is AppResult.Success -> Unit
-                                                }
-                                            }
-                                        }
+                            .longPressReorder(channel.id) { direction ->
+                                scope.launch {
+                                    when (val r = repo.moveServerChannel(server.id, channel.id, direction)) {
+                                        is AppResult.Error -> onError(r.error.message)
+                                        is AppResult.Success -> Unit
                                     }
-                                )
+                                }
                             }
                     ) {
                         Text("# " + channel.name, Modifier.weight(1f))
