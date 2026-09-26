@@ -10,15 +10,19 @@ import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.ServerChannelPermissionOverride
+import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.repository.CommunityRepository
+import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 
 class FirebaseCommunityRepositoryImpl(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val storageRepository: StorageRepository
 ) : CommunityRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
@@ -75,7 +79,9 @@ class FirebaseCommunityRepositoryImpl(
                 name = cleanName,
                 description = cleanDescription,
                 ownerId = user.uid,
-                createdAt = now
+                createdAt = now,
+                avatarUrl = "",
+                bannerUrl = ""
             )
 
             val batch = firestore.batch()
@@ -169,6 +175,139 @@ class FirebaseCommunityRepositoryImpl(
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucu güncellenemedi.", e))
+        }
+    }
+
+    override suspend fun updateCommunityServerMedia(
+        serverId: String,
+        avatarUrl: String,
+        bannerUrl: String
+    ): AppResult<Unit> {
+        val user = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+
+        if (serverId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+        }
+
+        val cleanAvatar = avatarUrl.trim()
+        val cleanBanner = bannerUrl.trim()
+
+        return try {
+            val ref = serversRef.document(serverId)
+            val server = ref.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya ayarlarını değiştirebilir."))
+            }
+
+            ref.update(
+                mapOf(
+                    "avatarUrl" to cleanAvatar,
+                    "bannerUrl" to cleanBanner
+                )
+            ).await()
+
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu görselleri güncellenemedi.", e))
+        }
+    }
+
+    override suspend fun uploadServerAvatar(
+        serverId: String,
+        fileName: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit
+    ): AppResult<String> = uploadServerMedia(
+        serverId = serverId,
+        fileName = "server-" + serverId + "-avatar-" + fileName,
+        bytes = bytes,
+        contentType = contentType,
+        onProgress = onProgress
+    )
+
+    override suspend fun uploadServerBanner(
+        serverId: String,
+        fileName: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit
+    ): AppResult<String> = uploadServerMedia(
+        serverId = serverId,
+        fileName = "server-" + serverId + "-banner-" + fileName,
+        bytes = bytes,
+        contentType = contentType,
+        onProgress = onProgress
+    )
+
+    private suspend fun uploadServerMedia(
+        serverId: String,
+        fileName: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit
+    ): AppResult<String> {
+        val user = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Medya yüklemek için giriş yapmalısın."))
+
+        if (serverId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+        }
+
+        return try {
+            val server = serversRef.document(serverId).get().await()
+                .toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya yükleyebilir."))
+            }
+
+            storageRepository.uploadMedia(
+                StorageUploadRequest(
+                    fileName = fileName,
+                    bytes = bytes,
+                    contentType = contentType,
+                    targetDirectory = "users/" + user.uid
+                ),
+                onProgress = onProgress
+            ).first()
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Storage("Sunucu medyası yüklenemedi.", e))
+        }
+    }
+
+    override suspend fun deleteServerMedia(
+        serverId: String,
+        fileKey: String
+    ): AppResult<Unit> {
+        val user = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+
+        if (serverId.isBlank() || fileKey.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz sunucu medyası."))
+        }
+
+        return try {
+            val server = serversRef.document(serverId).get().await()
+                .toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya silebilir."))
+            }
+
+            val ownedPrefix = "users/" + user.uid + "/"
+            if (!fileKey.trim().startsWith(ownedPrefix)) {
+                return AppResult.Error(AppError.Auth("Bu medya dosyasına erişimin yok."))
+            }
+
+            storageRepository.deleteMedia(fileKey.trim())
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Storage("Sunucu medyası silinemedi.", e))
         }
     }
 
