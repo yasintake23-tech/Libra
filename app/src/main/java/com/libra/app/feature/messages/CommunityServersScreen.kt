@@ -1212,7 +1212,12 @@ private fun ServerChatScreen(
                             message.senderId == currentUid -> MaterialTheme.colorScheme.primaryContainer
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(
+                            topStart = if (groupedWithPrevious) 8.dp else 16.dp,
+                            topEnd = if (groupedWithPrevious) 8.dp else 16.dp,
+                            bottomStart = 16.dp,
+                            bottomEnd = 16.dp
+                        ),
                         modifier = Modifier.pointerInput(message.id + "-tap") {
                             detectTapGestures(
                                 onDoubleTap = { scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️", channelId = channel.id) } },
@@ -1221,7 +1226,25 @@ private fun ServerChatScreen(
                         }
                     ) {
                         Column(Modifier.widthIn(max = 320.dp).padding(6.dp)) {
-                            if (message.senderId != currentUid) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp, 4.dp))
+                            if (message.senderId != currentUid && !groupedWithPrevious) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        message.senderName.ifBlank { "Libra kullanıcısı" },
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                            .format(java.util.Date(message.createdAt)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                             if (message.replyToMessageId.isNotBlank()) {
                                 Surface(color = androidx.compose.ui.graphics.Color(0xFFFFE8D5), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(8.dp)) {
