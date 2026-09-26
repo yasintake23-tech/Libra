@@ -736,12 +736,17 @@ private fun ServerWorkspace(
                                             modifier = Modifier.weight(1f)
                                         )
                                         if (isOwner) {
-                                            Icon(
-                                                Icons.Default.MoreVert,
-                                                contentDescription = "Kanal seçenekleri",
-                                                modifier = Modifier.size(17.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.MoreVert,
+                                                    contentDescription = "Kanal seçenekleri. Basılı tutarak da yönetebilirsin.",
+                                                    modifier = Modifier.padding(5.dp).size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                     }
                                 }
