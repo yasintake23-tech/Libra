@@ -613,9 +613,10 @@ private fun ServerWorkspace(
 
     val currentMember = members.firstOrNull { it.uid == currentUid }
     val currentRolePermissions = serverRoles.firstOrNull { it.id == currentMember?.role }?.permissions.orEmpty()
+    val normalizedChannelSearch = channelSearch.trim()
     val visibleChannels = channels.filter { channel ->
         (isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember, currentRolePermissions)) &&
-            channel.name.contains(channelSearch.trim(), ignoreCase = true)
+            channel.name.contains(normalizedChannelSearch, ignoreCase = true)
     }
     val visibleChannelsByCategory = remember(visibleChannels) {
         visibleChannels.groupBy { it.categoryId }
