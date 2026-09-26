@@ -1354,7 +1354,9 @@ private fun ServerChatScreen(
     var serverDescription by remember(server.id) { mutableStateOf(server.description) }
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
     var serverRoles by remember { mutableStateOf<List<ServerRoleDefinition>>(emptyList()) }
-    var canSendInChannel by remember(server.id, channel.id) { mutableStateOf(true) }
+    var channelPermissionOverrides by remember(channel.id) {
+        mutableStateOf<List<ServerChannelPermissionOverride>>(emptyList())
+    }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1403,22 +1405,26 @@ private fun ServerChatScreen(
         }
     }
 
-    LaunchedEffect(channel.id, members, serverRoles) {
-        val currentMember = members.firstOrNull { it.uid == currentUid }
+    LaunchedEffect(server.id, channel.id) {
         when (val result = communityRepository.getChannelPermissions(server.id, channel.id)) {
-            is AppResult.Success -> {
-                canSendInChannel = currentMember?.let {
-                    canSendServerChannel(
-                        channel,
-                        result.data,
-                        it,
-                        serverRoles.firstOrNull { role -> role.id == it.role }?.permissions.orEmpty()
-                    )
-                } ?: true
-            }
-            is AppResult.Error -> canSendInChannel = true
+            is AppResult.Success -> channelPermissionOverrides = result.data
+            is AppResult.Error -> channelPermissionOverrides = emptyList()
         }
     }
+
+    val currentMember = members.firstOrNull { it.uid == currentUid }
+    val currentRolePermissions = serverRoles
+        .firstOrNull { it.id == currentMember?.role }
+        ?.permissions
+        .orEmpty()
+    val canSendInChannel = currentMember?.let {
+        canSendServerChannel(
+            channel,
+            channelPermissionOverrides,
+            it,
+            currentRolePermissions
+        )
+    } ?: true
 
     LaunchedEffect(server.id, channel.id) {
         messages = emptyList()
