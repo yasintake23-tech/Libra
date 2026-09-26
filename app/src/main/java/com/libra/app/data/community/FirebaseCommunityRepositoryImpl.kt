@@ -123,6 +123,17 @@ class FirebaseCommunityRepositoryImpl(
                         doc.toObject(CommunityServer::class.java)?.copy(id = doc.id)
                     }.getOrNull()
                 }
+
+                // Existing servers created before invite keys existed receive one
+                // automatically when their owner opens the community area.
+                servers
+                    .filter { it.ownerId == auth.currentUser?.uid && it.inviteKey.isBlank() }
+                    .forEach { server ->
+                        launch {
+                            ensureCommunityServerInviteKey(server.id)
+                        }
+                    }
+
                 trySend(AppResult.Success(servers))
             }
         awaitClose { registration.remove() }
