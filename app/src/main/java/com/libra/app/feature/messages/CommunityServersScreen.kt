@@ -642,7 +642,7 @@ private fun NameDialog(
 }
 
 @Composable
-private fun ChannelPermissionDialog(
+fun ChannelPermissionDialog(
     serverId: String,
     channel: ServerChannel,
     members: List<ServerMember>,
