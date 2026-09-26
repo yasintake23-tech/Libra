@@ -756,7 +756,7 @@ private fun ServerWorkspace(
         AlertDialog(
             onDismissRequest = { channelMenu = null },
             title = { Text("# \${channel.name}") },
-            text = { Text("Kanal yönetimi") },
+            text = { Column { Text("Kanal yönetimi"); TextButton(onClick = { channelMenu = null; editChannel = channel }) { Text("Kanal adını düzenle") }; TextButton(onClick = { channelMenu = null; moveChannel = channel }) { Text("Başka kategoriye taşı") } } },
             confirmButton = { TextButton(onClick = { channelMenu = null; permissionChannel = channel }) { Text("İzinler") } },
             dismissButton = {
                 TextButton(onClick = {
