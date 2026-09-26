@@ -523,6 +523,9 @@ private fun ServerWorkspace(
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var channelMenu by remember { mutableStateOf<ServerChannel?>(null) }
     var categoryMenu by remember { mutableStateOf<ServerCategory?>(null) }
+    var editChannel by remember { mutableStateOf<ServerChannel?>(null) }
+    var editCategory by remember { mutableStateOf<ServerCategory?>(null) }
+    var moveChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var channelSearch by remember(server.id) { mutableStateOf("") }
     var collapsedCategories by remember(server.id) { mutableStateOf<Set<String>>(emptySet()) }
@@ -848,9 +851,10 @@ private fun NameDialog(
     label: String,
     confirm: String,
     onDismiss: () -> Unit,
+    initialValue: String = "",
     onConfirm: (String) -> Unit
 ) {
-    var value by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf(initialValue) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
