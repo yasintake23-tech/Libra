@@ -6,6 +6,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
+import com.google.firebase.firestore.FirebaseFirestore
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
@@ -100,7 +101,8 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = reactions(snapshot.child("reactions"))
+                reactions = reactions(snapshot.child("reactions")),
+                sharedContent = sharedContent(snapshot.child("sharedContent"))
             )
         }.getOrNull()
 
@@ -121,7 +123,10 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = reactions(snapshot.child("reactions"))
+                reactions = reactions(snapshot.child("reactions")),
+                mentionedUserIds = snapshot.child("mentionedUserIds").children.mapNotNull { it.getValue(String::class.java) },
+                mentionsEveryone = snapshot.child("mentionsEveryone").getValue(Boolean::class.java) ?: false,
+                mentionsHere = snapshot.child("mentionsHere").getValue(Boolean::class.java) ?: false
             )
         }.getOrNull()
 
@@ -655,7 +660,8 @@ class RealtimeChatRepositoryImpl(
 
     override fun observeServerMessages(
         serverId: String,
-        limit: Long
+        limit: Long,
+        channelId: String
     ): Flow<AppResult<List<ServerMessage>>> = callbackFlow {
         if (serverId.isBlank()) {
             trySend(AppResult.Success(emptyList()))
@@ -664,7 +670,7 @@ class RealtimeChatRepositoryImpl(
         }
 
         val safeLimit = limit.coerceIn(1L, 200L).toInt()
-        val query = ref("serverMessages/$serverId")
+        val query = ref(serverMessagesPath(serverId, channelId))
             ?.orderByChild("createdAt")
             ?.limitToLast(safeLimit)
 
@@ -698,9 +704,10 @@ class RealtimeChatRepositoryImpl(
         serverId: String,
         text: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, "", "", replyTo, sharedContent)
+        sendServerInternal(serverId, text, "", "", replyTo, sharedContent, channelId)
 
     override suspend fun sendServerMediaMessage(
         serverId: String,
@@ -708,9 +715,10 @@ class RealtimeChatRepositoryImpl(
         mediaType: String,
         text: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> =
-        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent)
+        sendServerInternal(serverId, text, mediaUrl, mediaType, replyTo, sharedContent, channelId)
 
     private suspend fun sendServerInternal(
         serverId: String,
@@ -718,13 +726,18 @@ class RealtimeChatRepositoryImpl(
         mediaUrl: String,
         mediaType: String,
         replyTo: ServerMessage?,
-        sharedContent: SharedContent?
+        sharedContent: SharedContent?,
+        channelId: String
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
 
         if (serverId.isBlank()) {
             return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+        }
+
+        if (channelId.isNotBlank() && !canUseServerChannel(serverId, channelId, user.uid, send = true)) {
+            return AppResult.Error(AppError.Auth("Bu kanalda mesaj gönderme iznin yok."))
         }
 
         val clean = text.trim()
@@ -745,7 +758,9 @@ class RealtimeChatRepositoryImpl(
             authPhoto = user.photoUrl?.toString().orEmpty()
         )
 
-        val messageRef = ref("serverMessages/$serverId")?.push()
+        val mentionInfo = resolveServerMentions(serverId, clean, user.uid)
+
+        val messageRef = ref(serverMessagesPath(serverId, channelId))?.push()
             ?: return error("Realtime Database yapılandırması bulunamadı.")
 
         val data = mapOf(
@@ -761,11 +776,42 @@ class RealtimeChatRepositoryImpl(
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
             "replyToSenderName" to (replyTo?.senderName ?: ""),
-            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>()),
+            "mentionedUserIds" to mentionInfo.userIds,
+            "mentionsEveryone" to mentionInfo.everyone,
+            "mentionsHere" to mentionInfo.here
         )
 
         return try {
             messageRef.setValue(data).await()
+            runCatching {
+                val recipients = mentionInfo.userIds.filter { it != user.uid }.distinct()
+                val mentionLabel = when {
+                    mentionInfo.everyone -> "@everyone"
+                    mentionInfo.here -> "@here"
+                    else -> "bahsedilme"
+                }
+                recipients.forEach { recipientId ->
+                    notificationRepository.create(
+                        AppNotification(
+                            recipientId = recipientId,
+                            actorId = user.uid,
+                            actorName = profile.displayName,
+                            actorUsername = profile.username,
+                            actorPhotoUrl = profile.profileImageUrl,
+                            type = "SERVER_MENTION",
+                            title = "Sunucuda bahsedildin",
+                            body = if (mentionLabel.startsWith("@")) {
+                                profile.displayName + " " + mentionLabel + " ile senden bahsetti: " + clean.take(120)
+                            } else {
+                                profile.displayName + " senden bahsetti: " + clean.take(120)
+                            },
+                            referenceId = serverId + ":" + channelId + ":" + messageRef.key.orEmpty(),
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             cleanupMedia(mediaUrl)
@@ -776,22 +822,25 @@ class RealtimeChatRepositoryImpl(
     override suspend fun editServerMessage(
         serverId: String,
         messageId: String,
-        text: String
+        text: String,
+        channelId: String
     ): AppResult<Unit> =
-        editMessage(ref("serverMessages/$serverId/$messageId"), text, 2000)
+        editMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId"), text, 2000)
 
     override suspend fun deleteServerMessage(
         serverId: String,
-        messageId: String
+        messageId: String,
+        channelId: String
     ): AppResult<Unit> =
-        deleteMessage(ref("serverMessages/$serverId/$messageId"))
+        deleteMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId"))
 
     override suspend fun toggleServerMessageReaction(
         serverId: String,
         messageId: String,
-        emoji: String
+        emoji: String,
+        channelId: String
     ): AppResult<Unit> =
-        toggleReaction(ref("serverMessages/$serverId/$messageId"), emoji)
+        toggleReaction(ref(serverMessagesPath(serverId, channelId) + "/$messageId"), emoji)
 
     private suspend fun editMessage(
         messageRef: DatabaseReference?,
@@ -907,6 +956,103 @@ class RealtimeChatRepositoryImpl(
             ).await()
         }
     }
+
+    private suspend fun canUseServerChannel(
+        serverId: String,
+        channelId: String,
+        uid: String,
+        send: Boolean
+    ): Boolean {
+        return runCatching {
+            val firestore = FirebaseFirestore.getInstance()
+            val serverRef = firestore.collection("communityServers").document(serverId)
+            val server = serverRef.get().await()
+            if (!server.exists()) return@runCatching false
+            if (server.getString("ownerId") == uid) return@runCatching true
+
+            val member = serverRef.collection("members").document(uid).get().await()
+            if (!member.exists()) return@runCatching false
+            val role = member.getString("role").orEmpty()
+
+            val channel = serverRef.collection("channels").document(channelId).get().await()
+            if (!channel.exists()) return@runCatching false
+
+            var allowed = if (send) {
+                channel.getBoolean("allowEveryoneSend") ?: true
+            } else {
+                channel.getBoolean("allowEveryoneView") ?: true
+            }
+
+            val overrides = serverRef.collection("channels").document(channelId)
+                .collection("permissions").get().await().documents
+
+            fun apply(subjectType: String, subjectId: String) {
+                overrides.firstOrNull {
+                    it.getString("subjectType") == subjectType && it.getString("subjectId") == subjectId
+                }?.let { doc ->
+                    val value = if (send) doc.getBoolean("canSend") else doc.getBoolean("canView")
+                    if (value != null) allowed = value
+                }
+            }
+
+            apply("ROLE", "EVERYONE")
+            apply("ROLE", role)
+            apply("USER", uid)
+            allowed
+        }.getOrDefault(false)
+    }
+
+    private data class ServerMentionInfo(
+        val userIds: List<String>,
+        val everyone: Boolean,
+        val here: Boolean
+    )
+
+    private suspend fun resolveServerMentions(
+        serverId: String,
+        text: String,
+        senderId: String
+    ): ServerMentionInfo {
+        if (serverId.isBlank() || text.isBlank()) return ServerMentionInfo(emptyList(), false, false)
+
+        return runCatching {
+            val memberDocs = FirebaseFirestore.getInstance()
+                .collection("communityServers")
+                .document(serverId)
+                .collection("members")
+                .get()
+                .await()
+                .documents
+
+            val everyone = Regex("(?i)(^|\\s)@everyone\\b").containsMatchIn(text)
+            val here = Regex("(?i)(^|\\s)@here\\b").containsMatchIn(text)
+            val ids = linkedSetOf<String>()
+            if (everyone || here) {
+                memberDocs.mapTo(ids) { it.id }
+            }
+
+            val usernameMentions = Regex("@([A-Za-z0-9._]{3,30})")
+                .findAll(text)
+                .map { it.groupValues[1].lowercase() }
+                .toSet()
+
+            memberDocs.forEach { doc ->
+                val username = doc.getString("username").orEmpty().lowercase()
+                if (username.isNotBlank() && username in usernameMentions) ids += doc.id
+            }
+
+            ServerMentionInfo(ids.filter { it != senderId }, everyone, here)
+        }.getOrElse {
+            ServerMentionInfo(emptyList(), false, false)
+        }
+    }
+
+    private fun serverMessagesPath(serverId: String, channelId: String): String =
+        if (channelId.isBlank()) {
+            "serverMessages/$serverId"
+        } else {
+            "serverMessages/$serverId/channels/$channelId"
+        }
 
     private suspend fun cleanupMedia(mediaKey: String) {
         if (mediaKey.isBlank()) return

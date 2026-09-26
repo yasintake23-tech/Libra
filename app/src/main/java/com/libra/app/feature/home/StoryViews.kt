@@ -3,6 +3,7 @@ package com.libra.app.feature.home
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -151,15 +152,20 @@ fun StoryViewer(
     onOpenProfile: (String) -> Unit = {},
     onShare: (Story) -> Unit = {}
 ) {
-    if (stories.isEmpty()) {
-        onDismiss()
-        return
-    }
+    if (stories.isEmpty()) return
 
-    var index by remember(initialIndex, stories.map { it.id }) {
-        mutableStateOf(initialIndex.coerceIn(0, stories.lastIndex))
+    // Freeze the story sequence for the lifetime of the viewer. Feed/story
+    // refreshes can replace the parent list while the viewer is open; using
+    // that changing list directly can reset the current item and timer.
+    val viewerStories = remember { stories.toList() }
+    if (viewerStories.isEmpty()) return
+
+    var index by remember {
+        mutableStateOf(initialIndex.coerceIn(0, viewerStories.lastIndex))
     }
-    val story = stories[index]
+    val story = viewerStories[index]
+
+    BackHandler(onBack = onDismiss)
     var mediaUrl by remember(story.id, story.mediaUrl) { mutableStateOf("") }
     var liked by remember(story.id, currentUserId) { mutableStateOf(false) }
     var paused by remember(story.id) { mutableStateOf(false) }
@@ -187,7 +193,7 @@ fun StoryViewer(
             )
         )
         if (!paused) {
-            if (index < stories.lastIndex) index++ else onDismiss()
+            if (index < viewerStories.lastIndex) index++ else onDismiss()
         }
     }
 

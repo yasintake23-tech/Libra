@@ -63,6 +63,16 @@ class HomeViewModel(
     private var postsJob: Job? = null
     private var commentsJob: Job? = null
 
+    // Firestore can update the like document and post counter in separate
+    // listener snapshots. Keep both the desired state and the optimistic
+    // counter until the listener has caught up with the whole operation.
+    private data class PendingLike(
+        val desiredLiked: Boolean,
+        val expectedCount: Int
+    )
+
+    private val pendingLikeOverrides = mutableMapOf<String, PendingLike>()
+
     init { loadHomeData() }
 
     fun loadHomeData() {
@@ -117,7 +127,33 @@ class HomeViewModel(
         postsJob = viewModelScope.launch {
             postRepository.observeFeed(userId).collect { result ->
                 if (result is AppResult.Success) {
-                    updateHome { it.copy(posts = result.data) }
+                    updateHome {
+                        it.copy(
+                            posts = result.data.map { post ->
+                                val pending = pendingLikeOverrides[post.id]
+                                if (pending == null) {
+                                    post
+                                } else {
+                                    val caughtUp =
+                                        post.likedByCurrentUser == pending.desiredLiked &&
+                                            post.likesCount == pending.expectedCount
+
+                                    if (caughtUp) {
+                                        pendingLikeOverrides.remove(post.id)
+                                        post
+                                    } else {
+                                        // Firebase may deliver the like state before
+                                        // the counter (or vice versa). Keep the complete
+                                        // optimistic result until both match.
+                                        post.copy(
+                                            likedByCurrentUser = pending.desiredLiked,
+                                            likesCount = pending.expectedCount
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -253,19 +289,96 @@ class HomeViewModel(
     }
     fun toggleLike(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+        val current = (_uiState.value as? UiState.Success)?.data?.posts?.firstOrNull { it.id == post.id }
+            ?: post
+        val desiredLiked = !current.likedByCurrentUser
+        val expectedCount =
+            (current.likesCount + if (desiredLiked) 1 else -1).coerceAtLeast(0)
+
+        // Keep the complete optimistic result until Firestore confirms both
+        // the like state and the counter. This prevents a transient 7 -> 8 -> 7
+        // jump when the two Firestore listeners arrive in different snapshots.
+        pendingLikeOverrides[post.id] = PendingLike(desiredLiked, expectedCount)
+        updateHome { data ->
+            data.copy(
+                posts = data.posts.map { item ->
+                    if (item.id != post.id) item else item.copy(
+                        likedByCurrentUser = desiredLiked,
+                        likesCount = expectedCount
+                    )
+                }
+            )
+        }
+
         viewModelScope.launch {
             when (val result = postRepository.toggleLike(post.id, userId)) {
-                is AppResult.Error -> _postError.value = result.error.message
-                is AppResult.Success -> Unit
+                is AppResult.Error -> {
+                    // Only roll back if this request is still the latest user intent.
+                    if (pendingLikeOverrides[post.id]?.desiredLiked == desiredLiked) {
+                        pendingLikeOverrides.remove(post.id)
+                        updateHome { data ->
+                            data.copy(
+                                posts = data.posts.map { item ->
+                                    if (item.id == post.id) item.copy(
+                                        likedByCurrentUser = current.likedByCurrentUser,
+                                        likesCount = current.likesCount
+                                    ) else item
+                                }
+                            )
+                        }
+                    }
+                    _postError.value = result.error.message
+                }
+                is AppResult.Success -> {
+                    // A slower earlier request must never overwrite a newer tap.
+                    if (pendingLikeOverrides[post.id]?.desiredLiked == desiredLiked &&
+                        result.data != desiredLiked
+                    ) {
+                        pendingLikeOverrides[post.id] = PendingLike(
+                            desiredLiked = result.data,
+                            expectedCount = current.likesCount + if (result.data) 1 else -1
+                        )
+                    }
+                }
             }
         }
     }
 
     fun toggleSave(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+
+        // Optimistic UI: reflect the bookmark immediately instead of waiting
+        // for the Firestore listener / a screen recreation.
+        val previousSaved = post.savedByCurrentUser
+        updateHome { data ->
+            data.copy(
+                posts = data.posts.map { current ->
+                    if (current.id == post.id) {
+                        current.copy(savedByCurrentUser = !previousSaved)
+                    } else {
+                        current
+                    }
+                }
+            )
+        }
+
         viewModelScope.launch {
             when (val result = postRepository.toggleSave(post.id, userId)) {
-                is AppResult.Error -> _postError.value = result.error.message
+                is AppResult.Error -> {
+                    // Roll back the optimistic state when persistence fails.
+                    updateHome { data ->
+                        data.copy(
+                            posts = data.posts.map { current ->
+                                if (current.id == post.id) {
+                                    current.copy(savedByCurrentUser = previousSaved)
+                                } else {
+                                    current
+                                }
+                            }
+                        )
+                    }
+                    _postError.value = result.error.message
+                }
                 is AppResult.Success -> Unit
             }
         }

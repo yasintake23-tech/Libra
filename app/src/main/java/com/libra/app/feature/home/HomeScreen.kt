@@ -73,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -114,6 +115,9 @@ fun HomeScreen(
     onCreatePost: (String) -> Unit = {},
     onOpenCreatePost: () -> Unit = {},
     onOpenCreateStory: () -> Unit = {},
+    canPost: Boolean = true,
+    canStory: Boolean = true,
+    canComment: Boolean = true,
     onToggleLike: (Post) -> Unit = {},
     onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
@@ -201,9 +205,11 @@ fun HomeScreen(
                                         { onDeletePost(post) },
                                         { onToggleSave(post) },
                                         {
-                                            selectedPost = post
-                                            commentText = ""
-                                            onOpenComments(post)
+                                            if (canComment) {
+                                                selectedPost = post
+                                                commentText = ""
+                                                onOpenComments(post)
+                                            }
                                         },
                                         { onOpenProfile(post.authorId) },
                                         {
@@ -217,7 +223,8 @@ fun HomeScreen(
                                                 mediaUrl = post.mediaUrl,
                                                 url = sharedContentUrl("post", post.id)
                                             )
-                                        }
+                                        },
+                                        canComment = canComment
                                     )
                                 }
                             }
@@ -273,6 +280,8 @@ fun HomeScreen(
                     )
                 ) {
                     CreateChoiceMenu(
+                        canStory = canStory,
+                        canPost = canPost,
                         onStory = {
                             showCreateMenu = false
                             onOpenCreateStory()
@@ -434,6 +443,8 @@ private fun EmptySection(text: String) {
 
 @Composable
 private fun CreateChoiceMenu(
+    canStory: Boolean = true,
+    canPost: Boolean = true,
     onStory: () -> Unit,
     onPost: () -> Unit
 ) {
@@ -449,7 +460,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onStory)
+                     .clickable(enabled = canStory, onClick = onStory).alpha(if (canStory) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -461,7 +472,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onPost)
+                     .clickable(enabled = canPost, onClick = onPost).alpha(if (canPost) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -474,7 +485,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -563,11 +574,40 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onLike) {
-                    Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
+                    Icon(
+                        imageVector = if (post.likedByCurrentUser) {
+                            Icons.Default.Favorite
+                        } else {
+                            Icons.Default.FavoriteBorder
+                        },
+                        contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen",
+                        tint = if (post.likedByCurrentUser) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
                 Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
-                IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
-                IconButton(onClick = onSave) { Icon(if (post.savedByCurrentUser) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Kaydet") }
+                IconButton(onClick = onComment, enabled = canComment) {
+                    Icon(Icons.Default.ChatBubbleOutline, "Yorumlar")
+                }
+                Text(post.commentsCount.toString(), style = MaterialTheme.typography.labelMedium)
+                IconButton(onClick = onSave) {
+                    Icon(
+                        imageVector = if (post.savedByCurrentUser) {
+                            Icons.Default.Bookmark
+                        } else {
+                            Icons.Default.BookmarkBorder
+                        },
+                        contentDescription = if (post.savedByCurrentUser) "Kaydedildi" else "Kaydet",
+                        tint = if (post.savedByCurrentUser) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
         }
     }

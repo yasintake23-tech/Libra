@@ -1,6 +1,7 @@
 package com.libra.app.ui.navigation
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -34,6 +35,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.AdminPermissionSet
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
@@ -62,6 +64,8 @@ import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.ui.components.LoadingView
+import com.libra.app.feature.update.AppUpdatePrompt
+import com.libra.app.feature.update.AppUpdateViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -110,6 +114,30 @@ fun AppNavHost(
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
+    val updateVm: AppUpdateViewModel = viewModel()
+    val updateState by updateVm.uiState.collectAsState()
+
+    // Keep the update prompt above all authentication/profile early returns.
+    // Release metadata is public, so this works for signed-out and incomplete profiles too.
+    updateState.release?.let { release ->
+        AppUpdatePrompt(
+            release = release,
+            progress = updateState.progress,
+            downloading = updateState.downloading,
+            error = updateState.error,
+            forceUpdate = release.forceUpdate,
+            onDownload = { updateVm.download(context) },
+            onDismiss = updateVm::dismissUpdate,
+            onClearError = updateVm::clearError,
+            downloadedFile = updateState.downloadedFile
+        )
+    }
+
+    // Update checks must run independently of authentication/profile setup.
+    // This lets a fresh install see a mandatory/new release before login or registration.
+    LaunchedEffect(currentUser?.uid) {
+        updateVm.checkForUpdate()
+    }
 
     LaunchedEffect(currentUser?.uid, selectedTab) {
         if (selectedTab == BottomNavTab.DISCOVER && currentUser?.uid?.isNotBlank() == true) {
@@ -127,19 +155,10 @@ fun AppNavHost(
                         GoogleAuthHelper.launchGoogleSignIn(
                             context = context,
                             onSuccess = { token, name, email, photo ->
-                                authViewModel.signInWithGoogle(
-                                    token,
-                                    name,
-                                    email,
-                                    photo
-                                )
+                                authViewModel.signInWithGoogle(token, name, email, photo)
                             },
                             onError = {
-                                Toast.makeText(
-                                    context,
-                                    it,
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(context, it, Toast.LENGTH_LONG).show()
                             }
                         )
                     }
@@ -152,10 +171,44 @@ fun AppNavHost(
     }
 
     val profile = currentUser
-
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
         return
+    }
+
+    // The app uses state-based navigation, so Android's system back button
+    // must unwind those states explicitly instead of finishing the Activity.
+    BackHandler {
+        when {
+            selectedBook != null -> selectedBook = null
+            createContentMode != null -> createContentMode = null
+            selectedWritingBook != null -> selectedWritingBook = null
+            selectedPublicProfile != null -> selectedPublicProfile = null
+            showNotifications -> showNotifications = false
+            showCommunityServers -> showCommunityServers = false
+            showGlobalChat -> showGlobalChat = false
+            showAdminPanel -> showAdminPanel = false
+            showProfileEdit -> showProfileEdit = false
+            showSettings -> showSettings = false
+            selectedDirectUser != null -> selectedDirectUser = null
+            selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
+            else -> {
+                // No in-app screen is open. Let Android finish the Activity.
+            }
+        }
+    }
+
+    var hasAdminAccess by remember(profile.uid) { mutableStateOf(profile.uid == LIBRA_ADMIN_UID) }
+    var adminPermissions by remember(profile.uid) { mutableStateOf(AdminPermissionSet()) }
+    LaunchedEffect(profile.uid) {
+        if (profile.uid == LIBRA_ADMIN_UID) {
+            hasAdminAccess = true
+            adminPermissions = AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true)
+        } else {
+            val role = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
+            hasAdminAccess = role != null
+            adminPermissions = role?.permissions ?: AdminPermissionSet()
+        }
     }
 
     createContentMode?.let { mode ->
@@ -166,32 +219,20 @@ fun AppNavHost(
             isPosting = vm.isPosting.collectAsState().value,
             error = vm.postError.collectAsState().value,
             onPublishPost = { title, text, tags, mediaUrl, mediaType ->
-                vm.createRichPost(
-                    title = title,
-                    text = text,
-                    tags = tags,
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
-                    onComplete = { success ->
-                        if (success && mode == CreateContentMode.POST) {
-                            createContentMode = null
-                            selectedTab = BottomNavTab.HOME
-                        }
+                vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
+                    if (success && mode == CreateContentMode.POST) {
+                        createContentMode = null
+                        selectedTab = BottomNavTab.HOME
                     }
-                )
+                }
             },
             onPublishStory = { text, mediaUrl, mediaType ->
-                vm.createStory(
-                    text = text,
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
-                    onComplete = { success ->
-                        if (success) {
-                            createContentMode = null
-                            selectedTab = BottomNavTab.HOME
-                        }
+                vm.createStory(text, mediaUrl, mediaType) { success ->
+                    if (success) {
+                        createContentMode = null
+                        selectedTab = BottomNavTab.HOME
                     }
-                )
+                }
             },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
@@ -204,18 +245,11 @@ fun AppNavHost(
         val chapters by writeVm.editorChapters.collectAsState()
         val isSaving by writeVm.editorSaving.collectAsState()
         val editorError by writeVm.editorError.collectAsState()
-
         BookEditorScreen(
-            book = book,
-            chapters = chapters,
-            isSaving = isSaving,
-            error = editorError,
-            onLoadChapters = writeVm::loadChapters,
-            onSaveBook = writeVm::saveBook,
-            onSaveChapter = writeVm::saveChapter,
-            onPublish = writeVm::publishBook,
-            onClearError = writeVm::clearEditorError,
-            onBack = { selectedWritingBook = null },
+            book = book, chapters = chapters, isSaving = isSaving, error = editorError,
+            onLoadChapters = writeVm::loadChapters, onSaveBook = writeVm::saveBook,
+            onSaveChapter = writeVm::saveChapter, onPublish = writeVm::publishBook,
+            onClearError = writeVm::clearEditorError, onBack = { selectedWritingBook = null },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -239,103 +273,63 @@ fun AppNavHost(
     }
 
     if (showNotifications) {
-        NotificationsScreen(
-            onBack = { showNotifications = false },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
+        NotificationsScreen(onBack = { showNotifications = false }, onOpenProfile = ::openPublicProfile, modifier = modifier.fillMaxSize())
         return
     }
-
     if (showCommunityServers) {
-        CommunityServersScreen(
-            onBack = { showCommunityServers = false },
-            modifier = modifier.fillMaxSize()
-        )
+        CommunityServersScreen(onBack = { showCommunityServers = false }, modifier = modifier.fillMaxSize())
         return
     }
-
     if (showGlobalChat) {
         GlobalChatScreen(
-            onBack = { showGlobalChat = false },
-            onOpenProfile = ::openPublicProfile,
+            onBack = { showGlobalChat = false }, onOpenProfile = ::openPublicProfile,
+            canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
             modifier = modifier.fillMaxSize()
         )
         return
     }
-
     if (showAdminPanel) {
-        if (profile.uid == LIBRA_ADMIN_UID) {
-            AdminPanelScreen(
-                onBack = { showAdminPanel = false },
-                modifier = modifier.fillMaxSize()
-            )
+        if (hasAdminAccess) {
+            AdminPanelScreen(onBack = { showAdminPanel = false }, permissions = adminPermissions, modifier = modifier.fillMaxSize())
         } else {
             showAdminPanel = false
         }
         return
     }
-
     if (showProfileEdit) {
         ProfileEditScreen(
             profile = profile,
-            onSaved = {
-                showProfileEdit = false
-                authViewModel.checkSession()
-            },
+            onSaved = { showProfileEdit = false; authViewModel.checkSession() },
             onBack = { showProfileEdit = false },
             modifier = modifier.fillMaxSize()
         )
         return
     }
-
     if (showSettings) {
         SettingsScreen(
-            profile = profile,
-            darkTheme = darkTheme,
-            onDarkThemeChanged = onDarkThemeChanged,
+            profile = profile, darkTheme = darkTheme, onDarkThemeChanged = onDarkThemeChanged,
             onEditProfile = { showProfileEdit = true },
-            onSignOut = {
-                showSettings = false
-                authViewModel.signOut()
-                selectedTab = BottomNavTab.HOME
-            },
-            onBack = { showSettings = false },
-            modifier = modifier.fillMaxSize()
+            onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+            onBack = { showSettings = false }, modifier = modifier.fillMaxSize()
         )
         return
     }
-
     if (!profile.profileCompleted) {
-        ProfileSetupScreen(
-            profile = profile,
-            onCompleted = authViewModel::checkSession,
-            modifier = modifier.fillMaxSize()
-        )
+        ProfileSetupScreen(profile = profile, onCompleted = authViewModel::checkSession, modifier = modifier.fillMaxSize())
         return
     }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
-        bottomBar = {
-            LibraBottomBar(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it }
-            )
-        },
+        bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize()
     ) { paddingValues ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
+        Box(Modifier.fillMaxSize().padding(paddingValues)) {
             when (selectedTab) {
                 BottomNavTab.HOME -> {
                     val vm: HomeViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-
                     HomeScreen(
                         state,
                         { selectedBook = it },
@@ -347,157 +341,78 @@ fun AppNavHost(
                         { showNotifications = true },
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
-                        onOpenCreatePost = { createContentMode = CreateContentMode.POST },
-                        onOpenCreateStory = { createContentMode = CreateContentMode.STORY },
-                        onToggleLike = vm::toggleLike,
-                        onToggleSave = vm::toggleSave,
-                        onDeletePost = vm::deletePost,
-                        onOpenComments = vm::openComments,
-                        comments = vm.comments.collectAsState().value,
-                        onAddComment = vm::addComment,
-                        onDeleteComment = vm::deleteComment,
-                        isCommenting = vm.isCommenting.collectAsState().value,
-                        commentError = vm.commentError.collectAsState().value,
-                        onClearCommentError = vm::clearCommentError,
-                        onCloseComments = vm::closeComments,
-                        isPosting = vm.isPosting.collectAsState().value,
-                        postError = vm.postError.collectAsState().value,
-                        onClearPostError = vm::clearPostError,
+                        onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                        onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                        canComment = profile.moderation.canComment,
+                        onToggleLike = vm::toggleLike, onToggleSave = vm::toggleSave,
+                        onDeletePost = vm::deletePost, onOpenComments = vm::openComments,
+                        comments = vm.comments.collectAsState().value, onAddComment = vm::addComment,
+                        onDeleteComment = vm::deleteComment, isCommenting = vm.isCommenting.collectAsState().value,
+                        commentError = vm.commentError.collectAsState().value, onClearCommentError = vm::clearCommentError,
+                        onCloseComments = vm::closeComments, isPosting = vm.isPosting.collectAsState().value,
+                        postError = vm.postError.collectAsState().value, onClearPostError = vm::clearPostError,
                         onOpenProfile = ::openPublicProfile,
                         onStoryReply = { story ->
                             scope.launch {
                                 when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        result.data?.let {
-                                            selectedDirectUser = it
-                                            selectedTab = BottomNavTab.DM
-                                            scope.launch {
-                                                val shared = SharedContent(
-                                                    type = "story",
-                                                    id = story.id,
-                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
-                                                    text = story.text,
-                                                    authorId = story.authorId,
-                                                    authorName = story.authorName,
-                                                    mediaUrl = story.mediaUrl,
-                                                    url = sharedContentUrl("story", story.id)
-                                                )
-                                                ServiceLocator.chatRepository.sendDirectMessage(
-                                                    recipientId = story.authorId,
-                                                    text = "Hikâyenden bahsetti.",
-                                                    sharedContent = shared
-                                                )
-                                            }
-                                        }
+                                    is com.libra.app.core.result.AppResult.Success -> result.data?.let {
+                                        selectedDirectUser = it
+                                        selectedTab = BottomNavTab.DM
+                                        val shared = SharedContent(
+                                            type = "story", id = story.id,
+                                            title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                            text = story.text, authorId = story.authorId, authorName = story.authorName,
+                                            mediaUrl = story.mediaUrl, url = sharedContentUrl("story", story.id)
+                                        )
+                                        ServiceLocator.chatRepository.sendDirectMessage(
+                                            recipientId = story.authorId, text = "Hikâyenden bahsetti.", sharedContent = shared
+                                        )
                                     }
-                                    is com.libra.app.core.result.AppResult.Error -> {
+                                    is com.libra.app.core.result.AppResult.Error ->
                                         Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
-                                    }
                                 }
                             }
                         },
-                        onStoryLike = vm::toggleStoryLike,
-                        onStoriesRefresh = vm::refreshStories
+                        onStoryLike = vm::toggleStoryLike, onStoriesRefresh = vm::refreshStories
                     )
                 }
-
-                BottomNavTab.DISCOVER -> {
-                    FriendsScreen(
-                        friendsState,
-                        friendsVm::updateSearchQuery,
-                        { user ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        if (result.data != null) {
-                                            selectedPublicProfile = result.data
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Bu kullanıcı artık mevcut değil.",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                    is com.libra.app.core.result.AppResult.Error -> {
-                                        Toast.makeText(
-                                            context,
-                                            "Kullanıcı profili yenilenemedi.",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                            }
-                        },
-                        { user ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        if (result.data != null) selectedPublicProfile = result.data
-                                    }
-                                    is com.libra.app.core.result.AppResult.Error -> {
-                                        Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        },
-                        friendsVm::loadSocialData
-                    )
-                }
-
+                BottomNavTab.DISCOVER -> FriendsScreen(
+                    friendsState, friendsVm::updateSearchQuery,
+                    { user -> scope.launch { when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
+                        is com.libra.app.core.result.AppResult.Success -> if (result.data != null) selectedPublicProfile = result.data else Toast.makeText(context, "Bu kullanıcı artık mevcut değil.", Toast.LENGTH_SHORT).show()
+                        is com.libra.app.core.result.AppResult.Error -> Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
+                    }}},
+                    { user -> scope.launch { when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
+                        is com.libra.app.core.result.AppResult.Success -> if (result.data != null) selectedPublicProfile = result.data
+                        is com.libra.app.core.result.AppResult.Error -> Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
+                    }}},
+                    friendsVm::loadSocialData
+                )
                 BottomNavTab.WRITE -> {
                     val state by writeVm.uiState.collectAsState()
-
-                    WriteScreen(
-                        state,
-                        writeVm::createNewBook,
-                        { selectedWritingBook = it },
-                        writeVm::loadMyBooks
-                    )
+                    WriteScreen(state, writeVm::createNewBook, { selectedWritingBook = it }, writeVm::loadMyBooks)
                 }
-
-                BottomNavTab.DM -> {
-                    DirectMessagesScreen(
-                        onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
-                        onGlobalChatClick = {
-                            showGlobalChat = true
-                        },
-                        initialUser = selectedDirectUser,
-                        onInitialUserConsumed = { selectedDirectUser = null },
-                        onOpenProfile = ::openPublicProfile,
-                        onServersClick = {
-                            showCommunityServers = true
-                        }
-                    )
-                }
-
+                BottomNavTab.DM -> DirectMessagesScreen(
+                    onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                    onGlobalChatClick = { showGlobalChat = true },
+                    initialUser = selectedDirectUser, onInitialUserConsumed = { selectedDirectUser = null },
+                    onOpenProfile = ::openPublicProfile, canMessage = profile.moderation.canMessage,
+                    onServersClick = { showCommunityServers = true }
+                )
                 BottomNavTab.LIBRARY -> {
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-
-                    LibraryScreen(
-                        state,
-                        vm::loadShelf,
-                        vm::updateSearchQuery,
-                        { selectedBook = it },
-                        { selectedTab = BottomNavTab.WRITE },
-                        { vm.loadShelf(ShelfType.READING) }
-                    )
+                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
                 }
-
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-
                     ProfileScreen(
                         state,
-                        {
-                            authViewModel.signOut()
-                            selectedTab = BottomNavTab.HOME
-                        },
+                        { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
                         vm::loadProfile,
                         onSettingsClick = { showSettings = true },
-                        onAdminClick = if (profile.uid == LIBRA_ADMIN_UID) { { showAdminPanel = true } } else null
+                        onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null
                     )
                 }
             }
@@ -507,39 +422,17 @@ fun AppNavHost(
     selectedBook?.let { book ->
         AlertDialog(
             onDismissRequest = { selectedBook = null },
-            title = {
-                Text(
-                    book.title,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-            },
+            title = { Text(book.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column {
-                    Text(
-                        "Yazar: " + book.authorName,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text("Yazar: " + book.authorName, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        book.category.displayName,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    Text(book.category.displayName, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        book.description.ifBlank {
-                            "Bu kitap için henüz açıklama eklenmedi."
-                        }
-                    )
+                    Text(book.description.ifBlank { "Bu kitap için henüz açıklama eklenmedi." })
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { selectedBook = null }) {
-                    Text("Kapat")
-                }
-            }
+            confirmButton = { TextButton(onClick = { selectedBook = null }) { Text("Kapat") } }
         )
     }
 }

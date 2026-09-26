@@ -31,10 +31,10 @@ interface ChatRepository {
     suspend fun toggleDirectMessageReaction(conversationId: String, messageId: String, emoji: String): AppResult<Unit>
     suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit>
 
-    fun observeServerMessages(serverId: String, limit: Long = 100): Flow<AppResult<List<ServerMessage>>>
-    suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
-    suspend fun sendServerMediaMessage(serverId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: ServerMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
-    suspend fun editServerMessage(serverId: String, messageId: String, text: String): AppResult<Unit>
-    suspend fun deleteServerMessage(serverId: String, messageId: String): AppResult<Unit>
-    suspend fun toggleServerMessageReaction(serverId: String, messageId: String, emoji: String): AppResult<Unit>
+    fun observeServerMessages(serverId: String, limit: Long = 100, channelId: String = ""): Flow<AppResult<List<ServerMessage>>>
+    suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>
+    suspend fun sendServerMediaMessage(serverId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>
+    suspend fun editServerMessage(serverId: String, messageId: String, text: String, channelId: String = ""): AppResult<Unit>
+    suspend fun deleteServerMessage(serverId: String, messageId: String, channelId: String = ""): AppResult<Unit>
+    suspend fun toggleServerMessageReaction(serverId: String, messageId: String, emoji: String, channelId: String = ""): AppResult<Unit>
 }

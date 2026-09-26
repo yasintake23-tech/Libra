@@ -1,6 +1,7 @@
 package com.libra.app.data.post
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -86,6 +87,9 @@ class FirebasePostRepositoryImpl(
                                 mediaType = data["mediaType"] as? String ?: "",
                                 tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
                                 likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: runCatching {
+                                    document.reference.collection("comments").count().get(AggregateSource.SERVER).await().count.toInt()
+                                }.getOrDefault(0),
                                 likedByCurrentUser = document.id in likedIds,
                                 savedByCurrentUser = document.id in savedIds,
                                 createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
@@ -149,6 +153,7 @@ class FirebasePostRepositoryImpl(
                     "mediaType" to post.mediaType,
                     "tags" to post.tags,
                     "likesCount" to 0,
+                    "commentsCount" to 0,
                     "createdAt" to post.createdAt
                 )
             ).await()
@@ -283,6 +288,9 @@ class FirebasePostRepositoryImpl(
         return try {
             val profile = (userRepository.getUserProfileFresh(authorId) as? AppResult.Success)?.data
                 ?: return AppResult.Error(AppError.Database("Profil bilgileri alınamadı."))
+            if (!profile.moderation.canComment) {
+                return AppResult.Error(AppError.Auth("Yorum yapma yetkiniz geçici olarak kısıtlandı."))
+            }
             val ref = postsRef.document(postId).collection("comments").document()
             val comment = PostComment(
                 id = ref.id,
@@ -295,6 +303,10 @@ class FirebasePostRepositoryImpl(
                 createdAt = System.currentTimeMillis()
             )
             ref.set(comment).await()
+            postsRef.document(postId).update(
+                "commentsCount",
+                com.google.firebase.firestore.FieldValue.increment(1)
+            ).await()
             val postSnapshot = postsRef.document(postId).get().await()
             val recipientId = postSnapshot.getString("authorId").orEmpty()
             if (recipientId.isNotBlank() && recipientId != authorId) {
@@ -330,6 +342,10 @@ class FirebasePostRepositoryImpl(
                 return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
             }
             ref.delete().await()
+            postsRef.document(postId).update(
+                "commentsCount",
+                com.google.firebase.firestore.FieldValue.increment(-1)
+            ).await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum silinemedi.", e))

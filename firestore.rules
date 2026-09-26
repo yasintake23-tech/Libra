@@ -2,11 +2,38 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isRootAdmin() { return request.auth != null && request.auth.uid == "ZBkz2js9plg07zrny2PzLW80X3i2"; }
+    function hasAdminPermission(permission) { return isRootAdmin() || (request.auth != null && get(/databases/$(database)/documents/adminRoles/$(request.auth.uid)).data.permissions[permission] == true); }
+
     match /users/{uid} {
       allow read: if request.auth != null;
 
       allow create: if request.auth != null
         && request.auth.uid == uid;
+
+      // First-time profile completion is a one-time transition from the
+      // auth-created placeholder profile. It needs to be able to set the
+      // username/display name and mark profileCompleted=true without being
+      // subject to the normal 180-day/30-day edit limits.
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && resource.data.profileCompleted == false
+        && request.resource.data.profileCompleted == true
+        && request.resource.data.username is string
+        && request.resource.data.username.matches("^[a-z0-9._]{3,20}$")
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName",
+          "username",
+          "bio",
+          "profileImageUrl",
+          "email",
+          "profileCompleted",
+          "updatedAt"
+        ]);
 
       allow update: if request.auth != null
         && request.auth.uid == uid
@@ -61,6 +88,25 @@ service cloud.firestore {
         );
 
       allow delete: if request.auth != null && request.auth.uid == uid;
+      allow update: if hasAdminPermission("editProfiles") && request.resource.data.uid == resource.data.uid;
+      allow update: if hasAdminPermission("manageBans") && request.resource.data.uid == resource.data.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["moderation","updatedAt"]);
+    }
+
+    match /appUpdates/{releaseId} {
+      // Release metadata is intentionally public so update checks can run
+      // before authentication/profile setup.
+      allow read: if true;
+      allow create, update, delete: if hasAdminPermission("manageUpdates");
+    }
+
+    match /adminRoles/{uid} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isRootAdmin() || (hasAdminPermission("manageAdminRoles") && uid != request.auth.uid);
+    }
+
+    match /cosmeticRoles/{roleId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if hasAdminPermission("manageCosmetics");
     }
 
     match /usernames/{username} {
@@ -96,9 +142,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /{path=**}/members/{uid} {
+      allow read: if request.auth != null && uid == request.auth.uid;
+    }
+
     match /communityServers/{serverId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.serverCreationDisabled
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 2
@@ -120,16 +171,48 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
           && uid != request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role"])
-          && request.resource.data.role in ["ADMIN", "MEMBER"];
+          && request.resource.data.role is string;
         allow delete: if request.auth != null
           && (uid == request.auth.uid
             || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
+      }
+
+      match /roles/{roleId} {
+        allow read: if request.auth != null;
+        allow create, update, delete: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+      }
+
+      match /bans/{uid} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+        allow create, update, delete: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+      }
+
+      match /categories/{categoryId} {
+        allow read: if request.auth != null;
+        allow create, update, delete: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+      }
+
+      match /channels/{channelId} {
+        allow read: if request.auth != null;
+        allow create, update, delete: if request.auth != null
+          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+
+        match /permissions/{permissionId} {
+          allow read: if request.auth != null;
+          allow create, update, delete: if request.auth != null
+            && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+        }
       }
     }
 
     match /stories/{storyId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.storyDisabled
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 500
@@ -141,7 +224,7 @@ service cloud.firestore {
         && request.resource.data.expiresAt <= request.resource.data.createdAt + 86400000;
       allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
       allow update: if request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount", "commentsCount"])
         && request.resource.data.likesCount is number
         && request.resource.data.likesCount >= 0;
       
@@ -157,6 +240,7 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
+        && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.postingDisabled
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.authorName is string
         && request.resource.data.authorUsername is string
@@ -176,7 +260,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount"])
         && request.resource.data.likesCount is number
         && request.resource.data.likesCount >= 0
-        && request.resource.data.likesCount <= 1000000;
+        && request.resource.data.likesCount <= 1000000
+        && request.resource.data.commentsCount is number
+        && request.resource.data.commentsCount >= 0
+        && request.resource.data.commentsCount <= 1000000;
       allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
 
       match /likes/{uid} {
@@ -191,6 +278,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
+          && !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.moderation.commentingDisabled
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0

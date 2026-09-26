@@ -250,6 +250,7 @@ fun DirectMessagesScreen(
     onInitialUserConsumed: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    canMessage: Boolean = true,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
@@ -280,6 +281,7 @@ fun DirectMessagesScreen(
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
             onOpenProfile = { onOpenProfile(user.uid) },
+            canMessage = canMessage,
             modifier = modifier
         )
         return
@@ -469,6 +471,7 @@ private fun DirectConversationScreen(
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
     onOpenProfile: () -> Unit = {},
+    canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
@@ -818,18 +821,19 @@ private fun DirectConversationScreen(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(enabled = !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
+            IconButton(enabled = canMessage && !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
                 value = draft,
-                onValueChange = { if (it.length <= 1000) draft = it },
+                onValueChange = { if (canMessage && it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text(if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
+                enabled = canMessage,
+                placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
             IconButton(
-                enabled = !sending &&
+                enabled = canMessage && !sending &&
                     (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
                     !mediaUploading,
                 onClick = {
@@ -920,23 +924,120 @@ private fun SectionButton(text: String, selected: Boolean, onClick: () -> Unit, 
 
 @Composable
 private fun CommunityList(onGlobalChatClick: () -> Unit, onServersClick: () -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Topluluklar", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
-        item { CommunityCard(Icons.Default.Forum, "Genel Chat", "Tüm Libra üyelerinin ortak sohbeti.", onGlobalChatClick) }
-        item { CommunityCard(Icons.Default.Groups, "Sunucular", "Kitap türlerine göre topluluklar.", onServersClick) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column {
+                Text(
+                    "Topluluklar",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Sohbet et, toplulukları keşfet ve kendi alanlarını bul.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            CommunityFeatureCard(
+                icon = Icons.Default.Forum,
+                eyebrow = "ORTAK SOHBET",
+                title = "Genel Chat",
+                subtitle = "Tüm Libra üyeleriyle aynı sohbette buluş.",
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                iconContainerColor = MaterialTheme.colorScheme.background,
+                onClick = onGlobalChatClick
+            )
+        }
+
+        item {
+            CommunityFeatureCard(
+                icon = Icons.Default.Groups,
+                eyebrow = "TOPLULUKLARI KEŞFET",
+                title = "Sunucular",
+                subtitle = "Kitap, yazarlık ve ilgi alanlarına göre topluluklara katıl.",
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                iconContainerColor = MaterialTheme.colorScheme.background,
+                onClick = onServersClick,
+                large = true
+            )
+        }
     }
 }
 
 @Composable
-private fun CommunityCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) { Icon(icon, null) }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun CommunityFeatureCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    eyebrow: String,
+    title: String,
+    subtitle: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    iconContainerColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    large: Boolean = false
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(if (large) 24.dp else 20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = if (large) 22.dp else 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (large) 60.dp else 54.dp)
+                    .clip(CircleShape)
+                    .background(iconContainerColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (large) 28.dp else 25.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
             }
-            Icon(Icons.Default.ChevronRight, null)
+
+            Spacer(Modifier.width(14.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    eyebrow,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    maxLines = if (large) 3 else 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = "Aç",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
