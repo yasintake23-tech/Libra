@@ -34,6 +34,7 @@ fun ServerOwnerSettingsDialog(
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showRoleCreate by remember { mutableStateOf(false) }
+    var editRole by remember { mutableStateOf<ServerRoleDefinition?>(null) }
     var memberSearch by remember { mutableStateOf("") }
 
     LaunchedEffect(server.id) {
@@ -60,6 +61,7 @@ fun ServerOwnerSettingsDialog(
                             Text(role.name)
                             Text(role.permissions.joinToString(", ").ifBlank { "İzin yok" }, style = MaterialTheme.typography.labelSmall)
                         }
+                        TextButton(onClick = { editRole = role }) { Text("Düzenle") }
                         TextButton(onClick = {
                             scope.launch {
                                 when (val r = repo.deleteServerRole(server.id, role.id)) {
