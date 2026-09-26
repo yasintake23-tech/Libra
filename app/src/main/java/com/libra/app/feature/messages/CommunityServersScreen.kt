@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -406,6 +407,15 @@ private fun ServerRailItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val itemSize by animateDpAsState(
+        targetValue = if (selected) 50.dp else 44.dp,
+        label = "serverRailItemSize"
+    )
+    val corner by animateDpAsState(
+        targetValue = if (selected) 16.dp else 14.dp,
+        label = "serverRailItemCorner"
+    )
+
     Box(
         modifier = Modifier
             .width(64.dp)
@@ -417,7 +427,7 @@ private fun ServerRailItem(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(4.dp)
-                    .height(38.dp)
+                    .height(40.dp)
                     .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
                     .background(MaterialTheme.colorScheme.primary)
             )
@@ -425,8 +435,8 @@ private fun ServerRailItem(
 
         Box(
             modifier = Modifier
-                .size(if (selected) 48.dp else 44.dp)
-                .clip(RoundedCornerShape(if (selected) 16.dp else 14.dp))
+                .size(itemSize)
+                .clip(RoundedCornerShape(corner))
                 .background(
                     if (selected) MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.background
