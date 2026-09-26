@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import java.security.SecureRandom
 
 class FirebaseCommunityRepositoryImpl(
     private val userRepository: UserRepository,
@@ -28,6 +29,88 @@ class FirebaseCommunityRepositoryImpl(
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val serversRef get() = firestore.collection("communityServers")
+    private val inviteRandom = SecureRandom()
+    private val inviteAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+    private fun normalizeInviteKey(input: String): String {
+        return input.trim()
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .removePrefix("libra.sc/")
+            .trim('/')
+            .take(32)
+    }
+
+    private fun generateInviteKey(): String {
+        return buildString(8) {
+            repeat(8) { append(inviteAlphabet[inviteRandom.nextInt(inviteAlphabet.length)]) }
+        }
+    }
+
+    private suspend fun createUniqueInviteKey(): String {
+        repeat(8) {
+            val candidate = generateInviteKey()
+            val exists = serversRef.whereEqualTo("inviteKey", candidate).limit(1).get().await()
+            if (exists.isEmpty) return candidate
+        }
+        throw IllegalStateException("Sunucu davet anahtarı üretilemedi.")
+    }
+
+    override suspend fun findCommunityServerByInviteKey(
+        inviteKey: String
+    ): AppResult<CommunityServer> {
+        val cleanKey = normalizeInviteKey(inviteKey)
+        if (cleanKey.length != 8) {
+            return AppResult.Error(AppError.Validation("Geçerli bir sunucu anahtarı yaz. Örnek: libra.sc/Je9jehowm"))
+        }
+
+        return try {
+            val snapshot = serversRef
+                .whereEqualTo("inviteKey", cleanKey)
+                .limit(1)
+                .get()
+                .await()
+
+            val doc = snapshot.documents.firstOrNull()
+                ?: return AppResult.Error(AppError.NotFound("Bu anahtarla eşleşen bir sunucu bulunamadı."))
+
+            val server = doc.toObject(CommunityServer::class.java)?.copy(id = doc.id)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+
+            if (isServerBanned(server.id) is AppResult.Success && (isServerBanned(server.id) as AppResult.Success<Boolean>).data) {
+                return AppResult.Error(AppError.Auth("Bu sunucuya katılmana izin verilmiyor."))
+            }
+
+            AppResult.Success(server)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu anahtarı aranamadı.", e))
+        }
+    }
+
+    override suspend fun ensureCommunityServerInviteKey(serverId: String): AppResult<String> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (serverId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+
+        return try {
+            val ref = serversRef.document(serverId)
+            val server = ref.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi davet anahtarını oluşturabilir."))
+            }
+
+            if (server.inviteKey.isNotBlank()) {
+                return AppResult.Success(server.inviteKey)
+            }
+
+            val key = createUniqueInviteKey()
+            ref.update("inviteKey", key).await()
+            AppResult.Success(key)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu anahtarı oluşturulamadı.", e))
+        }
+    }
 
     override fun observeCommunityServers(): Flow<AppResult<List<CommunityServer>>> = callbackFlow {
         val registration = serversRef
@@ -74,12 +157,14 @@ class FirebaseCommunityRepositoryImpl(
 
             val serverRef = serversRef.document()
             val now = System.currentTimeMillis()
+            val inviteKey = createUniqueInviteKey()
             val server = CommunityServer(
                 id = serverRef.id,
                 name = cleanName,
                 description = cleanDescription,
                 ownerId = user.uid,
                 createdAt = now,
+                inviteKey = inviteKey,
                 avatarUrl = "",
                 bannerUrl = ""
             )
