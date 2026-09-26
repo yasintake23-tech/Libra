@@ -1841,32 +1841,91 @@ private fun ServerChatScreen(
     if (showMembers) {
         AlertDialog(
             onDismissRequest = { showMembers = false },
-            title = { Text("Üyeler (${members.size})") },
+            title = {
+                Column {
+                    Text("Üyeler", fontWeight = FontWeight.Bold)
+                    Text(
+                        "${members.size} kişi",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
             text = {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     items(members, key = { it.uid }) { member ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            UserAvatar(member.photoUrl, member.displayName.take(1).uppercase(), size = 38.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(member.displayName.ifBlank { member.uid }, fontWeight = FontWeight.Bold)
-                                Text(member.role, style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (server.ownerId == currentUid && member.uid != currentUid) {
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        communityRepository.setServerMemberRole(server.id, member.uid, if (member.role == "ADMIN") "MEMBER" else "ADMIN")
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                UserAvatar(
+                                    member.photoUrl,
+                                    member.displayName.take(1).uppercase(),
+                                    size = 40.dp
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        member.displayName.ifBlank { member.uid },
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    ) {
+                                        Text(
+                                            member.role,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
                                     }
-                                }) { Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap") }
-                                TextButton(onClick = {
-                                    scope.launch { communityRepository.removeServerMember(server.id, member.uid) }
-                                }) { Text("Çıkar") }
+                                }
+                                if (server.ownerId == currentUid && member.uid != currentUid) {
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    communityRepository.setServerMemberRole(
+                                                        server.id,
+                                                        member.uid,
+                                                        if (member.role == "ADMIN") "MEMBER" else "ADMIN"
+                                                    )
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 6.dp)
+                                        ) {
+                                            Text(if (member.role == "ADMIN") "Üyeye indir" else "Admin yap")
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    communityRepository.removeServerMember(server.id, member.uid)
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 6.dp)
+                                        ) {
+                                            Text("Çıkar")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showMembers = false }) { Text("Kapat") } }
+            confirmButton = {
+                TextButton(onClick = { showMembers = false }) { Text("Kapat") }
+            }
         )
     }
 }
