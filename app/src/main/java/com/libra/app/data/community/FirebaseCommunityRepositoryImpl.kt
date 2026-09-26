@@ -544,6 +544,23 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 
+    override suspend fun updateServerCategory(serverId: String, categoryId: String, name: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim()
+        if (clean.length !in 1..40) return AppResult.Error(AppError.Validation("Kategori adı 1-40 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori düzenleyebilir."))
+            serverRef.collection("categories").document(categoryId).update("name", clean).await()
+            val channels = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await()
+            val batch = firestore.batch()
+            channels.documents.forEach { batch.update(it.reference, "categoryName", clean) }
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Kategori güncellenemedi.", e)) }
+    }
+
     override suspend fun deleteServerCategory(serverId: String, categoryId: String): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
@@ -591,6 +608,37 @@ class FirebaseCommunityRepositoryImpl(
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Kanal oluşturulamadı.", e))
         }
+    }
+
+    override suspend fun updateServerChannel(serverId: String, channelId: String, name: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim().lowercase().replace(" ", "-")
+        if (clean.length !in 1..40) return AppResult.Error(AppError.Validation("Kanal adı 1-40 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal düzenleyebilir."))
+            serverRef.collection("channels").document(channelId).update("name", clean).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Kanal güncellenemedi.", e)) }
+    }
+
+    override suspend fun moveServerChannelToCategory(serverId: String, channelId: String, categoryId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal taşıyabilir."))
+            val category = serverRef.collection("categories").document(categoryId).get().await()
+            if (!category.exists()) return AppResult.Error(AppError.NotFound("Kategori bulunamadı."))
+            val channelRef = serverRef.collection("channels").document(channelId)
+            val channel = channelRef.get().await()
+            if (!channel.exists()) return AppResult.Error(AppError.NotFound("Kanal bulunamadı."))
+            if (channel.getString("categoryId").orEmpty() == categoryId) return AppResult.Success(Unit)
+            val targetCount = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await().size()
+            channelRef.update(mapOf("categoryId" to categoryId, "categoryName" to category.getString("name").orEmpty(), "position" to targetCount)).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Kanal taşınamadı.", e)) }
     }
 
     override suspend fun deleteServerChannel(serverId: String, channelId: String): AppResult<Unit> {
