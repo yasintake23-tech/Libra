@@ -61,5 +61,8 @@ data class ServerMessage(
     val replyToSenderId: String = "",
     val replyToSenderName: String = "",
     val reactions: Map<String, String> = emptyMap(),
-    val sharedContent: SharedContent? = null
+    val sharedContent: SharedContent? = null,
+    val mentionedUserIds: List<String> = emptyList(),
+    val mentionsEveryone: Boolean = false,
+    val mentionsHere: Boolean = false
 )
