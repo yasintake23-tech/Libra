@@ -63,8 +63,15 @@ class HomeViewModel(
     private var postsJob: Job? = null
     private var commentsJob: Job? = null
 
-    // Firestore's secondary like query can briefly lag behind the post listener.
-    private val pendingLikeOverrides = mutableMapOf<String, Boolean>()
+    // Firestore can update the like document and post counter in separate
+    // listener snapshots. Keep both the desired state and the optimistic
+    // counter until the listener has caught up with the whole operation.
+    private data class PendingLike(
+        val desiredLiked: Boolean,
+        val expectedCount: Int
+    )
+
+    private val pendingLikeOverrides = mutableMapOf<String, PendingLike>()
 
     init { loadHomeData() }
 
@@ -123,21 +130,26 @@ class HomeViewModel(
                     updateHome {
                         it.copy(
                             posts = result.data.map { post ->
-                                val desired = pendingLikeOverrides[post.id]
-                                when {
-                                    desired == null -> post
-                                    desired == post.likedByCurrentUser -> {
+                                val pending = pendingLikeOverrides[post.id]
+                                if (pending == null) {
+                                    post
+                                } else {
+                                    val caughtUp =
+                                        post.likedByCurrentUser == pending.desiredLiked &&
+                                            post.likesCount == pending.expectedCount
+
+                                    if (caughtUp) {
                                         pendingLikeOverrides.remove(post.id)
                                         post
+                                    } else {
+                                        // Firebase may deliver the like state before
+                                        // the counter (or vice versa). Keep the complete
+                                        // optimistic result until both match.
+                                        post.copy(
+                                            likedByCurrentUser = pending.desiredLiked,
+                                            likesCount = pending.expectedCount
+                                        )
                                     }
-                                    desired -> post.copy(
-                                        likedByCurrentUser = true,
-                                        likesCount = post.likesCount + 1
-                                    )
-                                    else -> post.copy(
-                                        likedByCurrentUser = false,
-                                        likesCount = (post.likesCount - 1).coerceAtLeast(0)
-                                    )
                                 }
                             }
                         )
@@ -280,17 +292,19 @@ class HomeViewModel(
         val current = (_uiState.value as? UiState.Success)?.data?.posts?.firstOrNull { it.id == post.id }
             ?: post
         val desiredLiked = !current.likedByCurrentUser
-        val currentCount = current.likesCount
+        val expectedCount =
+            (current.likesCount + if (desiredLiked) 1 else -1).coerceAtLeast(0)
 
-        // One local desired state per post. Firestore's listener is allowed to lag,
-        // but it can never overwrite the user's latest intent with an older snapshot.
-        pendingLikeOverrides[post.id] = desiredLiked
+        // Keep the complete optimistic result until Firestore confirms both
+        // the like state and the counter. This prevents a transient 7 -> 8 -> 7
+        // jump when the two Firestore listeners arrive in different snapshots.
+        pendingLikeOverrides[post.id] = PendingLike(desiredLiked, expectedCount)
         updateHome { data ->
             data.copy(
                 posts = data.posts.map { item ->
                     if (item.id != post.id) item else item.copy(
                         likedByCurrentUser = desiredLiked,
-                        likesCount = (currentCount + if (desiredLiked) 1 else -1).coerceAtLeast(0)
+                        likesCount = expectedCount
                     )
                 }
             )
@@ -300,7 +314,7 @@ class HomeViewModel(
             when (val result = postRepository.toggleLike(post.id, userId)) {
                 is AppResult.Error -> {
                     // Only roll back if this request is still the latest user intent.
-                    if (pendingLikeOverrides[post.id] == desiredLiked) {
+                    if (pendingLikeOverrides[post.id]?.desiredLiked == desiredLiked) {
                         pendingLikeOverrides.remove(post.id)
                         updateHome { data ->
                             data.copy(
@@ -317,8 +331,13 @@ class HomeViewModel(
                 }
                 is AppResult.Success -> {
                     // A slower earlier request must never overwrite a newer tap.
-                    if (pendingLikeOverrides[post.id] == desiredLiked) {
-                        pendingLikeOverrides[post.id] = result.data
+                    if (pendingLikeOverrides[post.id]?.desiredLiked == desiredLiked &&
+                        result.data != desiredLiked
+                    ) {
+                        pendingLikeOverrides[post.id] = PendingLike(
+                            desiredLiked = result.data,
+                            expectedCount = current.likesCount + if (result.data) 1 else -1
+                        )
                     }
                 }
             }
