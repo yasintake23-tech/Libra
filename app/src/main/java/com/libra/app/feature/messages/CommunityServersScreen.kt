@@ -60,16 +60,6 @@ fun CommunityServersScreen(
     val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
 
-    BackHandler(enabled = selectedServer != null || selectedChannel != null) {
-        if (selectedChannel != null) {
-            selectedChannel = null
-        } else {
-            selectedServer = null
-            categories = emptyList()
-            channels = emptyList()
-        }
-    }
-
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
     var selectedChannel by remember { mutableStateOf<ServerChannel?>(null) }
@@ -81,6 +71,16 @@ fun CommunityServersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var enteringServerId by remember { mutableStateOf<String?>(null) }
     var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
+
+    BackHandler(enabled = selectedServer != null || selectedChannel != null) {
+        if (selectedChannel != null) {
+            selectedChannel = null
+        } else {
+            selectedServer = null
+            categories = emptyList()
+            channels = emptyList()
+        }
+    }
 
     LaunchedEffect(Unit) {
         communityRepository.observeCommunityServers().collect { result ->
