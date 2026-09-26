@@ -66,6 +66,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -687,6 +689,8 @@ private fun ServerWorkspace(
     var editCategory by remember { mutableStateOf<ServerCategory?>(null) }
     var moveChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var inviteKey by remember(server.id) { mutableStateOf(server.inviteKey) }
+    var inviteCopied by remember { mutableStateOf(false) }
     var channelSearch by remember(server.id) { mutableStateOf("") }
     var collapsedCategories by remember(server.id) { mutableStateOf<Set<String>>(emptySet()) }
 
@@ -716,6 +720,20 @@ private fun ServerWorkspace(
             channelPermissions = map
         }
     }
+
+    LaunchedEffect(server.id) {
+        if (server.inviteKey.isNotBlank()) {
+            inviteKey = server.inviteKey
+        } else {
+            when (val result = repo.ensureCommunityServerInviteKey(server.id)) {
+                is AppResult.Success -> inviteKey = result.data
+                is AppResult.Error -> error = result.error.message
+            }
+        }
+    }
+
+    val inviteLink = inviteKey.takeIf { it.isNotBlank() }?.let { "libra.sc/$it" }
+    val clipboardManager = LocalClipboardManager.current
 
     val currentMember = members.firstOrNull { it.uid == currentUid }
     val currentRolePermissions = serverRoles.firstOrNull { it.id == currentMember?.role }?.permissions.orEmpty()
@@ -850,6 +868,65 @@ private fun ServerWorkspace(
                     if (isOwner) {
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Davet bağlantısı",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Bu bağlantıyı paylaşarak arkadaşlarını sunucuya davet edebilirsin.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                if (inviteLink != null) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                                        ) {
+                                            Text(
+                                                inviteLink,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        FilledTonalButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(inviteLink))
+                                                inviteCopied = true
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                        ) {
+                                            Text(if (inviteCopied) "Kopyalandı" else "Kopyala")
+                                        }
+                                    }
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(2.dp))
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                             shape = RoundedCornerShape(14.dp)
                         ) {
                             Text(
