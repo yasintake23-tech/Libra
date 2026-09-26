@@ -1595,9 +1595,12 @@ private fun ServerChatScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text(
+                                    val messageTime = remember(message.id, message.createdAt) {
                                         java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-                                            .format(java.util.Date(message.createdAt)),
+                                            .format(java.util.Date(message.createdAt))
+                                    }
+                                    Text(
+                                        messageTime,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
