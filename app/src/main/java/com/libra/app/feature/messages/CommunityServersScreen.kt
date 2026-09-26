@@ -311,6 +311,7 @@ private fun ServerWorkspace(
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val isOwner = currentUid == server.ownerId
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
+    var serverRoles by remember { mutableStateOf<List<ServerRoleDefinition>>(emptyList()) }
     var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
     var showInfo by remember { mutableStateOf(false) }
     var showServerSettings by remember { mutableStateOf(false) }
@@ -346,8 +347,9 @@ private fun ServerWorkspace(
     }
 
     val currentMember = members.firstOrNull { it.uid == currentUid }
+    val currentRolePermissions = serverRoles.firstOrNull { it.id == currentMember?.role }?.permissions.orEmpty()
     val visibleChannels = channels.filter { channel ->
-        isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember)
+        isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember, currentRolePermissions)
     }
 
     Row(modifier.fillMaxSize()) {
@@ -584,9 +586,13 @@ private fun ServerWorkspace(
 private fun canViewServerChannel(
     channel: ServerChannel,
     permissions: List<ServerChannelPermissionOverride>,
-    member: ServerMember?
+    member: ServerMember?,
+    rolePermissions: List<String>
 ): Boolean {
-    var allowed = channel.allowEveryoneView
+    var allowed = when (member?.role) {
+        "ADMIN", "OWNER", "MEMBER" -> channel.allowEveryoneView
+        else -> "VIEW_CHANNEL" in rolePermissions && channel.allowEveryoneView
+    }
     permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == "EVERYONE" }?.canView?.let { allowed = it }
     val role = member?.role.orEmpty()
     permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == role }?.canView?.let { allowed = it }
