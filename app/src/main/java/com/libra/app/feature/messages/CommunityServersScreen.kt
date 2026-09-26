@@ -141,8 +141,8 @@ fun CommunityServersScreen(
                 },
                 onCreateServer = { showCreate = true },
                 onServerClick = { target ->
-                    if (target.id == server.id) return@ServerRail
-                    scope.launch {
+                    if (target.id != server.id) {
+                        scope.launch {
                         when (val member = communityRepository.isServerMember(target.id)) {
                             is AppResult.Success -> {
                                 if (member.data) {
@@ -154,6 +154,7 @@ fun CommunityServersScreen(
                                 }
                             }
                             is AppResult.Error -> error = member.error.message
+                        }
                         }
                     }
                 }
