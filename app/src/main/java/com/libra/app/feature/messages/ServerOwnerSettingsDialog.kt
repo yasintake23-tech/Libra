@@ -72,6 +72,7 @@ fun ServerOwnerSettingsDialog(
                 }
 
                 item { Spacer(Modifier.height(8.dp)); Text("ÜYELER", style = MaterialTheme.typography.labelLarge) }
+                item { OutlinedTextField(memberSearch, { memberSearch = it }, Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, "Üye ara") }, placeholder = { Text("Üye ara") }) }
                 items(members.filter { it.uid != server.ownerId && (memberSearch.isBlank() || it.displayName.contains(memberSearch, true) || it.username.contains(memberSearch, true)) }, key = { "member-" + it.uid }) { member ->
                     Row(Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
