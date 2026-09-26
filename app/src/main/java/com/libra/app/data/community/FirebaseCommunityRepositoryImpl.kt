@@ -172,6 +172,25 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 
+    override suspend fun deleteCommunityServer(serverId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi silebilir."))
+            val batch = firestore.batch()
+            listOf("members", "categories", "channels", "roles", "bans").forEach { collection ->
+                serverRef.collection(collection).get().await().documents.forEach { batch.delete(it.reference) }
+            }
+            batch.delete(serverRef)
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sunucu silinemedi.", e))
+        }
+    }
+
     override suspend fun joinCommunityServer(serverId: String): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Sunucuya katılmak için giriş yapmalısın."))
@@ -185,6 +204,10 @@ class FirebaseCommunityRepositoryImpl(
             val serverSnapshot = serverRef.get().await()
             if (!serverSnapshot.exists()) {
                 return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
+            }
+
+            if (serverRef.collection("bans").document(user.uid).get().await().exists()) {
+                return AppResult.Error(AppError.Auth("Bu sunucudan yasaklandın."))
             }
 
             val memberRef = serverRef.collection("members").document(user.uid)
@@ -497,6 +520,56 @@ class FirebaseCommunityRepositoryImpl(
             awaitClose { registration.remove() }
         }
 
+    override fun observeServerRoles(serverId: String): Flow<AppResult<List<com.libra.app.domain.model.ServerRoleDefinition>>> = callbackFlow {
+        val registration = serversRef.document(serverId).collection("roles").orderBy("position", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Roller yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val roles = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching { doc.toObject(com.libra.app.domain.model.ServerRoleDefinition::class.java)?.copy(id = doc.id) }.getOrNull()
+                }
+                trySend(AppResult.Success(roles))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun createServerRole(serverId: String, name: String, permissions: List<String>): AppResult<com.libra.app.domain.model.ServerRoleDefinition> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim()
+        if (clean.length !in 1..30) return AppResult.Error(AppError.Validation("Rol adı 1-30 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol oluşturabilir."))
+            val ref = serverRef.collection("roles").document()
+            val position = serverRef.collection("roles").get().await().size()
+            val role = com.libra.app.domain.model.ServerRoleDefinition(ref.id, clean, permissions.distinct(), position)
+            ref.set(role).await()
+            AppResult.Success(role)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Rol oluşturulamadı.", e))
+        }
+    }
+
+    override suspend fun deleteServerRole(serverId: String, roleId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol silebilir."))
+            serverRef.collection("roles").document(roleId).delete().await()
+            val members = serverRef.collection("members").whereEqualTo("role", roleId).get().await()
+            val batch = firestore.batch()
+            members.documents.forEach { batch.update(it.reference, "role", "MEMBER") }
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Rol silinemedi.", e))
+        }
+    }
+
     override suspend fun setServerMemberRole(
         serverId: String,
         memberId: String,
@@ -504,10 +577,6 @@ class FirebaseCommunityRepositoryImpl(
     ): AppResult<Unit> {
         val user = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
-
-        if (role !in setOf("ADMIN", "MEMBER")) {
-            return AppResult.Error(AppError.Validation("Geçersiz rol."))
-        }
 
         return try {
             val serverRef = serversRef.document(serverId)
@@ -519,6 +588,9 @@ class FirebaseCommunityRepositoryImpl(
             }
             if (memberId == server.ownerId) {
                 return AppResult.Error(AppError.Validation("Sahibin rolü değiştirilemez."))
+            }
+            if (role != "MEMBER" && role != "ADMIN" && !serverRef.collection("roles").document(role).get().await().exists()) {
+                return AppResult.Error(AppError.Validation("Rol bulunamadı."))
             }
 
             serverRef.collection("members").document(memberId).update("role", role).await()
@@ -552,6 +624,80 @@ class FirebaseCommunityRepositoryImpl(
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Üye çıkarılamadı.", e))
         }
+    }
+
+    override suspend fun banServerMember(serverId: String, memberId: String, reason: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi üye yasaklayabilir."))
+            if (memberId == server.ownerId) return AppResult.Error(AppError.Validation("Sunucu sahibi yasaklanamaz."))
+            val memberRef = serverRef.collection("members").document(memberId)
+            val member = memberRef.get().await()
+            if (!member.exists()) return AppResult.Error(AppError.NotFound("Üye bulunamadı."))
+            val batch = firestore.batch()
+            batch.set(serverRef.collection("bans").document(memberId), mapOf(
+                "uid" to memberId,
+                "displayName" to member.getString("displayName").orEmpty(),
+                "username" to member.getString("username").orEmpty(),
+                "bannedAt" to System.currentTimeMillis(),
+                "reason" to reason.trim()
+            ))
+            batch.delete(memberRef)
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Üye yasaklanamadı.", e)) }
+    }
+
+    override suspend fun unbanServerMember(serverId: String, memberId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi yasağı kaldırabilir."))
+            serverRef.collection("bans").document(memberId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Yasak kaldırılamadı.", e)) }
+    }
+
+    override suspend fun moveServerCategory(serverId: String, categoryId: String, direction: Int): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val ref = serversRef.document(serverId)
+            val server = ref.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
+            val docs = ref.collection("categories").orderBy("position").get().await().documents
+            val index = docs.indexOfFirst { it.id == categoryId }; val target = index + direction
+            if (index < 0 || target !in docs.indices) return AppResult.Success(Unit)
+            val batch = firestore.batch()
+            docs.forEachIndexed { pos, doc -> batch.update(doc.reference, "position", when(pos) { index -> target; target -> index; else -> pos }) }
+            batch.commit().await(); AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Kategori taşınamadı.", e)) }
+    }
+
+    override suspend fun moveServerChannel(serverId: String, channelId: String, direction: Int): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val ref = serversRef.document(serverId)
+            val server = ref.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
+            val channel = ref.collection("channels").document(channelId).get().await()
+            if (!channel.exists()) return AppResult.Error(AppError.NotFound("Kanal bulunamadı."))
+            val categoryId = channel.getString("categoryId").orEmpty()
+            val docs = ref.collection("channels").whereEqualTo("categoryId", categoryId).orderBy("position").get().await().documents
+            val index = docs.indexOfFirst { it.id == channelId }; val target = index + direction
+            if (index < 0 || target !in docs.indices) return AppResult.Success(Unit)
+            val batch = firestore.batch()
+            docs.forEachIndexed { pos, doc -> batch.update(doc.reference, "position", when(pos) { index -> target; target -> index; else -> pos }) }
+            batch.commit().await(); AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Kanal taşınamadı.", e)) }
+    }
+
+    override suspend fun isServerBanned(serverId: String): AppResult<Boolean> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try { AppResult.Success(serversRef.document(serverId).collection("bans").document(user.uid).get().await().exists()) }
+        catch (e: Exception) { AppResult.Error(AppError.Database("Sunucu yasağı kontrol edilemedi.", e)) }
     }
 
     override suspend fun leaveCommunityServer(serverId: String): AppResult<Unit> {
