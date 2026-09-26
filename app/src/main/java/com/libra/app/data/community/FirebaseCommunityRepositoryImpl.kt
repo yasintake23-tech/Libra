@@ -870,6 +870,24 @@ class FirebaseCommunityRepositoryImpl(
         } catch (e: Exception) { AppResult.Error(AppError.Database("Üye yasaklanamadı.", e)) }
     }
 
+    override fun observeServerBans(serverId: String): Flow<AppResult<List<com.libra.app.domain.model.ServerBan>>> = callbackFlow {
+        val registration = serversRef.document(serverId).collection("bans")
+            .orderBy("bannedAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Yasaklar yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val bans = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(com.libra.app.domain.model.ServerBan::class.java)?.copy(uid = doc.id)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(bans))
+            }
+        awaitClose { registration.remove() }
+    }
+
     override suspend fun unbanServerMember(serverId: String, memberId: String): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
