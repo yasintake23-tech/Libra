@@ -160,11 +160,8 @@ service cloud.firestore {
         allow create: if request.auth != null
           && uid == request.auth.uid
           && request.resource.data.uid == request.auth.uid
-          && request.resource.data.role is string
-          && request.resource.data.role.size() <= 64
+          && request.resource.data.role in ["OWNER", "MEMBER"]
           && (request.resource.data.role == "MEMBER"
-            || request.resource.data.role == "OWNER"
-            || get(/databases/$(database)/documents/communityServers/$(serverId)/roles/$(request.resource.data.role)).data.name is string
             || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
         allow update: if request.auth != null
           && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
