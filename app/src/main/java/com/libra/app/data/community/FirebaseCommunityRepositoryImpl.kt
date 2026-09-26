@@ -321,6 +321,25 @@ class FirebaseCommunityRepositoryImpl(
         }
 
 
+    override suspend fun getChannelPermissions(
+        serverId: String,
+        channelId: String
+    ): AppResult<List<ServerChannelPermissionOverride>> {
+        return try {
+            val snapshot = serversRef.document(serverId).collection("channels")
+                .document(channelId).collection("permissions").get().await()
+            AppResult.Success(
+                snapshot.documents.mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(ServerChannelPermissionOverride::class.java)?.copy(id = doc.id)
+                    }.getOrNull()
+                }
+            )
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kanal izinleri okunamadı.", e))
+        }
+    }
+
     override fun observeChannelPermissions(
         serverId: String,
         channelId: String
