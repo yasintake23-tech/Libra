@@ -277,22 +277,21 @@ class HomeViewModel(
     }
     fun toggleLike(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+        val current = (_uiState.value as? UiState.Success)?.data?.posts?.firstOrNull { it.id == post.id }
+            ?: post
+        val desiredLiked = !current.likedByCurrentUser
+        val currentCount = current.likesCount
 
-        // Optimistic UI: update the heart state and count immediately.
-        // The Firestore listener will reconcile the final persisted state.
-        val previousLiked = post.likedByCurrentUser
-        val previousCount = post.likesCount
+        // One local desired state per post. Firestore's listener is allowed to lag,
+        // but it can never overwrite the user's latest intent with an older snapshot.
+        pendingLikeOverrides[post.id] = desiredLiked
         updateHome { data ->
             data.copy(
-                posts = data.posts.map { current ->
-                    if (current.id == post.id) {
-                        current.copy(
-                            likedByCurrentUser = !previousLiked,
-                            likesCount = (previousCount + if (previousLiked) -1 else 1).coerceAtLeast(0)
-                        )
-                    } else {
-                        current
-                    }
+                posts = data.posts.map { item ->
+                    if (item.id != post.id) item else item.copy(
+                        likedByCurrentUser = desiredLiked,
+                        likesCount = (currentCount + if (desiredLiked) 1 else -1).coerceAtLeast(0)
+                    )
                 }
             )
         }
@@ -300,24 +299,26 @@ class HomeViewModel(
         viewModelScope.launch {
             when (val result = postRepository.toggleLike(post.id, userId)) {
                 is AppResult.Error -> {
-                    // Roll back both the visual state and count if persistence fails.
-                    updateHome { data ->
-                        data.copy(
-                            posts = data.posts.map { current ->
-                                if (current.id == post.id) {
-                                    current.copy(
-                                        likedByCurrentUser = previousLiked,
-                                        likesCount = previousCount
-                                    )
-                                } else {
-                                    current
+                    // Only roll back if this request is still the latest user intent.
+                    if (pendingLikeOverrides[post.id] == desiredLiked) {
+                        pendingLikeOverrides.remove(post.id)
+                        updateHome { data ->
+                            data.copy(
+                                posts = data.posts.map { item ->
+                                    if (item.id == post.id) item.copy(
+                                        likedByCurrentUser = current.likedByCurrentUser,
+                                        likesCount = current.likesCount
+                                    ) else item
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                     _postError.value = result.error.message
                 }
-                is AppResult.Success -> Unit
+                is AppResult.Success -> {
+                    // Keep the override until the feed snapshot confirms it.
+                    pendingLikeOverrides[post.id] = result.data
+                }
             }
         }
     }
