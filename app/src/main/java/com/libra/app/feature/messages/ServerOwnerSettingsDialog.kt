@@ -200,7 +200,6 @@ fun ServerOwnerSettingsDialog(
                             }
                     ) {
                         Text("# " + channel.name, Modifier.weight(1f))
-                        Text("Basılı tut ve sürükle", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = { permissionChannel = channel }) { Text("İzin") }
                         TextButton(onClick = {
                             scope.launch {
