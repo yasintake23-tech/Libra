@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.di.ServiceLocator
@@ -32,6 +34,7 @@ fun ServerOwnerSettingsDialog(
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showRoleCreate by remember { mutableStateOf(false) }
+    var memberSearch by remember { mutableStateOf("") }
 
     LaunchedEffect(server.id) {
         repo.observeServerRoles(server.id).collect { result ->
@@ -69,7 +72,7 @@ fun ServerOwnerSettingsDialog(
                 }
 
                 item { Spacer(Modifier.height(8.dp)); Text("ÜYELER", style = MaterialTheme.typography.labelLarge) }
-                items(members.filter { it.uid != server.ownerId }, key = { "member-" + it.uid }) { member ->
+                items(members.filter { it.uid != server.ownerId && (memberSearch.isBlank() || it.displayName.contains(memberSearch, true) || it.username.contains(memberSearch, true)) }, key = { "member-" + it.uid }) { member ->
                     Row(Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
                             Text(member.displayName.ifBlank { member.username.ifBlank { member.uid } })
