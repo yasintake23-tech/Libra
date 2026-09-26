@@ -80,7 +80,10 @@ fun CommunityServersScreen(
     val pinPrefs = remember { context.getSharedPreferences("libra_server_pins", android.content.Context.MODE_PRIVATE) }
 
     var servers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
+    var joinedServers by remember { mutableStateOf<List<CommunityServer>>(emptyList()) }
     var pinnedServerIds by remember { mutableStateOf(pinPrefs.getStringSet("ids", emptySet()).orEmpty().toSet()) }
+    var inviteKeyInput by remember { mutableStateOf("") }
+    var inviteLookupLoading by remember { mutableStateOf(false) }
     var selectedServer by remember { mutableStateOf<CommunityServer?>(null) }
     var selectedChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var categories by remember { mutableStateOf<List<ServerCategory>>(emptyList()) }
@@ -91,8 +94,8 @@ fun CommunityServersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var enteringServerId by remember { mutableStateOf<String?>(null) }
     var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
-    val sortedServers = remember(servers, pinnedServerIds) {
-        servers.distinctBy { it.id }
+    val sortedServers = remember(joinedServers, pinnedServerIds) {
+        joinedServers.distinctBy { it.id }
             .sortedWith(
                 compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }
                     .thenByDescending { it.createdAt }
@@ -116,6 +119,21 @@ fun CommunityServersScreen(
                 is AppResult.Error -> error = result.error.message
             }
         }
+    }
+
+    LaunchedEffect(servers) {
+        if (servers.isEmpty()) {
+            joinedServers = emptyList()
+            return@LaunchedEffect
+        }
+
+        val joined = servers.filter { server ->
+            when (val result = communityRepository.isServerMember(server.id)) {
+                is AppResult.Success -> result.data
+                is AppResult.Error -> false
+            }
+        }
+        joinedServers = joined
     }
 
     LaunchedEffect(selectedServer?.id) {
@@ -209,62 +227,165 @@ fun CommunityServersScreen(
         return
     }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Column(Modifier.weight(1f)) {
-                Text("Sunucular", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text("Topluluklara göz at, katıl ve kendi kanallarında sohbet et.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, "Geri")
             }
-            IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "Sunucu oluştur") }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Sunucularım",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    "Katıldığın topluluklar burada.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            FilledTonalButton(onClick = { showCreate = true }) {
+                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Oluştur")
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
 
-        if (servers.isEmpty()) {
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Groups, null, modifier = Modifier.size(52.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text("Henüz sunucu yok.", fontWeight = FontWeight.Bold)
-                    Text("İlk topluluğu sen oluştur.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Text(
+                    "Bir sunucuya katıl",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Sunucu sahibinden aldığın özel anahtarı yaz.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = inviteKeyInput,
+                        onValueChange = { inviteKeyInput = it.take(40) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        placeholder = { Text("libra.sc/Je9jehowm") },
+                        label = { Text("Sunucu anahtarı") },
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    Button(
+                        enabled = inviteKeyInput.isNotBlank() && !inviteLookupLoading,
+                        onClick = {
+                            inviteLookupLoading = true
+                            error = null
+                            scope.launch {
+                                when (val result = communityRepository.findCommunityServerByInviteKey(inviteKeyInput)) {
+                                    is AppResult.Success -> {
+                                        previewIsMember = false
+                                        previewServer = result.data
+                                    }
+                                    is AppResult.Error -> error = result.error.message
+                                }
+                                inviteLookupLoading = false
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Text(if (inviteLookupLoading) "..." else "Bul")
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+
+        Text(
+            "Katıldığın sunucular",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+
+        error?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
+        if (sortedServers.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                )
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(26.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Default.Groups, null, modifier = Modifier.size(46.dp))
                     Spacer(Modifier.height(10.dp))
-                    Button(onClick = { showCreate = true }) { Text("Sunucu oluştur") }
+                    Text("Henüz bir sunucuya katılmadın.", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Bir davet anahtarıyla katılabilir veya kendi sunucunu oluşturabilirsin.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    FilledTonalButton(onClick = { showCreate = true }) {
+                        Text("Sunucu oluştur")
+                    }
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
                 items(sortedServers, key = { it.id }) { server ->
                     Card(
                         Modifier
                             .fillMaxWidth()
                             .clickable {
-                                scope.launch {
-                                    when (val member = communityRepository.isServerMember(server.id)) {
-                                        is AppResult.Success -> if (member.data) {
-                                            selectedServer = server
-                                            selectedChannel = null
-                                            communityRepository.ensureServerStructure(server.id)
-                                        } else {
-                                            previewIsMember = false
-                                            previewServer = server
-                                        }
-                                        is AppResult.Error -> error = member.error.message
-                                    }
-                                }
+                                selectedServer = server
+                                selectedChannel = null
+                                scope.launch { communityRepository.ensureServerStructure(server.id) }
                             },
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 Modifier
-                                    .size(52.dp)
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -304,37 +425,11 @@ fun CommunityServersScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Spacer(Modifier.height(3.dp))
-                                Text(
-                                    "Sunucu • Katılmak için dokun",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                             }
-                            Column(
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        val next = pinnedServerIds.toMutableSet()
-                                        if (!next.add(server.id)) next.remove(server.id)
-                                        pinnedServerIds = next.toSet()
-                                        pinPrefs.edit().putStringSet("ids", next).apply()
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                                ) {
-                                    Text(
-                                        if (pinnedServerIds.contains(server.id)) "Sabit" else "Sabitle",
-                                        style = MaterialTheme.typography.labelLarge
-                                    )
-                                }
-                                Icon(
-                                    Icons.Default.ChevronRight,
-                                    contentDescription = "Sunucuyu aç",
-                                    modifier = Modifier.padding(bottom = 2.dp)
-                                )
-                            }
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = "Sunucuyu aç"
+                            )
                         }
                     }
                 }
