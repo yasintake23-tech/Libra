@@ -57,6 +57,7 @@ private fun Modifier.longPressReorder(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerOwnerSettingsDialog(
     server: CommunityServer,
@@ -549,10 +550,10 @@ private fun ServerMembersPage(
         }
         items(members, key = { it.uid }) { member ->
             Surface(
-                Modifier.fillMaxWidth(),
+                onClick = { onManage(member) },
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                onClick = { onManage(member) }
+                color = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Row(Modifier.padding(14.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -637,10 +638,10 @@ private fun ServerMemberDetailPage(
 @Composable
 private fun RoleChoiceCard(name: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        Modifier.fillMaxWidth(),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        onClick = onClick
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(name, Modifier.weight(1f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
