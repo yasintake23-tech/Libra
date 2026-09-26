@@ -1,5 +1,6 @@
 package com.libra.app.feature.messages
 
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,11 +9,41 @@ import androidx.compose.runtime.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.*
 import kotlinx.coroutines.launch
+
+
+@Composable
+private fun RoleDragHandle(
+    itemKey: String,
+    onMove: (Int) -> Unit
+) {
+    var triggered by remember(itemKey) { mutableStateOf(false) }
+
+    Text(
+        text = "Basılı tut ve sürükle",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .pointerInput(itemKey) {
+                detectDragGesturesAfterLongPress(
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        if (!triggered && kotlin.math.abs(dragAmount.y) >= 18f) {
+                            triggered = true
+                            onMove(if (dragAmount.y < 0) -1 else 1)
+                        }
+                    },
+                    onDragEnd = { triggered = false },
+                    onDragCancel = { triggered = false }
+                )
+            }
+    )
+}
 
 @Composable
 fun ServerOwnerSettingsDialog(
@@ -69,22 +100,17 @@ fun ServerOwnerSettingsDialog(
                             Text(role.name)
                             Text(role.permissions.joinToString(", ").ifBlank { "İzin yok" }, style = MaterialTheme.typography.labelSmall)
                         }
-                        TextButton(onClick = {
-                            scope.launch {
-                                when (val r = repo.moveServerRole(server.id, role.id, -1)) {
-                                    is AppResult.Error -> onError(r.error.message)
-                                    is AppResult.Success -> Unit
+                        RoleDragHandle(
+                            itemKey = role.id,
+                            onMove = { direction ->
+                                scope.launch {
+                                    when (val r = repo.moveServerRole(server.id, role.id, direction)) {
+                                        is AppResult.Error -> onError(r.error.message)
+                                        is AppResult.Success -> Unit
+                                    }
                                 }
                             }
-                        }) { Text("↑") }
-                        TextButton(onClick = {
-                            scope.launch {
-                                when (val r = repo.moveServerRole(server.id, role.id, 1)) {
-                                    is AppResult.Error -> onError(r.error.message)
-                                    is AppResult.Success -> Unit
-                                }
-                            }
-                        }) { Text("↓") }
+                        )
                         TextButton(onClick = { editRole = role }) { Text("Düzenle") }
                         TextButton(onClick = {
                             scope.launch {
@@ -143,10 +169,27 @@ fun ServerOwnerSettingsDialog(
 
                 item { Spacer(Modifier.height(8.dp)); Text("KATEGORİLER", style = MaterialTheme.typography.labelLarge) }
                 items(categories, key = { "cat-" + it.id }) { category ->
-                    Row(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .pointerInput(category.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        if (kotlin.math.abs(dragAmount.y) >= 18f) {
+                                            scope.launch {
+                                                when (val r = repo.moveServerCategory(server.id, category.id, if (dragAmount.y < 0) -1 else 1)) {
+                                                    is AppResult.Error -> onError(r.error.message)
+                                                    is AppResult.Success -> Unit
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
                         Text(category.name, Modifier.weight(1f))
-                        TextButton(onClick = { scope.launch { repo.moveServerCategory(server.id, category.id, -1) } }) { Text("↑") }
-                        TextButton(onClick = { scope.launch { repo.moveServerCategory(server.id, category.id, 1) } }) { Text("↓") }
+                        Text("Basılı tut ve sürükle", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = {
                             scope.launch {
                                 when (val r = repo.deleteServerCategory(server.id, category.id)) {
@@ -160,10 +203,27 @@ fun ServerOwnerSettingsDialog(
 
                 item { Spacer(Modifier.height(8.dp)); Text("KANALLAR", style = MaterialTheme.typography.labelLarge) }
                 items(channels, key = { "channel-" + it.id }) { channel ->
-                    Row(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .pointerInput(channel.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        if (kotlin.math.abs(dragAmount.y) >= 18f) {
+                                            scope.launch {
+                                                when (val r = repo.moveServerChannel(server.id, channel.id, if (dragAmount.y < 0) -1 else 1)) {
+                                                    is AppResult.Error -> onError(r.error.message)
+                                                    is AppResult.Success -> Unit
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
                         Text("# " + channel.name, Modifier.weight(1f))
-                        TextButton(onClick = { scope.launch { repo.moveServerChannel(server.id, channel.id, -1) } }) { Text("↑") }
-                        TextButton(onClick = { scope.launch { repo.moveServerChannel(server.id, channel.id, 1) } }) { Text("↓") }
+                        Text("Basılı tut ve sürükle", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = { permissionChannel = channel }) { Text("İzin") }
                         TextButton(onClick = {
                             scope.launch {
