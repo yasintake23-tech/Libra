@@ -489,6 +489,16 @@ private fun ServerRailItem(
 }
 
 @Composable
+private fun InfoPill(value: String, label: String) {
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(value, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
 private fun ServerPreviewDialog(
     server: CommunityServer,
     isMember: Boolean,
@@ -871,12 +881,50 @@ private fun ServerWorkspace(
     if (showInfo) {
         AlertDialog(
             onDismissRequest = { showInfo = false },
-            title = { Text(server.name) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (server.avatarUrl.isNotBlank()) {
+                            AsyncImage(
+                                ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
+                                contentDescription = server.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(server.name, fontWeight = FontWeight.Bold)
+                        Text("Sunucu bilgileri", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(server.description.ifBlank { "Bu sunucunun henüz bir açıklaması yok." })
-                    Text("\${members.size} üye • \${channels.size} kanal • \${categories.size} kategori", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (isOwner) Text("Sunucu sahibi olarak kanal, kategori ve izinleri yönetebilirsin.", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        InfoPill(members.size.toString(), "üye")
+                        InfoPill(channels.size.toString(), "kanal")
+                        InfoPill(categories.size.toString(), "kategori")
+                    }
+                    if (isOwner) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(
+                                "Sunucu sahibi olarak kanal, kategori ve izinleri yönetebilirsin.",
+                                modifier = Modifier.padding(10.dp),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -886,7 +934,7 @@ private fun ServerWorkspace(
                     TextButton(onClick = { showInfo = false }) { Text("Tamam") }
                 }
             },
-            dismissButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") } }
+            dismissButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") }
         )
     }
 
