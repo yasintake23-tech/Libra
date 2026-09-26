@@ -160,69 +160,20 @@ fun CommunityServersScreen(
     if (selectedServer != null) {
         val server = selectedServer!!
 
-        Row(modifier.fillMaxSize()) {
-            ServerRail(
-                servers = sortedServers,
-                selectedServerId = server.id,
-                onBackToCommunity = {
+        Box(modifier.fillMaxSize()) {
+            ServerWorkspace(
+                server = server,
+                categories = categories,
+                channels = channels,
+                onBack = {
                     selectedServer = null
                     selectedChannel = null
                     categories = emptyList()
                     channels = emptyList()
                 },
-                onCreateServer = { showCreate = true },
-                onServerClick = { target ->
-                    if (target.id != server.id) {
-                        scope.launch {
-                        when (val member = communityRepository.isServerMember(target.id)) {
-                            is AppResult.Success -> {
-                                if (member.data) {
-                                    selectedServer = target
-                                    selectedChannel = null
-                                } else {
-                                    previewIsMember = false
-                                    previewServer = target
-                                }
-                            }
-                            is AppResult.Error -> error = member.error.message
-                        }
-                        }
-                    }
-                }
+                onChannelClick = { selectedChannel = it },
+                modifier = Modifier.fillMaxSize()
             )
-
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                AnimatedContent(
-                    targetState = selectedChannel,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                    label = "serverChannelTransition"
-                ) { channel ->
-                    if (channel != null) {
-                        ServerChatScreen(
-                            server = server,
-                            channel = channel,
-                            onBack = { selectedChannel = null },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        ServerWorkspace(
-                            server = server,
-                            categories = categories,
-                            channels = channels,
-                            onBack = {
-                                selectedServer = null
-                                selectedChannel = null
-                                categories = emptyList()
-                                channels = emptyList()
-                            },
-                            onChannelClick = { selectedChannel = it },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
         }
         return
     }
@@ -764,285 +715,90 @@ private fun ServerWorkspace(
         visibleChannels.groupBy { it.categoryId }
     }
 
-    Row(modifier.fillMaxSize()) {
-        Surface(
-            modifier = Modifier.width(220.dp).fillMaxHeight(),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp
+    Column(
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Sunucu listesinden çık") }
-                    Text(
-                        "KANALLAR",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (isOwner) {
-                        IconButton(onClick = { showOwnerManagement = true }) {
-                            Icon(Icons.Default.Settings, "Sunucu ayarları")
-                        }
-                    }
-                }
-
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showInfo = true }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (server.avatarUrl.isNotBlank()) {
-                            AsyncImage(
-                                ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
-                                contentDescription = server.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Text(server.name.take(1).uppercase(), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Column(Modifier.weight(1f).padding(start = 9.dp)) {
-                        Text(server.name, maxLines = 1, fontWeight = FontWeight.Bold)
-                        Text("Kanal ve sunucu bilgileri", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
-                }
-
-                HorizontalDivider()
-
-                OutlinedTextField(
-                    value = channelSearch,
-                    onValueChange = { channelSearch = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Search, "Kanal ara") },
-                    placeholder = { Text("Kanal ara") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                if (isOwner) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                    ) {
-                        TextButton(onClick = { showCreateCategory = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("+ Kategori ekle", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-
-                if (categories.isEmpty() || channels.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
-                        categories.forEach { category ->
-                            val collapsed = collapsedCategories.contains(category.id)
-                            item(key = "category-" + category.id) {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = 10.dp, end = 6.dp, top = 14.dp, bottom = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    IconButton(onClick = {
-                                        collapsedCategories = if (collapsed) collapsedCategories - category.id else collapsedCategories + category.id
-                                    }, modifier = Modifier.size(30.dp)) {
-                                        Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, "Kategoriyi aç/kapat", modifier = Modifier.size(17.dp))
-                                    }
-                                    Text(
-                                        category.name.uppercase(),
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (isOwner) {
-                                        IconButton(onClick = { showCreateChannel = category }, modifier = Modifier.size(30.dp)) {
-                                            Icon(Icons.Default.Add, "Kanal ekle", modifier = Modifier.size(17.dp))
-                                        }
-                                        IconButton(onClick = { categoryMenu = category }, modifier = Modifier.size(30.dp)) {
-                                            Icon(Icons.Default.MoreVert, "Kategori seçenekleri", modifier = Modifier.size(17.dp))
-                                        }
-                                    }
-                                }
-                            }
-                            if (!collapsed) visibleChannelsByCategory[category.id].orEmpty().forEach { channel ->
-                                item(key = "channel-" + channel.id) {
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .pointerInput(channel.id + "-menu") {
-                                                detectTapGestures(
-                                                    onTap = { onChannelClick(channel) },
-                                                    onLongPress = { if (isOwner) channelMenu = channel }
-                                                )
-                                            }
-                                            .background(
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                                            )
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            "#",
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            channel.name,
-                                            maxLines = 1,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        if (isOwner) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.MoreVert,
-                                                    contentDescription = "Kanal seçenekleri. Basılı tutarak da yönetebilirsin.",
-                                                    modifier = Modifier.padding(5.dp).size(16.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Sunuculara dön") }
+            Column(Modifier.weight(1f)) {
+                Text(server.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${members.size} üye • ${visibleChannels.size} kanal", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { showInfo = true }) { Icon(Icons.Default.Groups, "Sunucu bilgileri") }
+            if (isOwner) {
+                IconButton(onClick = { showOwnerManagement = true }) { Icon(Icons.Default.Settings, "Sunucu ayarları") }
+            }
+        }
+        HorizontalDivider()
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(server.description.ifBlank { "Bir kanal seç ve sohbete başla." }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(value = channelSearch, onValueChange = { channelSearch = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, "Kanal ara") }, placeholder = { Text("Kanal ara") }, shape = RoundedCornerShape(14.dp))
+            if (isOwner) {
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = { showCreateCategory = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Kategori ekle")
                 }
             }
         }
-
-        Box(
-            Modifier
-                .fillMaxSize()
-                .weight(1f)
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(Modifier.height(32.dp))
-                Box(
-                    Modifier
-                        .size(96.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (server.avatarUrl.isNotBlank()) {
-                        AsyncImage(
-                            ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
-                            contentDescription = server.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Text(
-                            server.name.take(1).uppercase().ifBlank { "L" },
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(18.dp))
-                Text(
-                    server.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    server.description.ifBlank {
-                        "Libra topluluğuna hoş geldin. Bir kanal seçerek sohbete başlayabilirsin."
-                    },
-                    modifier = Modifier.widthIn(max = 520.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(Modifier.height(22.dp))
-
-                Row(
-                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text("Üye", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(members.size.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        if (categories.isEmpty() || channels.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                categories.forEach { category ->
+                    val categoryChannels = visibleChannelsByCategory[category.id].orEmpty()
+                    val collapsed = collapsedCategories.contains(category.id)
+                    item(key = "category-" + category.id) {
+                        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { collapsedCategories = if (collapsed) collapsedCategories - category.id else collapsedCategories + category.id }, modifier = Modifier.size(34.dp)) {
+                                    Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, "Kategoriyi aç/kapat", modifier = Modifier.size(18.dp))
+                                }
+                                Text(category.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                if (isOwner) {
+                                    IconButton(onClick = { showCreateChannel = category }, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Add, "Kanal ekle", modifier = Modifier.size(18.dp)) }
+                                    IconButton(onClick = { categoryMenu = category }, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.MoreVert, "Kategori seçenekleri", modifier = Modifier.size(18.dp)) }
+                                }
+                            }
                         }
                     }
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text("Kanal", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(visibleChannels.size.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    if (!collapsed) categoryChannels.forEach { channel ->
+                        item(key = "channel-" + channel.id) {
+                            Surface(modifier = Modifier.fillMaxWidth().pointerInput(channel.id + "-menu") { detectTapGestures(onTap = { onChannelClick(channel) }, onLongPress = { if (isOwner) channelMenu = channel }) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {
+                                Row(Modifier.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                                        Text("#", modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(channel.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                        Text("Sohbete katıl", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (isOwner) Icon(Icons.Default.MoreVert, "Kanal seçenekleri. Basılı tutarak da yönetebilirsin.", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                                    else Icon(Icons.Default.ChevronRight, "Kanala gir", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
                 }
-
-                Spacer(Modifier.height(22.dp))
-
-                Surface(
-                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                ) {
-                    Column(Modifier.padding(18.dp)) {
-                        Text(
-                            "Topluluğa giriş",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            if (visibleChannels.isEmpty()) {
-                                "Görüntülenebilen bir kanal bulunmuyor."
-                            } else {
-                                "Soldan bir kanal seç. Metin kanallarında gerçek zamanlı sohbet başlayacak."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                if (visibleChannels.isEmpty()) {
+                    item(key = "no-visible-channels") {
+                        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+                            Column(Modifier.padding(18.dp)) {
+                                Text("Görebildiğin kanal yok", fontWeight = FontWeight.Bold)
+                                Text("Sunucu sahibiyle kanal izinlerini kontrol et.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
         }
     }
-
     if (showInfo) {
         AlertDialog(
             onDismissRequest = { showInfo = false },
