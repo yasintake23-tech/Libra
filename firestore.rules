@@ -142,6 +142,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /{path=**}/members/{uid} {
+      allow read: if request.auth != null && uid == request.auth.uid;
+    }
+
     match /communityServers/{serverId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
