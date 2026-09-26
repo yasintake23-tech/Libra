@@ -88,6 +88,13 @@ fun CommunityServersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var enteringServerId by remember { mutableStateOf<String?>(null) }
     var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
+    val sortedServers = remember(servers, pinnedServerIds) {
+        servers.distinctBy { it.id }
+            .sortedWith(
+                compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }
+                    .thenByDescending { it.createdAt }
+            )
+    }
 
     BackHandler(enabled = selectedServer != null || selectedChannel != null) {
         if (selectedChannel != null) {
@@ -137,12 +144,7 @@ fun CommunityServersScreen(
 
         Row(modifier.fillMaxSize()) {
             ServerRail(
-                servers = servers
-                    .distinctBy { it.id }
-                    .sortedWith(
-                        compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }
-                            .thenByDescending { it.createdAt }
-                    ),
+                servers = sortedServers,
                 selectedServerId = server.id,
                 onBackToCommunity = {
                     selectedServer = null
@@ -232,7 +234,7 @@ fun CommunityServersScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(servers.distinctBy { it.id }.sortedWith(compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }.thenByDescending { it.createdAt }), key = { it.id }) { server ->
+                items(sortedServers, key = { it.id }) { server ->
                     Card(Modifier.fillMaxWidth().clickable {
                         scope.launch {
                             when (val member = communityRepository.isServerMember(server.id)) {
