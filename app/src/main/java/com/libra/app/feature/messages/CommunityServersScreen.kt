@@ -189,6 +189,7 @@ fun CommunityServersScreen(
                     } else {
                         ServerWorkspace(
                             server = server,
+                            selectedChannelId = null,
                             categories = categories,
                             channels = channels,
                             onBack = {
@@ -525,6 +526,7 @@ private fun ServerPreviewDialog(
 @Composable
 private fun ServerWorkspace(
     server: CommunityServer,
+    selectedChannelId: String?,
     categories: List<ServerCategory>,
     channels: List<ServerChannel>,
     onBack: () -> Unit,
@@ -707,8 +709,11 @@ private fun ServerWorkspace(
                             }
                             if (!collapsed) visibleChannels.filter { it.categoryId == category.id }.forEach { channel ->
                                 item(key = "channel-" + channel.id) {
+                                    val selected = channel.id == selectedChannelId
                                     Row(
-                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
                                             .pointerInput(channel.id + "-menu") {
                                                 detectTapGestures(
                                                     onTap = { onChannelClick(channel) },
@@ -716,7 +721,11 @@ private fun ServerWorkspace(
                                                 )
                                             }
                                             .background(
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                                                if (selected) {
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                                                }
                                             )
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -724,13 +733,16 @@ private fun ServerWorkspace(
                                         Text(
                                             "#",
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
                                             channel.name,
                                             maxLines = 1,
-                                            style = MaterialTheme.typography.bodyMedium,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                            ),
+                                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.weight(1f)
                                         )
                                         if (isOwner) {
