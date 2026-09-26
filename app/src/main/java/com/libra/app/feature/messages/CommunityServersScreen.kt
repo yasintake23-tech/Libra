@@ -1305,10 +1305,53 @@ private fun ServerChatScreen(
                                 }
                             }
 
-                            if (message.mediaUrl.isNotBlank()) AsyncImage(ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl), "Gönderilen fotoğraf", Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                            if (message.text.isNotBlank()) Text(message.text, Modifier.padding(8.dp, 6.dp))
-                            if (message.editedAt != null) Text("düzenlendi", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
-                            if (message.reactions.isNotEmpty()) Text(message.reactions.values.distinct().joinToString(" "), Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                            if (message.mediaUrl.isNotBlank()) {
+                                AsyncImage(
+                                    ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl),
+                                    "Gönderilen fotoğraf",
+                                    Modifier
+                                        .widthIn(max = 260.dp)
+                                        .heightIn(max = 280.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            if (message.text.isNotBlank()) {
+                                Text(message.text, Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+                            }
+                            if (message.editedAt != null) {
+                                Text(
+                                    "düzenlendi",
+                                    Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (message.reactions.isNotEmpty()) {
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    message.reactions.values
+                                        .groupingBy { it }
+                                        .eachCount()
+                                        .forEach { (emoji, count) ->
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                                                shape = RoundedCornerShape(999.dp),
+                                                tonalElevation = 1.dp
+                                            ) {
+                                                Text(
+                                                    "$emoji $count",
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                        }
+                                }
+                            }
                         }
                     }
                 }
