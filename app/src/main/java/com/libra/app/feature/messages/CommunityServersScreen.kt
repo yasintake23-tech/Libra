@@ -1214,18 +1214,46 @@ private fun ServerChatScreen(
                     MessageDateSeparator(message.createdAt)
                 }
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
-                Row(
+                Box(
                     Modifier.fillMaxWidth()
                         .pointerInput(message.id + "-swipe") {
                             detectHorizontalDragGestures(
-                                onHorizontalDrag = { _, amount -> dragX = (dragX + amount).coerceIn(0f, 96f) },
-                                onDragEnd = { if (dragX >= 64f) replyTarget = message; dragX = 0f }
+                                onHorizontalDrag = { _, amount ->
+                                    dragX = (dragX + amount).coerceIn(0f, 96f)
+                                },
+                                onDragEnd = {
+                                    if (dragX >= 64f) replyTarget = message
+                                    dragX = 0f
+                                },
+                                onDragCancel = { dragX = 0f }
                             )
                         }
-                        .offset { IntOffset(dragX.roundToInt(), 0) },
-                    horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
-                    verticalAlignment = Alignment.Bottom
                 ) {
+                    if (dragX > 0f) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 8.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(
+                                alpha = (dragX / 96f).coerceIn(0.18f, 1f)
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = "Yanıtla",
+                                modifier = Modifier.padding(7.dp).size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .offset { IntOffset(dragX.roundToInt(), 0) },
+                        horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
                     if (message.senderId != currentUid) {
                         if (groupedWithPrevious) {
                             Spacer(Modifier.width(36.dp))
