@@ -617,6 +617,9 @@ private fun ServerWorkspace(
         (isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember, currentRolePermissions)) &&
             channel.name.contains(channelSearch.trim(), ignoreCase = true)
     }
+    val visibleChannelsByCategory = remember(visibleChannels) {
+        visibleChannels.groupBy { it.categoryId }
+    }
 
     Row(modifier.fillMaxSize()) {
         Surface(
@@ -734,7 +737,7 @@ private fun ServerWorkspace(
                                     }
                                 }
                             }
-                            if (!collapsed) visibleChannels.filter { it.categoryId == category.id }.forEach { channel ->
+                            if (!collapsed) visibleChannelsByCategory[category.id].orEmpty().forEach { channel ->
                                 item(key = "channel-" + channel.id) {
                                     Row(
                                         Modifier
