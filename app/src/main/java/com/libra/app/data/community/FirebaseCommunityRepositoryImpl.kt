@@ -773,6 +773,42 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 
+    override suspend fun moveServerRole(serverId: String, roleId: String, direction: Int): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        if (direction != -1 && direction != 1) {
+            return AppResult.Error(AppError.Validation("Geçersiz rol sıralama yönü."))
+        }
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) {
+                return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol sıralayabilir."))
+            }
+            val docs = serverRef.collection("roles").orderBy("position").get().await().documents
+            val index = docs.indexOfFirst { it.id == roleId }
+            if (index < 0) return AppResult.Error(AppError.NotFound("Rol bulunamadı."))
+            val target = index + direction
+            if (target !in docs.indices) return AppResult.Success(Unit)
+
+            val batch = firestore.batch()
+            docs.forEachIndexed { position, doc ->
+                val newPosition = when (position) {
+                    index -> target
+                    target -> index
+                    else -> position
+                }
+                if (newPosition != position) {
+                    batch.update(doc.reference, "position", newPosition)
+                }
+            }
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Rol sırası değiştirilemedi.", e))
+        }
+    }
+
     override suspend fun deleteServerRole(serverId: String, roleId: String): AppResult<Unit> {
         val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
