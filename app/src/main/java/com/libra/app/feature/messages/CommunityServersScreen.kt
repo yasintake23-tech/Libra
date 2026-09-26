@@ -181,9 +181,9 @@ fun CommunityServersScreen(
             isMember = previewIsMember,
             onDismiss = { previewServer = null },
             onEnter = {
-                if (enteringServerId == server.id) return@ServerPreviewDialog
-                enteringServerId = server.id
-                scope.launch {
+                if (enteringServerId != server.id) {
+                    enteringServerId = server.id
+                    scope.launch {
                     val result = if (previewIsMember) {
                         communityRepository.ensureServerStructure(server.id)
                     } else {
@@ -197,6 +197,7 @@ fun CommunityServersScreen(
                         is AppResult.Error -> error = result.error.message
                     }
                     enteringServerId = null
+                    }
                 }
             }
         )
