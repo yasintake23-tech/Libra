@@ -12,6 +12,22 @@ interface CommunityRepository {
     fun observeCommunityServers(): Flow<AppResult<List<CommunityServer>>>
     suspend fun createCommunityServer(name: String, description: String): AppResult<CommunityServer>
     suspend fun updateCommunityServer(serverId: String, name: String, description: String): AppResult<Unit>
+    suspend fun updateCommunityServerMedia(serverId: String, avatarUrl: String, bannerUrl: String): AppResult<Unit>
+    suspend fun uploadServerAvatar(
+        serverId: String,
+        fileName: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit = {}
+    ): AppResult<String>
+    suspend fun uploadServerBanner(
+        serverId: String,
+        fileName: String,
+        bytes: ByteArray,
+        contentType: String,
+        onProgress: (Int) -> Unit = {}
+    ): AppResult<String>
+    suspend fun deleteServerMedia(serverId: String, fileKey: String): AppResult<Unit>
     suspend fun deleteCommunityServer(serverId: String): AppResult<Unit>
     suspend fun joinCommunityServer(serverId: String): AppResult<Unit>
     suspend fun isServerMember(serverId: String): AppResult<Boolean>
