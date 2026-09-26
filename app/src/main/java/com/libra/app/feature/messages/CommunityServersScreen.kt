@@ -598,7 +598,7 @@ private fun ServerWorkspace(
         }
     }
 
-    LaunchedEffect(channels, members, isOwner) {
+    LaunchedEffect(server.id, channels, isOwner) {
         if (isOwner) {
             channelPermissions = emptyMap()
         } else {
