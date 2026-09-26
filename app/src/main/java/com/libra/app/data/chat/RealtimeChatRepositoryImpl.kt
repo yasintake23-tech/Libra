@@ -306,42 +306,11 @@ class RealtimeChatRepositoryImpl(
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
             "replyToSenderName" to (replyTo?.senderName ?: ""),
-            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>()),
-            "mentionedUserIds" to mentionInfo.userIds,
-            "mentionsEveryone" to mentionInfo.everyone,
-            "mentionsHere" to mentionInfo.here
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
         return try {
             messageRef.setValue(data).await()
-            runCatching {
-                val recipients = mentionInfo.userIds.filter { it != user.uid }.distinct()
-                val mentionLabel = when {
-                    mentionInfo.everyone -> "@everyone"
-                    mentionInfo.here -> "@here"
-                    else -> "bahsedilme"
-                }
-                recipients.forEach { recipientId ->
-                    notificationRepository.create(
-                        AppNotification(
-                            recipientId = recipientId,
-                            actorId = user.uid,
-                            actorName = profile.displayName,
-                            actorUsername = profile.username,
-                            actorPhotoUrl = profile.profileImageUrl,
-                            type = "SERVER_MENTION",
-                            title = "Sunucuda bahsedildin",
-                            body = if (mentionLabel.startsWith("@")) {
-                                profile.displayName + " " + mentionLabel + " ile senden bahsetti: " + clean.take(120)
-                            } else {
-                                profile.displayName + " senden bahsetti: " + clean.take(120)
-                            },
-                            referenceId = serverId + ":" + channelId + ":" + messageRef.key.orEmpty(),
-                            createdAt = System.currentTimeMillis()
-                        )
-                    )
-                }
-            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             cleanupMedia(mediaUrl)
@@ -807,11 +776,42 @@ class RealtimeChatRepositoryImpl(
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
             "replyToSenderName" to (replyTo?.senderName ?: ""),
-            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>()),
+            "mentionedUserIds" to mentionInfo.userIds,
+            "mentionsEveryone" to mentionInfo.everyone,
+            "mentionsHere" to mentionInfo.here
         )
 
         return try {
             messageRef.setValue(data).await()
+            runCatching {
+                val recipients = mentionInfo.userIds.filter { it != user.uid }.distinct()
+                val mentionLabel = when {
+                    mentionInfo.everyone -> "@everyone"
+                    mentionInfo.here -> "@here"
+                    else -> "bahsedilme"
+                }
+                recipients.forEach { recipientId ->
+                    notificationRepository.create(
+                        AppNotification(
+                            recipientId = recipientId,
+                            actorId = user.uid,
+                            actorName = profile.displayName,
+                            actorUsername = profile.username,
+                            actorPhotoUrl = profile.profileImageUrl,
+                            type = "SERVER_MENTION",
+                            title = "Sunucuda bahsedildin",
+                            body = if (mentionLabel.startsWith("@")) {
+                                profile.displayName + " " + mentionLabel + " ile senden bahsetti: " + clean.take(120)
+                            } else {
+                                profile.displayName + " senden bahsetti: " + clean.take(120)
+                            },
+                            referenceId = serverId + ":" + channelId + ":" + messageRef.key.orEmpty(),
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             cleanupMedia(mediaUrl)
