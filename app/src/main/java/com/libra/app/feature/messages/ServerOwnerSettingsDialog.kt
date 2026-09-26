@@ -76,15 +76,15 @@ fun ServerOwnerSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sunucu ayarları") },
+        title = {\n            Column {\n                Text("Sunucu ayarları", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)\n                Text("Yönetim ve topluluk", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)\n            }\n        },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                item { Text("ROLLER", style = MaterialTheme.typography.labelLarge) }
+                item { SettingsSectionTitle("Roller") }
                 item {
-                    Button(onClick = { showRoleCreate = true }) { Text("Rol oluştur") }
+                    FilledTonalButton(onClick = { showRoleCreate = true }) { Text("Rol oluştur") }
                 }
                 items(roles, key = { "role-" + it.id }) { role ->
                     Row(
@@ -115,7 +115,7 @@ fun ServerOwnerSettingsDialog(
                     }
                 }
 
-                item { Spacer(Modifier.height(8.dp)); Text("ÜYELER", style = MaterialTheme.typography.labelLarge) }
+                item { Spacer(Modifier.height(8.dp)); SettingsSectionTitle("Üyeler") }
                 item { OutlinedTextField(memberSearch, { memberSearch = it }, Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, "Üye ara") }, placeholder = { Text("Üye ara") }) }
                 items(members.filter { it.uid != server.ownerId && (memberSearch.isBlank() || it.displayName.contains(memberSearch, true) || it.username.contains(memberSearch, true)) }, key = { "member-" + it.uid }) { member ->
                     Row(Modifier.fillMaxWidth()) {
@@ -137,7 +137,7 @@ fun ServerOwnerSettingsDialog(
                     }
                 }
 
-                item { Spacer(Modifier.height(8.dp)); Text("YASAKLAR", style = MaterialTheme.typography.labelLarge) }
+                item { Spacer(Modifier.height(8.dp)); SettingsSectionTitle("Yasaklar") }
                 if (bans.isEmpty()) {
                     item { Text("Aktif sunucu yasağı yok.", style = MaterialTheme.typography.bodySmall) }
                 } else {
@@ -159,7 +159,7 @@ fun ServerOwnerSettingsDialog(
                     }
                 }
 
-                item { Spacer(Modifier.height(8.dp)); Text("KATEGORİLER", style = MaterialTheme.typography.labelLarge) }
+                item { Spacer(Modifier.height(8.dp)); SettingsSectionTitle("Kategoriler") }
                 items(categories, key = { "cat-" + it.id }) { category ->
                     Row(
                         Modifier
