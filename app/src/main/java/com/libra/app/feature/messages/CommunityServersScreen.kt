@@ -67,6 +67,7 @@ fun CommunityServersScreen(
     var previewIsMember by remember { mutableStateOf(false) }
     var showCreate by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var enteringServerId by remember { mutableStateOf<String?>(null) }
     var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
 
     LaunchedEffect(Unit) {
@@ -180,6 +181,8 @@ fun CommunityServersScreen(
             isMember = previewIsMember,
             onDismiss = { previewServer = null },
             onEnter = {
+                if (enteringServerId == server.id) return@ServerPreviewDialog
+                enteringServerId = server.id
                 scope.launch {
                     val result = if (previewIsMember) {
                         communityRepository.ensureServerStructure(server.id)
@@ -193,6 +196,7 @@ fun CommunityServersScreen(
                         is AppResult.Success -> { previewServer = null; selectedServer = server; selectedChannel = null; error = null }
                         is AppResult.Error -> error = result.error.message
                     }
+                    enteringServerId = null
                 }
             }
         )
