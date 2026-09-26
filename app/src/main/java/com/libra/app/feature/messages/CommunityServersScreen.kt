@@ -603,9 +603,13 @@ private fun canViewServerChannel(
 private fun canSendServerChannel(
     channel: ServerChannel,
     permissions: List<ServerChannelPermissionOverride>,
-    member: ServerMember?
+    member: ServerMember?,
+    rolePermissions: List<String>
 ): Boolean {
-    var allowed = channel.allowEveryoneSend
+    var allowed = when (member?.role) {
+        "ADMIN", "OWNER", "MEMBER" -> channel.allowEveryoneSend
+        else -> "SEND_MESSAGES" in rolePermissions && channel.allowEveryoneSend
+    }
     permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == "EVERYONE" }?.canSend?.let { allowed = it }
     val role = member?.role.orEmpty()
     permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == role }?.canSend?.let { allowed = it }
@@ -753,6 +757,7 @@ private fun ServerChatScreen(
     var serverName by remember(server.id) { mutableStateOf(server.name) }
     var serverDescription by remember(server.id) { mutableStateOf(server.description) }
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
+    var serverRoles by remember { mutableStateOf<List<ServerRoleDefinition>>(emptyList()) }
     var canSendInChannel by remember(server.id, channel.id) { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
@@ -796,12 +801,23 @@ private fun ServerChatScreen(
         }
     }
 
+    LaunchedEffect(server.id) {
+        communityRepository.observeServerRoles(server.id).collect { result ->
+            if (result is AppResult.Success) serverRoles = result.data
+        }
+    }
+
     LaunchedEffect(channel.id, members) {
         val currentMember = members.firstOrNull { it.uid == currentUid }
         when (val result = communityRepository.getChannelPermissions(server.id, channel.id)) {
             is AppResult.Success -> {
                 canSendInChannel = currentMember?.let {
-                    canSendServerChannel(channel, result.data, it)
+                    canSendServerChannel(
+                        channel,
+                        result.data,
+                        it,
+                        serverRoles.firstOrNull { role -> role.id == it.role }?.permissions.orEmpty()
+                    )
                 } ?: true
             }
             is AppResult.Error -> canSendInChannel = true
