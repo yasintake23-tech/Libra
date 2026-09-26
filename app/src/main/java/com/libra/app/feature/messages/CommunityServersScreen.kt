@@ -32,6 +32,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +65,7 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun CommunityServersScreen(
     onBack: () -> Unit,
@@ -166,27 +172,35 @@ fun CommunityServersScreen(
             )
 
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (selectedChannel != null) {
-                    ServerChatScreen(
-                        server = server,
-                        channel = selectedChannel!!,
-                        onBack = { selectedChannel = null },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    ServerWorkspace(
-                        server = server,
-                        categories = categories,
-                        channels = channels,
-                        onBack = {
-                            selectedServer = null
-                            selectedChannel = null
-                            categories = emptyList()
-                            channels = emptyList()
-                        },
-                        onChannelClick = { selectedChannel = it },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                AnimatedContent(
+                    targetState = selectedChannel,
+                    transitionSpec = {
+                        fadeIn() togetherWith fadeOut()
+                    },
+                    label = "serverChannelTransition"
+                ) { channel ->
+                    if (channel != null) {
+                        ServerChatScreen(
+                            server = server,
+                            channel = channel,
+                            onBack = { selectedChannel = null },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        ServerWorkspace(
+                            server = server,
+                            categories = categories,
+                            channels = channels,
+                            onBack = {
+                                selectedServer = null
+                                selectedChannel = null
+                                categories = emptyList()
+                                channels = emptyList()
+                            },
+                            onChannelClick = { selectedChannel = it },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
