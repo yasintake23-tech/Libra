@@ -9,6 +9,7 @@ import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
+import com.libra.app.domain.model.ServerChannelPermissionOverride
 import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -318,6 +319,150 @@ class FirebaseCommunityRepositoryImpl(
                 }
             awaitClose { registration.remove() }
         }
+
+
+    override fun observeChannelPermissions(
+        serverId: String,
+        channelId: String
+    ): Flow<AppResult<List<ServerChannelPermissionOverride>>> = callbackFlow {
+        val registration = serversRef.document(serverId).collection("channels")
+            .document(channelId).collection("permissions")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Kanal izinleri yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val permissions = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(ServerChannelPermissionOverride::class.java)?.copy(id = doc.id)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(permissions))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun createServerCategory(serverId: String, name: String): AppResult<ServerCategory> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim()
+        if (clean.length !in 1..40) return AppResult.Error(AppError.Validation("Kategori adı 1-40 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori oluşturabilir."))
+            val position = serverRef.collection("categories").get().await().size()
+            val ref = serverRef.collection("categories").document()
+            val category = ServerCategory(ref.id, clean, position)
+            ref.set(category).await()
+            AppResult.Success(category)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kategori oluşturulamadı.", e))
+        }
+    }
+
+    override suspend fun deleteServerCategory(serverId: String, categoryId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori silebilir."))
+            val channels = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await()
+            val batch = firestore.batch()
+            channels.documents.forEach { batch.delete(it.reference) }
+            batch.delete(serverRef.collection("categories").document(categoryId))
+            batch.commit().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kategori silinemedi.", e))
+        }
+    }
+
+    override suspend fun createServerChannel(
+        serverId: String,
+        categoryId: String,
+        name: String
+    ): AppResult<ServerChannel> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        val clean = name.trim().lowercase().replace(Regex("\\s+"), "-")
+        if (clean.length !in 1..40) return AppResult.Error(AppError.Validation("Kanal adı 1-40 karakter olmalı."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal oluşturabilir."))
+            val category = serverRef.collection("categories").document(categoryId).get().await()
+            if (!category.exists()) return AppResult.Error(AppError.NotFound("Kategori bulunamadı."))
+            val position = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await().size()
+            val ref = serverRef.collection("channels").document()
+            val channel = ServerChannel(
+                id = ref.id,
+                categoryId = categoryId,
+                categoryName = category.getString("name").orEmpty(),
+                name = clean,
+                position = position
+            )
+            ref.set(channel).await()
+            AppResult.Success(channel)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kanal oluşturulamadı.", e))
+        }
+    }
+
+    override suspend fun deleteServerChannel(serverId: String, channelId: String): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal silebilir."))
+            serverRef.collection("channels").document(channelId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kanal silinemedi.", e))
+        }
+    }
+
+    override suspend fun setChannelPermission(
+        serverId: String,
+        channelId: String,
+        override: ServerChannelPermissionOverride
+    ): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val serverRef = serversRef.document(serverId)
+            val server = serverRef.get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin değiştirebilir."))
+            if (override.subjectId.isBlank()) return AppResult.Error(AppError.Validation("İzin hedefi bulunamadı."))
+            val id = override.id.ifBlank { override.subjectType + "_" + override.subjectId }
+            serverRef.collection("channels").document(channelId)
+                .collection("permissions").document(id)
+                .set(override.copy(id = id)).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kanal izni kaydedilemedi.", e))
+        }
+    }
+
+    override suspend fun deleteChannelPermission(
+        serverId: String,
+        channelId: String,
+        overrideId: String
+    ): AppResult<Unit> {
+        val user = auth.currentUser ?: return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
+        return try {
+            val server = serversRef.document(serverId).get().await().toObject(CommunityServer::class.java)
+                ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
+            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin silebilir."))
+            serversRef.document(serverId).collection("channels").document(channelId)
+                .collection("permissions").document(overrideId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kanal izni silinemedi.", e))
+        }
+    }
 
     override fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>> =
         callbackFlow {
