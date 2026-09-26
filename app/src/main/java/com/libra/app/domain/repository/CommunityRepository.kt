@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface CommunityRepository {
     fun observeCommunityServers(): Flow<AppResult<List<CommunityServer>>>
+    suspend fun findCommunityServerByInviteKey(inviteKey: String): AppResult<CommunityServer>
+    suspend fun ensureCommunityServerInviteKey(serverId: String): AppResult<String>
     suspend fun createCommunityServer(name: String, description: String): AppResult<CommunityServer>
     suspend fun updateCommunityServer(serverId: String, name: String, description: String): AppResult<Unit>
     suspend fun updateCommunityServerMedia(serverId: String, avatarUrl: String, bannerUrl: String): AppResult<Unit>
