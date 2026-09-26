@@ -30,6 +30,7 @@ fun ServerOwnerSettingsDialog(
     var newRoleName by remember { mutableStateOf("") }
     var rolePermissions by remember { mutableStateOf(setOf("VIEW_CHANNEL", "SEND_MESSAGES")) }
     var roleMember by remember { mutableStateOf<ServerMember?>(null) }
+    var selectedMember by remember { mutableStateOf<ServerMember?>(null) }
     var banMember by remember { mutableStateOf<ServerMember?>(null) }
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -68,6 +69,22 @@ fun ServerOwnerSettingsDialog(
                             Text(role.name)
                             Text(role.permissions.joinToString(", ").ifBlank { "İzin yok" }, style = MaterialTheme.typography.labelSmall)
                         }
+                        TextButton(onClick = {
+                            scope.launch {
+                                when (val r = repo.moveServerRole(server.id, role.id, -1)) {
+                                    is AppResult.Error -> onError(r.error.message)
+                                    is AppResult.Success -> Unit
+                                }
+                            }
+                        }) { Text("↑") }
+                        TextButton(onClick = {
+                            scope.launch {
+                                when (val r = repo.moveServerRole(server.id, role.id, 1)) {
+                                    is AppResult.Error -> onError(r.error.message)
+                                    is AppResult.Success -> Unit
+                                }
+                            }
+                        }) { Text("↓") }
                         TextButton(onClick = { editRole = role }) { Text("Düzenle") }
                         TextButton(onClick = {
                             scope.launch {
@@ -88,6 +105,7 @@ fun ServerOwnerSettingsDialog(
                             Text(member.displayName.ifBlank { member.username.ifBlank { member.uid } })
                             Text("Rol: " + member.role, style = MaterialTheme.typography.labelSmall)
                         }
+                        TextButton(onClick = { selectedMember = member }) { Text("Detay") }
                         TextButton(onClick = { roleMember = member }) { Text("Rol") }
                         TextButton(onClick = {
                             scope.launch {
@@ -202,6 +220,7 @@ fun ServerOwnerSettingsDialog(
                             is AppResult.Error -> onError(r.error.message)
                             is AppResult.Success -> {
                                 newRoleName = ""
+                                rolePermissions = setOf("VIEW_CHANNEL", "SEND_MESSAGES")
                                 showRoleCreate = false
                             }
                         }
@@ -240,6 +259,31 @@ fun ServerOwnerSettingsDialog(
                 }) { Text("Kaydet") }
             },
             dismissButton = { TextButton(onClick = { editRole = null }) { Text("İptal") } }
+        )
+    }
+
+    selectedMember?.let { member ->
+        AlertDialog(
+            onDismissRequest = { selectedMember = null },
+            title = { Text("Üye detayları") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(member.displayName.ifBlank { member.username.ifBlank { member.uid } }, style = MaterialTheme.typography.titleMedium)
+                    if (member.username.isNotBlank()) Text("@${member.username}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Rol: ${member.role}", style = MaterialTheme.typography.bodyMedium)
+                    if (member.joinedAt > 0L) {
+                        Text(
+                            "Üyelik: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(member.joinedAt))}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text("UID: ${member.uid}", style = MaterialTheme.typography.labelSmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { roleMember = member; selectedMember = null }) { Text("Rolü değiştir") }
+            },
+            dismissButton = { TextButton(onClick = { selectedMember = null }) { Text("Kapat") } }
         )
     }
 
