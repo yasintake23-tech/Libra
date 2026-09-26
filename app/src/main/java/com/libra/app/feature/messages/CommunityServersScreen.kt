@@ -67,6 +67,7 @@ fun CommunityServersScreen(
     var previewIsMember by remember { mutableStateOf(false) }
     var showCreate by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
 
     LaunchedEffect(Unit) {
         communityRepository.observeCommunityServers().collect { result ->
@@ -283,6 +284,26 @@ private fun ServerWorkspace(
         }
     }
 
+    LaunchedEffect(channels, members) {
+        if (isOwner) {
+            channelPermissions = emptyMap()
+        } else {
+            val map = mutableMapOf<String, List<ServerChannelPermissionOverride>>()
+            channels.forEach { channel ->
+                when (val result = repo.getChannelPermissions(server.id, channel.id)) {
+                    is AppResult.Success -> map[channel.id] = result.data
+                    is AppResult.Error -> Unit
+                }
+            }
+            channelPermissions = map
+        }
+    }
+
+    val currentMember = members.firstOrNull { it.uid == currentUid }
+    val visibleChannels = channels.filter { channel ->
+        isOwner || canViewServerChannel(channel, channelPermissions[channel.id].orEmpty(), currentMember)
+    }
+
     Row(modifier.fillMaxSize()) {
         Surface(modifier = Modifier.width(180.dp).fillMaxHeight(), tonalElevation = 3.dp) {
             Column(Modifier.fillMaxSize()) {
@@ -334,7 +355,7 @@ private fun ServerWorkspace(
                                     }
                                 }
                             }
-                            channels.filter { it.categoryId == category.id }.forEach { channel ->
+                            visibleChannels.filter { it.categoryId == category.id }.forEach { channel ->
                                 item(key = "channel-" + channel.id) {
                                     Row(
                                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
@@ -500,6 +521,32 @@ private fun ServerWorkspace(
     error?.let {
         AlertDialog(onDismissRequest = { error = null }, title = { Text("İşlem başarısız") }, text = { Text(it) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Tamam") } })
     }
+}
+
+private fun canViewServerChannel(
+    channel: ServerChannel,
+    permissions: List<ServerChannelPermissionOverride>,
+    member: ServerMember?
+): Boolean {
+    var allowed = channel.allowEveryoneView
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == "EVERYONE" }?.canView?.let { allowed = it }
+    val role = member?.role.orEmpty()
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == role }?.canView?.let { allowed = it }
+    permissions.firstOrNull { it.subjectType == "USER" && it.subjectId == member?.uid }?.canView?.let { allowed = it }
+    return allowed
+}
+
+private fun canSendServerChannel(
+    channel: ServerChannel,
+    permissions: List<ServerChannelPermissionOverride>,
+    member: ServerMember?
+): Boolean {
+    var allowed = channel.allowEveryoneSend
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == "EVERYONE" }?.canSend?.let { allowed = it }
+    val role = member?.role.orEmpty()
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == role }?.canSend?.let { allowed = it }
+    permissions.firstOrNull { it.subjectType == "USER" && it.subjectId == member?.uid }?.canSend?.let { allowed = it }
+    return allowed
 }
 
 @Composable
