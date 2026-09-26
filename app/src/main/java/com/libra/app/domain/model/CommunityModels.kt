@@ -6,6 +6,7 @@ data class CommunityServer(
     val description: String = "",
     val ownerId: String = "",
     val createdAt: Long = 0L,
+    val inviteKey: String = "",
     // R2 object keys. Older server documents may not contain these fields.
     val avatarUrl: String = "",
     val bannerUrl: String = ""
