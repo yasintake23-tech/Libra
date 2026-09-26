@@ -284,7 +284,7 @@ private fun ServerWorkspace(
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val isOwner = currentUid == server.ownerId
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
-    var canSendInChannel by remember(channel.id) { mutableStateOf(true) }
+    var channelPermissions by remember { mutableStateOf<Map<String, List<ServerChannelPermissionOverride>>>(emptyMap()) }
     var showInfo by remember { mutableStateOf(false) }
     var showServerSettings by remember { mutableStateOf(false) }
     var editServerName by remember(server.id) { mutableStateOf(server.name) }
@@ -302,7 +302,7 @@ private fun ServerWorkspace(
         }
     }
 
-    LaunchedEffect(channels, members) {
+    LaunchedEffect(channels, members, isOwner) {
         if (isOwner) {
             channelPermissions = emptyMap()
         } else {
@@ -707,6 +707,7 @@ private fun ServerChatScreen(
     var serverName by remember(server.id) { mutableStateOf(server.name) }
     var serverDescription by remember(server.id) { mutableStateOf(server.description) }
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
+    var canSendInChannel by remember(server.id, channel.id) { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val context = androidx.compose.ui.platform.LocalContext.current
