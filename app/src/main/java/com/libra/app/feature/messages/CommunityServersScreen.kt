@@ -331,6 +331,12 @@ private fun ServerWorkspace(
         }
     }
 
+    LaunchedEffect(server.id) {
+        repo.observeServerRoles(server.id).collect { result ->
+            if (result is AppResult.Success) serverRoles = result.data
+        }
+    }
+
     LaunchedEffect(channels, members, isOwner) {
         if (isOwner) {
             channelPermissions = emptyMap()
