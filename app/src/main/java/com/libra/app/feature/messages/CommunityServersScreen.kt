@@ -771,11 +771,54 @@ private fun ServerWorkspace(
         )
     }
 
+    editChannel?.let { channel ->
+        NameDialog("Kanalı düzenle", "# kanal adı", "Kaydet", { editChannel = null }, channel.name) { name ->
+            scope.launch {
+                when (val result = repo.updateServerChannel(server.id, channel.id, name)) {
+                    is AppResult.Success -> editChannel = null
+                    is AppResult.Error -> error = result.error.message
+                }
+            }
+        }
+    }
+
+    editCategory?.let { category ->
+        NameDialog("Kategoriyi düzenle", "Kategori adı", "Kaydet", { editCategory = null }, category.name) { name ->
+            scope.launch {
+                when (val result = repo.updateServerCategory(server.id, category.id, name)) {
+                    is AppResult.Success -> editCategory = null
+                    is AppResult.Error -> error = result.error.message
+                }
+            }
+        }
+    }
+
+    moveChannel?.let { channel ->
+        AlertDialog(
+            onDismissRequest = { moveChannel = null },
+            title = { Text("Kanalı taşı") },
+            text = {
+                Column {
+                    categories.filter { it.id != channel.categoryId }.forEach { category ->
+                        TextButton(onClick = {
+                            scope.launch {
+                                when (val result = repo.moveServerChannelToCategory(server.id, channel.id, category.id)) {
+                                    is AppResult.Success -> moveChannel = null
+                                    is AppResult.Error -> error = result.error.message
+                                }
+                            }
+                        }) { Text(category.name) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { moveChannel = null }) { Text("Kapat") } }
+        )
+    }
     categoryMenu?.let { category ->
         AlertDialog(
             onDismissRequest = { categoryMenu = null },
             title = { Text(category.name) },
-            text = { Text("Bu kategorideki kanallar da silinecek.") },
+            text = { Column { Text("Bu kategorideki kanallar da silinecek."); TextButton(onClick = { categoryMenu = null; editCategory = category }) { Text("Kategori adını düzenle") } } },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
