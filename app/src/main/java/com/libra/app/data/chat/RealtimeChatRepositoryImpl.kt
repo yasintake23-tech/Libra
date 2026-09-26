@@ -102,9 +102,6 @@ class RealtimeChatRepositoryImpl(
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
                 reactions = reactions(snapshot.child("reactions")),
-                mentionedUserIds = snapshot.child("mentionedUserIds").children.mapNotNull { it.getValue(String::class.java) },
-                mentionsEveryone = snapshot.child("mentionsEveryone").getValue(Boolean::class.java) ?: false,
-                mentionsHere = snapshot.child("mentionsHere").getValue(Boolean::class.java) ?: false,
                 sharedContent = sharedContent(snapshot.child("sharedContent"))
             )
         }.getOrNull()
@@ -126,7 +123,10 @@ class RealtimeChatRepositoryImpl(
                 replyToText = snapshot.child("replyToText").getValue(String::class.java).orEmpty(),
                 replyToSenderId = snapshot.child("replyToSenderId").getValue(String::class.java).orEmpty(),
                 replyToSenderName = snapshot.child("replyToSenderName").getValue(String::class.java).orEmpty(),
-                reactions = reactions(snapshot.child("reactions"))
+                reactions = reactions(snapshot.child("reactions")),
+                mentionedUserIds = snapshot.child("mentionedUserIds").children.mapNotNull { it.getValue(String::class.java) },
+                mentionsEveryone = snapshot.child("mentionsEveryone").getValue(Boolean::class.java) ?: false,
+                mentionsHere = snapshot.child("mentionsHere").getValue(Boolean::class.java) ?: false
             )
         }.getOrNull()
 
