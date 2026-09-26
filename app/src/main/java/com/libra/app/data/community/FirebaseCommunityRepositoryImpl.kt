@@ -202,6 +202,14 @@ class FirebaseCommunityRepositoryImpl(
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya ayarlarını değiştirebilir."))
             }
 
+            val ownedPrefix = "users/" + user.uid + "/"
+            if (
+                (cleanAvatar.isNotBlank() && !cleanAvatar.startsWith(ownedPrefix)) ||
+                (cleanBanner.isNotBlank() && !cleanBanner.startsWith(ownedPrefix))
+            ) {
+                return AppResult.Error(AppError.Validation("Sunucu görselleri yalnızca Libra R2 nesne anahtarı olabilir."))
+            }
+
             ref.update(
                 mapOf(
                     "avatarUrl" to cleanAvatar,
@@ -255,6 +263,10 @@ class FirebaseCommunityRepositoryImpl(
 
         if (serverId.isBlank()) {
             return AppResult.Error(AppError.Validation("Geçersiz sunucu."))
+        }
+
+        if (contentType.isBlank() || !contentType.startsWith("image/")) {
+            return AppResult.Error(AppError.Validation("Sunucu görseli geçerli bir resim olmalı."))
         }
 
         return try {
