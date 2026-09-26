@@ -259,8 +259,11 @@ fun CommunityServersScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (server.avatarUrl.isNotBlank()) {
+                                    val avatarUrl = remember(server.id, server.avatarUrl) {
+                                        ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl)
+                                    }
                                     AsyncImage(
-                                        ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl),
+                                        avatarUrl,
                                         contentDescription = server.name,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
@@ -480,10 +483,8 @@ private fun ServerRailItem(
             contentAlignment = Alignment.Center
         ) {
             if (server.avatarUrl.isNotBlank()) {
-                var avatarUrl by remember(server.id, server.avatarUrl) { mutableStateOf<String?>(null) }
-
-                LaunchedEffect(server.id, server.avatarUrl) {
-                    avatarUrl = ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl)
+                val avatarUrl = remember(server.id, server.avatarUrl) {
+                    ServiceLocator.storageRepository.getPublicCdnUrl(server.avatarUrl)
                 }
 
                 AsyncImage(
@@ -1648,8 +1649,11 @@ private fun ServerChatScreen(
                             }
 
                             if (message.mediaUrl.isNotBlank()) {
+                                val mediaUrl = remember(message.id, message.mediaUrl) {
+                                    ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl)
+                                }
                                 AsyncImage(
-                                    ServiceLocator.storageRepository.getPublicCdnUrl(message.mediaUrl),
+                                    mediaUrl,
                                     "Gönderilen fotoğraf",
                                     Modifier
                                         .widthIn(max = 260.dp)
@@ -1670,16 +1674,16 @@ private fun ServerChatScreen(
                                 )
                             }
                             if (message.reactions.isNotEmpty()) {
+                                val reactionCounts = remember(message.id, message.reactions) {
+                                    message.reactions.values.groupingBy { it }.eachCount()
+                                }
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 4.dp, vertical = 2.dp),
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    message.reactions.values
-                                        .groupingBy { it }
-                                        .eachCount()
-                                        .forEach { (emoji, count) ->
+                                    reactionCounts.forEach { (emoji, count) ->
                                             Surface(
                                                 color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
                                                 shape = RoundedCornerShape(999.dp),
