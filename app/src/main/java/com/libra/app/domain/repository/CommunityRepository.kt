@@ -48,6 +48,7 @@ interface CommunityRepository {
     suspend fun deleteChannelPermission(serverId: String, channelId: String, overrideId: String): AppResult<Unit>
     fun observeServerRoles(serverId: String): Flow<AppResult<List<com.libra.app.domain.model.ServerRoleDefinition>>>
     suspend fun createServerRole(serverId: String, name: String, permissions: List<String>): AppResult<com.libra.app.domain.model.ServerRoleDefinition>
+    suspend fun updateServerRole(serverId: String, roleId: String, name: String, permissions: List<String>): AppResult<Unit>
     suspend fun deleteServerRole(serverId: String, roleId: String): AppResult<Unit>
     suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit>
     suspend fun banServerMember(serverId: String, memberId: String, reason: String): AppResult<Unit>
