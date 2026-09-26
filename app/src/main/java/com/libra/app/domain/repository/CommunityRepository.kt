@@ -5,6 +5,7 @@ import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
+import com.libra.app.domain.model.ServerChannelPermissionOverride
 import kotlinx.coroutines.flow.Flow
 
 interface CommunityRepository {
@@ -17,6 +18,13 @@ interface CommunityRepository {
     fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>>
     fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>>
     fun observeServerChannels(serverId: String): Flow<AppResult<List<ServerChannel>>>
+    fun observeChannelPermissions(serverId: String, channelId: String): Flow<AppResult<List<ServerChannelPermissionOverride>>>
+    suspend fun createServerCategory(serverId: String, name: String): AppResult<ServerCategory>
+    suspend fun deleteServerCategory(serverId: String, categoryId: String): AppResult<Unit>
+    suspend fun createServerChannel(serverId: String, categoryId: String, name: String): AppResult<ServerChannel>
+    suspend fun deleteServerChannel(serverId: String, channelId: String): AppResult<Unit>
+    suspend fun setChannelPermission(serverId: String, channelId: String, override: ServerChannelPermissionOverride): AppResult<Unit>
+    suspend fun deleteChannelPermission(serverId: String, channelId: String, overrideId: String): AppResult<Unit>
     suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit>
     suspend fun removeServerMember(serverId: String, memberId: String): AppResult<Unit>
     suspend fun leaveCommunityServer(serverId: String): AppResult<Unit>
