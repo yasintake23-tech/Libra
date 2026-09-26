@@ -756,7 +756,11 @@ private fun ServerChatScreen(
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
-                        color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        color = when {
+                            message.mentionedUserIds.contains(currentUid) -> androidx.compose.ui.graphics.Color(0xFFFFE8D5)
+                            message.senderId == currentUid -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.pointerInput(message.id + "-tap") {
                             detectTapGestures(
