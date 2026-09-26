@@ -1145,7 +1145,8 @@ private fun ServerChatScreen(
         }
     }
 
-    LaunchedEffect(server.id) {
+    LaunchedEffect(server.id, channel.id) {
+        messages = emptyList()
         chatRepository.observeServerMessages(server.id, channelId = channel.id).collect { result ->
             when (result) {
                 is AppResult.Success -> messages = result.data
@@ -1317,40 +1318,97 @@ private fun ServerChatScreen(
         replyTarget?.let { RichReplyBanner(it.senderName, it.text.ifBlank { "📷 Fotoğraf" }, { replyTarget = null }) }
         editingMessage?.let { RichReplyBanner("Mesaj düzenleniyor", it.text, { editingMessage = null; draft = "" }) }
 
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            tonalElevation = 1.dp
         ) {
-            IconButton(enabled = !uploading && editingMessage == null, onClick = { picker.launch("image/*") }) {
-                Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
-            }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { if (it.length <= 1000) draft = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(if (canSendInChannel) "Topluluğa mesaj yaz…" else "Bu kanalda mesaj yazma iznin yok.") },
-                maxLines = 4
-            )
-            IconButton(
-                enabled = canSendInChannel && (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
-                onClick = {
-                    val text = draft.trim()
-                    val edit = editingMessage
-                    if (edit != null) {
-                        scope.launch { chatRepository.editServerMessage(server.id, edit.id, text, channelId = channel.id) }
-                        editingMessage = null
-                    } else if (pendingUrl.isNotBlank()) {
-                        scope.launch { chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget, channelId = channel.id) }
-                        pendingUri = null
-                        pendingUrl = ""
-                        replyTarget = null
-                    } else {
-                        scope.launch { chatRepository.sendServerMessage(server.id, text, replyTarget, channelId = channel.id) }
-                        replyTarget = null
-                    }
-                    draft = ""
+            Row(
+                Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                IconButton(
+                    enabled = canSendInChannel && !uploading && editingMessage == null,
+                    onClick = { picker.launch("image/*") }
+                ) {
+                    Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf ekle")
                 }
-            ) { Icon(Icons.Default.Send, "Gönder") }
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { if (it.length <= 1000) draft = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            if (canSendInChannel) "Mesaj yaz…" else "Bu kanalda mesaj yazma iznin yok."
+                        )
+                    },
+                    enabled = canSendInChannel && !uploading,
+                    maxLines = 5,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        disabledBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        disabledContainerColor = androidx.compose.ui.graphics.Color.Transparent
+                    )
+                )
+                IconButton(
+                    enabled = canSendInChannel &&
+                        (draft.isNotBlank() || pendingUrl.isNotBlank()) &&
+                        !uploading,
+                    onClick = {
+                        val text = draft.trim()
+                        val edit = editingMessage
+                        if (edit != null) {
+                            scope.launch {
+                                when (val result = chatRepository.editServerMessage(server.id, edit.id, text, channelId = channel.id)) {
+                                    is AppResult.Error -> actionError = result.error.message
+                                    is AppResult.Success -> {
+                                        actionError = null
+                                        editingMessage = null
+                                        draft = ""
+                                    }
+                                }
+                            }
+                        } else if (pendingUrl.isNotBlank()) {
+                            scope.launch {
+                                when (val result = chatRepository.sendServerMediaMessage(server.id, pendingUrl, pendingType, text, replyTarget, channelId = channel.id)) {
+                                    is AppResult.Error -> actionError = result.error.message
+                                    is AppResult.Success -> {
+                                        actionError = null
+                                        pendingUri = null
+                                        pendingUrl = ""
+                                        replyTarget = null
+                                        draft = ""
+                                    }
+                                }
+                            }
+                        } else {
+                            scope.launch {
+                                when (val result = chatRepository.sendServerMessage(server.id, text, replyTarget, channelId = channel.id)) {
+                                    is AppResult.Error -> actionError = result.error.message
+                                    is AppResult.Success -> {
+                                        actionError = null
+                                        replyTarget = null
+                                        draft = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Icon(
+                        if (editingMessage != null) Icons.Default.Edit else Icons.Default.Send,
+                        if (editingMessage != null) "Düzenlemeyi kaydet" else "Gönder"
+                    )
+                }
+            }
         }
     }
     actionMessage?.let { message ->
