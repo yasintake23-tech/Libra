@@ -1010,7 +1010,7 @@ private fun ServerChatScreen(
     val chatRepository = ServiceLocator.chatRepository
     val communityRepository = ServiceLocator.communityRepository
     val scope = rememberCoroutineScope()
-    var messages by remember(server.id) { mutableStateOf<List<ServerMessage>>(emptyList()) }
+    var messages by remember(server.id, channel.id) { mutableStateOf<List<ServerMessage>>(emptyList()) }
     var error by remember(server.id) { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<ServerMessage?>(null) }
