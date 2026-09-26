@@ -36,10 +36,17 @@ fun ServerOwnerSettingsDialog(
     var showRoleCreate by remember { mutableStateOf(false) }
     var editRole by remember { mutableStateOf<ServerRoleDefinition?>(null) }
     var memberSearch by remember { mutableStateOf("") }
+    var bans by remember { mutableStateOf<List<ServerBan>>(emptyList()) }
 
     LaunchedEffect(server.id) {
         repo.observeServerRoles(server.id).collect { result ->
             if (result is AppResult.Success) roles = result.data
+        }
+    }
+
+    LaunchedEffect(server.id) {
+        repo.observeServerBans(server.id).collect { result ->
+            if (result is AppResult.Success) bans = result.data
         }
     }
 
@@ -91,6 +98,28 @@ fun ServerOwnerSettingsDialog(
                             }
                         }) { Text("At") }
                         TextButton(onClick = { banMember = member }) { Text("Ban") }
+                    }
+                }
+
+                item { Spacer(Modifier.height(8.dp)); Text("YASAKLAR", style = MaterialTheme.typography.labelLarge) }
+                if (bans.isEmpty()) {
+                    item { Text("Aktif sunucu yasağı yok.", style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    items(bans, key = { "ban-" + it.uid }) { ban ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text(ban.displayName.ifBlank { ban.username.ifBlank { ban.uid } })
+                                Text(ban.reason.ifBlank { "Sebep belirtilmedi" }, style = MaterialTheme.typography.labelSmall)
+                            }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    when (val r = repo.unbanServerMember(server.id, ban.uid)) {
+                                        is AppResult.Error -> onError(r.error.message)
+                                        is AppResult.Success -> Unit
+                                    }
+                                }
+                            }) { Text("Yasağı kaldır") }
+                        }
                     }
                 }
 
