@@ -191,32 +191,19 @@ class FirebaseCommunityRepositoryImpl(
             val memberSnapshot = memberRef.get().await()
             val serverOwnerId = serverSnapshot.getString("ownerId").orEmpty()
 
-            if (!memberSnapshot.exists()) {
-                memberRef.set(
-                    mapOf(
-                        "uid" to user.uid,
-                        "displayName" to (user.displayName ?: ""),
-                        "role" to if (serverOwnerId == user.uid) "OWNER" else "MEMBER",
-                        "joinedAt" to System.currentTimeMillis()
-                    )
-                ).await()
-            } else if (
-                serverOwnerId == user.uid &&
-                memberSnapshot.getString("role") != "OWNER"
-            ) {
-                memberRef.delete().await()
-                memberRef.set(
-                    mapOf(
-                        "uid" to user.uid,
-                        "displayName" to (user.displayName ?: ""),
-                        "role" to "OWNER",
-                        "joinedAt" to (
-                            memberSnapshot.getLong("joinedAt")
-                                ?: System.currentTimeMillis()
-                            )
-                    )
-                ).await()
+            if (memberSnapshot.exists()) {
+                // Joining is idempotent. A second tap never recreates membership.
+                return AppResult.Success(Unit)
             }
+
+            memberRef.set(
+                mapOf(
+                    "uid" to user.uid,
+                    "displayName" to (user.displayName ?: ""),
+                    "role" to if (serverOwnerId == user.uid) "OWNER" else "MEMBER",
+                    "joinedAt" to System.currentTimeMillis()
+                )
+            ).await()
 
             AppResult.Success(Unit)
         } catch (e: Exception) {
