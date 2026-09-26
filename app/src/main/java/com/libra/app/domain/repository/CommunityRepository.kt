@@ -6,6 +6,7 @@ import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.ServerChannelPermissionOverride
+import com.libra.app.domain.model.ServerBan
 import kotlinx.coroutines.flow.Flow
 
 interface CommunityRepository {
@@ -52,6 +53,7 @@ interface CommunityRepository {
     suspend fun deleteServerRole(serverId: String, roleId: String): AppResult<Unit>
     suspend fun setServerMemberRole(serverId: String, memberId: String, role: String): AppResult<Unit>
     suspend fun banServerMember(serverId: String, memberId: String, reason: String): AppResult<Unit>
+    fun observeServerBans(serverId: String): Flow<AppResult<List<ServerBan>>>
     suspend fun unbanServerMember(serverId: String, memberId: String): AppResult<Unit>
     suspend fun moveServerCategory(serverId: String, categoryId: String, direction: Int): AppResult<Unit>
     suspend fun moveServerChannel(serverId: String, channelId: String, direction: Int): AppResult<Unit>
