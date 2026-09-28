@@ -90,6 +90,7 @@ fun AppNavHost(
     var showCommunityServers by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
     var unreadNotificationCount by remember { mutableStateOf(0) }
+    var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -289,7 +290,21 @@ fun AppNavHost(
     }
 
     if (showNotifications) {
-        NotificationsScreen(onBack = { showNotifications = false }, onOpenProfile = ::openPublicProfile, modifier = modifier.fillMaxSize())
+        NotificationsScreen(
+            onBack = { showNotifications = false },
+            onOpenProfile = ::openPublicProfile,
+            onOpenNotification = { notification ->
+                if (
+                    notification.referenceId.isNotBlank() &&
+                    (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
+                ) {
+                    notificationPostTargetId = notification.referenceId
+                    showNotifications = false
+                    selectedTab = BottomNavTab.HOME
+                }
+            },
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
     if (showCommunityServers) {
@@ -369,6 +384,8 @@ fun AppNavHost(
                         onCloseComments = vm::closeComments, isPosting = vm.isPosting.collectAsState().value,
                         postError = vm.postError.collectAsState().value, onClearPostError = vm::clearPostError,
                         onOpenProfile = ::openPublicProfile,
+                        initialCommentPostId = notificationPostTargetId,
+                        onInitialCommentPostConsumed = { notificationPostTargetId = null },
                         onStoryReply = { story ->
                             scope.launch {
                                 when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
