@@ -477,7 +477,20 @@ fun AppNavHost(
                 BottomNavTab.LIBRARY -> {
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
+                    LibraryScreen(
+                        state,
+                        vm::loadShelf,
+                        vm::updateSearchQuery,
+                        { book, shelf ->
+                            if (shelf == ShelfType.MY_WRITINGS) {
+                                selectedWritingBook = book
+                            } else {
+                                selectedBook = book
+                            }
+                        },
+                        { selectedTab = BottomNavTab.WRITE },
+                        { vm.loadShelf(ShelfType.READING) }
+                    )
                 }
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
