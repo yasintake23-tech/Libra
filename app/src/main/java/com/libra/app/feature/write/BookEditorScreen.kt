@@ -364,6 +364,19 @@ fun BookEditorScreen(
             item { Spacer(Modifier.height(28.dp)) }
         }
     }
+
+    if (showDeleteConfirm && selectedChapter != null) {
+        DeleteChapterDialog(
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                onDeleteChapter(selectedChapter)
+                showDeleteConfirm = false
+                selectedChapterId = null
+                chapterTitle = ""
+                chapterContent = ""
+            }
+        )
+    }
 }
 
 
