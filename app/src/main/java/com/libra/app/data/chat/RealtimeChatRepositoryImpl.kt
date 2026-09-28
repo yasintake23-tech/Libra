@@ -70,7 +70,10 @@ class RealtimeChatRepositoryImpl(
                 id = snapshot.key.orEmpty(),
                 senderId = snapshot.child("senderId").getValue(String::class.java).orEmpty(),
                 senderPhotoUrl = snapshot.child("senderPhotoUrl").getValue(String::class.java).orEmpty(),
+                senderName = snapshot.child("senderName").getValue(String::class.java).orEmpty(),
+                senderUsername = snapshot.child("senderUsername").getValue(String::class.java).orEmpty(),
                 recipientId = snapshot.child("recipientId").getValue(String::class.java).orEmpty(),
+                conversationId = snapshot.child("conversationId").getValue(String::class.java).orEmpty(),
                 text = snapshot.child("text").getValue(String::class.java).orEmpty(),
                 mediaUrl = snapshot.child("mediaUrl").getValue(String::class.java).orEmpty(),
                 mediaType = snapshot.child("mediaType").getValue(String::class.java).orEmpty(),
@@ -360,9 +363,17 @@ class RealtimeChatRepositoryImpl(
                             return@mapNotNull null
                         }
 
+                        val isGroup = child.child("isGroup").getValue(Boolean::class.java) ?: false
+                        val participantIds = child.child("participantIds").children
+                            .mapNotNull { it.getValue(String::class.java) }
+
+                        if (!isGroup && otherUid.isBlank()) {
+                            return@mapNotNull null
+                        }
+
                         DirectConversation(
                             id = child.key.orEmpty(),
-                            participants = listOf(uid, otherUid).distinct(),
+                            participants = if (isGroup) participantIds else listOf(uid, otherUid).distinct(),
                             otherUserId = otherUid,
                             otherUserName = child.child("otherUserName")
                                 .getValue(String::class.java).orEmpty(),
@@ -377,7 +388,11 @@ class RealtimeChatRepositoryImpl(
                             unreadCount = (
                                 child.child("unreadCount")
                                     .getValue(Long::class.java) ?: 0L
-                                ).toInt().coerceAtLeast(0)
+                                ).toInt().coerceAtLeast(0),
+                            isGroup = isGroup,
+                            groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
+                            groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty(),
+                            participantIds = participantIds
                         )
                     }.sortedByDescending { it.updatedAt }
 
@@ -392,6 +407,142 @@ class RealtimeChatRepositoryImpl(
             query.addValueEventListener(listener)
             awaitClose { query.removeEventListener(listener) }
         }
+
+
+    override suspend fun createGroupConversation(
+        name: String,
+        participantIds: List<String>
+    ): AppResult<DirectConversation> {
+        val owner = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Grup oluşturmak için giriş yapmalısın."))
+
+        val cleanName = name.trim().take(60)
+        val members = (participantIds + owner.uid).filter { it.isNotBlank() }.distinct()
+        if (cleanName.isBlank()) return AppResult.Error(AppError.Validation("Grup adı boş olamaz."))
+        if (members.size < 2) return AppResult.Error(AppError.Validation("En az bir kişi daha seçmelisin."))
+        if (members.size > 50) return AppResult.Error(AppError.Validation("Bir grup en fazla 50 kişi olabilir."))
+
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val conversationId = root.child("directMessages").push().key
+            ?: return error("Grup oluşturulamadı.")
+        val now = System.currentTimeMillis()
+
+        val updates = mutableMapOf<String, Any>()
+        members.forEach { memberUid ->
+            updates["directConversations/\${memberUid}/\${conversationId}"] = mapOf(
+                "isGroup" to true,
+                "groupName" to cleanName,
+                "groupPhotoUrl" to "",
+                "participantIds" to members,
+                "lastMessage" to "",
+                "updatedAt" to now,
+                "unreadCount" to 0
+            )
+        }
+
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(
+                DirectConversation(
+                    id = conversationId,
+                    participants = members,
+                    isGroup = true,
+                    groupName = cleanName,
+                    participantIds = members
+                )
+            )
+        } catch (e: Exception) {
+            error("Grup oluşturulamadı.", e)
+        }
+    }
+
+    override suspend fun sendGroupMessage(
+        conversationId: String,
+        text: String,
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
+    ): AppResult<Unit> =
+        sendGroupInternal(conversationId, text, "", "", replyTo, sharedContent)
+
+    override suspend fun sendGroupMediaMessage(
+        conversationId: String,
+        mediaUrl: String,
+        mediaType: String,
+        text: String,
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
+    ): AppResult<Unit> =
+        sendGroupInternal(conversationId, text, mediaUrl, mediaType, replyTo, sharedContent)
+
+    private suspend fun sendGroupInternal(
+        conversationId: String,
+        text: String,
+        mediaUrl: String,
+        mediaType: String,
+        replyTo: DirectMessage?,
+        sharedContent: SharedContent?
+    ): AppResult<Unit> {
+        val sender = auth.currentUser
+            ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
+        if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Grup bulunamadı."))
+
+        val memberSnapshot = ref("directConversations/\${sender.uid}/\${conversationId}")?.get()?.await()
+        if (memberSnapshot?.child("isGroup")?.getValue(Boolean::class.java) != true) {
+            return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+        }
+
+        val clean = text.trim()
+        if (clean.isBlank() && mediaUrl.isBlank()) return AppResult.Error(AppError.Validation("Mesaj boş olamaz."))
+        if (clean.length > 2000) return AppResult.Error(AppError.Validation("Mesaj en fazla 2000 karakter olabilir."))
+        validateMediaOwner(sender.uid, mediaUrl, mediaType)?.let {
+            return AppResult.Error(AppError.Validation(it))
+        }
+
+        val profile = profileOrFallback(sender.uid, sender.displayName.orEmpty(), sender.photoUrl?.toString().orEmpty())
+        val members = memberSnapshot.child("participantIds").children.mapNotNull { it.getValue(String::class.java) }
+        if (sender.uid !in members) return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+
+        val messageRef = ref("directMessages/\${conversationId}")?.push()
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val now = System.currentTimeMillis()
+        val message = mapOf(
+            "senderId" to sender.uid,
+            "senderName" to profile.displayName,
+            "senderUsername" to profile.username,
+            "senderPhotoUrl" to profile.profileImageUrl,
+            "recipientId" to "",
+            "conversationId" to conversationId,
+            "text" to clean,
+            "mediaUrl" to mediaUrl,
+            "mediaType" to mediaType,
+            "createdAt" to now,
+            "replyToMessageId" to (replyTo?.id ?: ""),
+            "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
+            "replyToSenderId" to (replyTo?.senderId ?: ""),
+            "replyToSenderName" to (replyTo?.replyToSenderName ?: ""),
+            "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
+        )
+
+        return try {
+            messageRef.setValue(message).await()
+            val last = lastMessage(clean, mediaUrl, sharedContent)
+            val updates = mutableMapOf<String, Any>(
+                "directConversations/\${sender.uid}/\${conversationId}/lastMessage" to last,
+                "directConversations/\${sender.uid}/\${conversationId}/updatedAt" to now,
+                "directConversations/\${sender.uid}/\${conversationId}/unreadCount" to 0
+            )
+            members.filter { it != sender.uid }.forEach { memberUid ->
+                updates["directConversations/\${memberUid}/\${conversationId}/lastMessage"] = last
+                updates["directConversations/\${memberUid}/\${conversationId}/updatedAt"] = now
+                updates["directConversations/\${memberUid}/\${conversationId}/unreadCount"] = ServerValue.increment(1)
+            }
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            cleanupMedia(mediaUrl)
+            error("Grup mesajı gönderilemedi.", e)
+        }
+    }
 
     override fun observeDirectMessages(
         conversationId: String,
