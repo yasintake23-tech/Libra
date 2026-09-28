@@ -86,7 +86,7 @@ fun BookEditorScreen(
             runCatching {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 if (bytes != null && bytes.isNotEmpty()) {
-                    onUploadChapterImage(book.id, bytes, "chapter-image.jpg", "image/jpeg") { inserted ->
+                    onUploadChapterImage(bytes, "chapter-image.jpg", "image/jpeg") { inserted ->
                         chapterContent += inserted
                     }
                 }
