@@ -48,24 +48,19 @@ class LibraryViewModel(
 
             _uiState.value = UiState.Loading
 
-            // Keep a single Firebase listener alive after the first result.
-            // The previous implementation created one listener for first() and
-            // then another for collect(), which made the library unnecessarily
-            // fragile when RTDB was slow or the first listener was cancelled.
             val flow = if (shelfType == ShelfType.MY_WRITINGS) {
-                bookRepository.getUserWrittenBooks(userId).let { source ->
-                    kotlinx.coroutines.flow.flow {
-                        source.collect { emit(it) }
-                    }
-                }
+                bookRepository.getUserWrittenBooks(userId)
             } else {
                 bookRepository.getUserLibrary(userId, shelfType)
             }
 
-            var receivedFirstResult = false
-            val firstResult = withTimeoutOrNull(8_000L) {
+            // Keep one listener alive. Only the first Firebase emission has an
+            // 8-second timeout, so a slow connection cannot leave the screen
+            // spinning forever while later updates still remain live.
+            val firstResult = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val collector = launch {
                 flow.collect { result ->
-                    receivedFirstResult = true
+                    firstResult.complete(Unit)
                     when (result) {
                         is AppResult.Success -> {
                             val items = if (shelfType == ShelfType.MY_WRITINGS) {
@@ -93,12 +88,20 @@ class LibraryViewModel(
                 }
             }
 
-            if (!receivedFirstResult && firstResult == null && shelfJob?.isActive == true) {
+            val received = withTimeoutOrNull(8_000L) {
+                firstResult.await()
+                true
+            } ?: false
+
+            if (!received) {
+                collector.cancel()
                 _uiState.value = UiState.Error(
                     AppError.Database(
                         "Kütüphane yüklenemedi. Firebase bağlantısı yanıt vermedi."
                     )
                 )
+            } else {
+                collector.join()
             }
         }
     }
