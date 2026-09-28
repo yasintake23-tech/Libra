@@ -248,7 +248,20 @@ class BookRepositoryImpl : BookRepository {
             val now = System.currentTimeMillis()
             val updates = mutableMapOf<String, Any?>()
             ShelfType.values().forEach { shelf ->
-                updates["/libraries/$userId/${shelf.name}/$bookId"] = if (shelf == shelfType) mapOf("progressPercent" to 0, "addedAt" to now) else null
+                updates["/libraries/$userId/${shelf.name}/$bookId"] = if (shelf == shelfType) {
+                    if (shelf == ShelfType.READING) {
+                        mapOf(
+                            "progressPercent" to 0,
+                            "chapterId" to "",
+                            "chapterNumber" to 0,
+                            "position" to 0,
+                            "updatedAt" to now,
+                            "addedAt" to now
+                        )
+                    } else {
+                        mapOf("progressPercent" to 0, "addedAt" to now)
+                    }
+                } else null
             }
             db.reference.updateChildren(updates).await()
             AppResult.Success(Unit)
