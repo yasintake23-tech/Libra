@@ -61,6 +61,7 @@ import com.libra.app.feature.profile.ProfileEditScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.BookEditorScreen
+import com.libra.app.feature.book.BookReaderScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.ui.components.LoadingView
@@ -92,6 +93,7 @@ fun AppNavHost(
     var unreadNotificationCount by remember { mutableStateOf(0) }
     var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var readingBook by remember { mutableStateOf<Book?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -197,6 +199,7 @@ fun AppNavHost(
     // must unwind those states explicitly instead of finishing the Activity.
     BackHandler {
         when {
+            readingBook != null -> readingBook = null
             selectedBook != null -> selectedBook = null
             createContentMode != null -> createContentMode = null
             selectedWritingBook != null -> selectedWritingBook = null
@@ -253,6 +256,16 @@ fun AppNavHost(
             },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    readingBook?.let { book ->
+        BookReaderScreen(
+            book = book,
+            userId = profile.uid,
+            onBack = { readingBook = null },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -463,15 +476,16 @@ fun AppNavHost(
                     Spacer(Modifier.height(6.dp))
                     Text(book.category.displayName, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(10.dp))
-                    Text(book.description.ifBlank { "Bu kitap için henüz açıklama eklenmedi." })
+                    Text(book.discoverySummary.ifBlank { book.description.ifBlank { "Bu kitap için henüz açıklama eklenmedi." } })
                 }
             },
-            confirmButton = { TextButton(onClick = { selectedBook = null }) { Text("Kapat") } }
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedBook = null
+                    readingBook = book
+                }) { Text("Oku") }
+            },
+            dismissButton = { TextButton(onClick = { selectedBook = null }) { Text("Kapat") } }
         )
     }
 }
-
-private const val LIBRA_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
-
-private val UiState<FriendsState>.dataOrNull: FriendsState?
-    get() = (this as? UiState.Success)?.data
