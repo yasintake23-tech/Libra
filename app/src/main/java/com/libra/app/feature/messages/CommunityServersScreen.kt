@@ -60,6 +60,7 @@ import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.ServerChannelPermissionOverride
 import com.libra.app.domain.model.ServerRoleDefinition
+import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.Dispatchers
@@ -1498,6 +1499,8 @@ private fun ServerChatScreen(
     var showManage by remember { mutableStateOf(false) }
     var showServerInfo by remember { mutableStateOf(false) }
     var actionError by remember(server.id) { mutableStateOf<String?>(null) }
+    var reactionLookup by remember { mutableStateOf<Pair<ServerMessage, String>?>(null) }
+    var reactionUsers by remember { mutableStateOf<List<ReactionUser>>(emptyList()) }
     var serverName by remember(server.id) { mutableStateOf(server.name) }
     var serverDescription by remember(server.id) { mutableStateOf(server.description) }
     var members by remember { mutableStateOf<List<ServerMember>>(emptyList()) }
@@ -1842,7 +1845,12 @@ private fun ServerChatScreen(
                                             Surface(
                                                 color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
                                                 shape = RoundedCornerShape(999.dp),
-                                                tonalElevation = 1.dp
+                                                tonalElevation = 1.dp,
+                                                modifier = Modifier.pointerInput(message.id + emoji) {
+                                                    detectTapGestures(
+                                                        onLongPress = { reactionLookup = message to emoji }
+                                                    )
+                                                }
                                             ) {
                                                 Text(
                                                     "$emoji $count",
@@ -1858,6 +1866,31 @@ private fun ServerChatScreen(
                 }
             }
         }
+        }
+
+        reactionLookup?.let { (message, emoji) ->
+            LaunchedEffect(message.id, emoji) {
+                reactionUsers = (chatRepository.getServerMessageReactionUsers(server.id, message.id, emoji, channel.id)
+                    as? AppResult.Success)?.data.orEmpty()
+            }
+            ModalBottomSheet(onDismissRequest = { reactionLookup = null }) {
+                Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text("$emoji Tepkisi", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("${reactionUsers.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(10.dp))
+                    reactionUsers.forEach { user ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            UserAvatar(user.photoUrl, user.displayName.take(1).uppercase().ifBlank { "U" }, size = 36.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                if (user.username.isNotBlank()) Text("@${user.username}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
         }
 
         replyTarget?.let { RichReplyBanner(it.senderName, it.text.ifBlank { "📷 Fotoğraf" }, { replyTarget = null }) }
