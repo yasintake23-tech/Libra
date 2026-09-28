@@ -429,7 +429,7 @@ class RealtimeChatRepositoryImpl(
 
         val updates = mutableMapOf<String, Any>()
         members.forEach { memberUid ->
-            updates["directConversations/\${memberUid}/\${conversationId}"] = mapOf(
+            updates["directConversations/${memberUid}/${conversationId}"] = mapOf(
                 "isGroup" to true,
                 "groupName" to cleanName,
                 "groupPhotoUrl" to "",
@@ -486,7 +486,7 @@ class RealtimeChatRepositoryImpl(
             ?: return AppResult.Error(AppError.Auth("Mesaj göndermek için giriş yapmalısın."))
         if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Grup bulunamadı."))
 
-        val memberSnapshot = ref("directConversations/\${sender.uid}/\${conversationId}")?.get()?.await()
+        val memberSnapshot = ref("directConversations/${sender.uid}/${conversationId}")?.get()?.await()
         if (memberSnapshot?.child("isGroup")?.getValue(Boolean::class.java) != true) {
             return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
         }
@@ -502,7 +502,9 @@ class RealtimeChatRepositoryImpl(
         val members = memberSnapshot.child("participantIds").children.mapNotNull { it.getValue(String::class.java) }
         if (sender.uid !in members) return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
 
-        val messageRef = ref("directMessages/\${conversationId}")?.push()
+        val root = database()?.reference
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val messageRef = ref("directMessages/${conversationId}")?.push()
             ?: return error("Realtime Database yapılandırması bulunamadı.")
         val now = System.currentTimeMillis()
         val message = mapOf(
@@ -528,14 +530,14 @@ class RealtimeChatRepositoryImpl(
             messageRef.setValue(message).await()
             val last = lastMessage(clean, mediaUrl, sharedContent)
             val updates = mutableMapOf<String, Any>(
-                "directConversations/\${sender.uid}/\${conversationId}/lastMessage" to last,
-                "directConversations/\${sender.uid}/\${conversationId}/updatedAt" to now,
-                "directConversations/\${sender.uid}/\${conversationId}/unreadCount" to 0
+                "directConversations/${sender.uid}/${conversationId}/lastMessage" to last,
+                "directConversations/${sender.uid}/${conversationId}/updatedAt" to now,
+                "directConversations/${sender.uid}/${conversationId}/unreadCount" to 0
             )
             members.filter { it != sender.uid }.forEach { memberUid ->
-                updates["directConversations/\${memberUid}/\${conversationId}/lastMessage"] = last
-                updates["directConversations/\${memberUid}/\${conversationId}/updatedAt"] = now
-                updates["directConversations/\${memberUid}/\${conversationId}/unreadCount"] = ServerValue.increment(1)
+                updates["directConversations/${memberUid}/${conversationId}/lastMessage"] = last
+                updates["directConversations/${memberUid}/${conversationId}/updatedAt"] = now
+                updates["directConversations/${memberUid}/${conversationId}/unreadCount"] = ServerValue.increment(1)
             }
             root.updateChildren(updates).await()
             AppResult.Success(Unit)
