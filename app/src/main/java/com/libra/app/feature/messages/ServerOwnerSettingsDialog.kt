@@ -793,6 +793,7 @@ private fun ServerRoleEditorPage(
     val available = listOf(
         "VIEW_CHANNEL" to "Kanalı görebilir",
         "SEND_MESSAGES" to "Mesaj gönderebilir",
+        "SEND_MEDIA" to "Fotoğraf / medya gönderebilir",
         "MANAGE_CHANNELS" to "Kanalları yönetebilir",
         "MANAGE_MEMBERS" to "Üyeleri yönetebilir",
         "BAN_MEMBERS" to "Üyeleri banlayabilir"
