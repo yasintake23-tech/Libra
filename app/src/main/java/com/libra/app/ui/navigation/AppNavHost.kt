@@ -63,6 +63,7 @@ import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
+import com.libra.app.feature.reader.BookReaderScreen
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.feature.update.AppUpdatePrompt
 import com.libra.app.feature.update.AppUpdateViewModel
@@ -92,6 +93,7 @@ fun AppNavHost(
     var unreadNotificationCount by remember { mutableStateOf(0) }
     var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var readerBook by remember { mutableStateOf<Book?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -197,6 +199,7 @@ fun AppNavHost(
     // must unwind those states explicitly instead of finishing the Activity.
     BackHandler {
         when {
+            readerBook != null -> readerBook = null
             selectedBook != null -> selectedBook = null
             createContentMode != null -> createContentMode = null
             selectedWritingBook != null -> selectedWritingBook = null
@@ -253,6 +256,16 @@ fun AppNavHost(
             },
             onBack = { createContentMode = null },
             onClearError = vm::clearPostError,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    readerBook?.let { book ->
+        BookReaderScreen(
+            book = book,
+            userId = profile.uid,
+            onBack = { readerBook = null },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -436,7 +449,7 @@ fun AppNavHost(
                 BottomNavTab.LIBRARY -> {
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
+                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { readerBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
                 }
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
@@ -453,25 +466,3 @@ fun AppNavHost(
         }
     }
 
-    selectedBook?.let { book ->
-        AlertDialog(
-            onDismissRequest = { selectedBook = null },
-            title = { Text(book.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
-            text = {
-                Column {
-                    Text("Yazar: " + book.authorName, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(book.category.displayName, style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(10.dp))
-                    Text(book.description.ifBlank { "Bu kitap için henüz açıklama eklenmedi." })
-                }
-            },
-            confirmButton = { TextButton(onClick = { selectedBook = null }) { Text("Kapat") } }
-        )
-    }
-}
-
-private const val LIBRA_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
-
-private val UiState<FriendsState>.dataOrNull: FriendsState?
-    get() = (this as? UiState.Success)?.data
