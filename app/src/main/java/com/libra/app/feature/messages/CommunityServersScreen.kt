@@ -865,66 +865,69 @@ private fun ServerWorkspace(
                         InfoPill(channels.size.toString(), "kanal")
                         InfoPill(categories.size.toString(), "kategori")
                     }
-                    if (isOwner) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(14.dp)
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            Text(
+                                "Sunucu davet anahtarı",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Bu anahtarı arkadaşlarınla paylaşabilir, onların Sunucularım ekranından sunucuya katılmasını sağlayabilirsin.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (inviteLink != null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                                    ) {
+                                        Text(
+                                            inviteLink,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    FilledTonalButton(
+                                        onClick = {
+                                            clipboardManager.setText(AnnotatedString(inviteLink))
+                                            inviteCopied = true
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                    ) {
+                                        Text(if (inviteCopied) "Kopyalandı" else "Kopyala")
+                                    }
+                                }
+                            } else {
                                 Text(
-                                    "Davet bağlantısı",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "Bu bağlantıyı paylaşarak arkadaşlarını sunucuya davet edebilirsin.",
+                                    "Bu sunucunun davet anahtarı henüz oluşturulmamış.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-
-                                if (inviteLink != null) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Surface(
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                                        ) {
-                                            Text(
-                                                inviteLink,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                        FilledTonalButton(
-                                            onClick = {
-                                                clipboardManager.setText(AnnotatedString(inviteLink))
-                                                inviteCopied = true
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                                        ) {
-                                            Text(if (inviteCopied) "Kopyalandı" else "Kopyala")
-                                        }
-                                    }
-                                } else {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                }
                             }
                         }
+                    }
 
+                    if (isOwner) {
                         Spacer(Modifier.height(2.dp))
-
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                             shape = RoundedCornerShape(14.dp)
