@@ -8,7 +8,6 @@ data class Chapter(
     val content: String = "",
     val wordCount: Int = 0,
     val isPublished: Boolean = false,
-    val publishedAt: Long = 0L,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
