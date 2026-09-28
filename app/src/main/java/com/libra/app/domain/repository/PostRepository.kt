@@ -2,6 +2,7 @@ package com.libra.app.domain.repository
 
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.Post
+import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.PostComment
 import kotlinx.coroutines.flow.Flow
 
@@ -16,6 +17,7 @@ interface PostRepository {
         tags: List<String> = emptyList()
     ): AppResult<Post>
     suspend fun toggleLike(postId: String, userId: String): AppResult<Boolean>
+    suspend fun getPostLikeUsers(postId: String): AppResult<List<UserProfile>>
     suspend fun deletePost(postId: String, userId: String): AppResult<Unit>
     fun observeComments(postId: String, limit: Long = 100): Flow<AppResult<List<PostComment>>>
     suspend fun addComment(postId: String, authorId: String, text: String, parentCommentId: String = ""): AppResult<PostComment>
