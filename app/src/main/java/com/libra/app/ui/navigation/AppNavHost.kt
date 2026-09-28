@@ -64,6 +64,7 @@ import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.feature.reader.BookReaderScreen
+import com.libra.app.feature.book.BookDetailScreen
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.feature.update.AppUpdatePrompt
 import com.libra.app.feature.update.AppUpdateViewModel
@@ -92,7 +93,9 @@ fun AppNavHost(
     var showNotifications by remember { mutableStateOf(false) }
     var unreadNotificationCount by remember { mutableStateOf(0) }
     var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
+    var selectedBook by remember { mutableStateOf<Book?>(null) }
     var readerBook by remember { mutableStateOf<Book?>(null) }
+    var readerChapterId by remember { mutableStateOf<String?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -199,6 +202,7 @@ fun AppNavHost(
     BackHandler {
         when {
             readerBook != null -> readerBook = null
+            selectedBook != null -> selectedBook = null
             createContentMode != null -> createContentMode = null
             selectedWritingBook != null -> selectedWritingBook = null
             selectedPublicProfile != null -> selectedPublicProfile = null
@@ -263,7 +267,29 @@ fun AppNavHost(
         BookReaderScreen(
             book = book,
             userId = profile.uid,
+            initialChapterId = readerChapterId,
             onBack = { readerBook = null },
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    selectedBook?.let { book ->
+        BookDetailScreen(
+            book = book,
+            userId = profile.uid,
+            onBack = { selectedBook = null },
+            onRead = { selected, chapter ->
+                selectedBook = null
+                readerBook = selected
+                readerChapterId = chapter?.id
+            },
+            onOpenChapter = { selected, chapter ->
+                selectedBook = null
+                readerBook = selected
+                readerChapterId = chapter.id
+            },
+            onOpenAuthor = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return
@@ -378,7 +404,7 @@ fun AppNavHost(
                     val state by vm.uiState.collectAsState()
                     HomeScreen(
                         state,
-                        { readerBook = it },
+                        { selectedBook = it },
                         { selectedTab = BottomNavTab.WRITE },
                         { selectedTab = BottomNavTab.LIBRARY },
                         { selectedTab = BottomNavTab.PROFILE },
@@ -451,7 +477,7 @@ fun AppNavHost(
                 BottomNavTab.LIBRARY -> {
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
-                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { readerBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
+                    LibraryScreen(state, vm::loadShelf, vm::updateSearchQuery, { selectedBook = it }, { selectedTab = BottomNavTab.WRITE }, { vm.loadShelf(ShelfType.READING) })
                 }
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
