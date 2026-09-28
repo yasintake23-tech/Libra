@@ -136,7 +136,9 @@ fun HomeScreen(
     onStoryReply: (Story) -> Unit = {},
     onStoryLike: (Story) -> Unit = {},
     onStoriesRefresh: () -> Unit = {},
-    onOpenProfile: (String) -> Unit = {}
+    onOpenProfile: (String) -> Unit = {},
+    initialCommentPostId: String? = null,
+    onInitialCommentPostConsumed: () -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -151,6 +153,18 @@ fun HomeScreen(
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
             var shareContent by remember { mutableStateOf<SharedContent?>(null) }
+
+            LaunchedEffect(initialCommentPostId, data.posts) {
+                val targetId = initialCommentPostId ?: return@LaunchedEffect
+                val targetPost = data.posts.firstOrNull { it.id == targetId }
+                if (targetPost != null) {
+                    selectedPost = targetPost
+                    commentText = ""
+                    replyTarget = null
+                    onOpenComments(targetPost)
+                    onInitialCommentPostConsumed()
+                }
+            }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
