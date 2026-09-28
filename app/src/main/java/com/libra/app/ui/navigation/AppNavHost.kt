@@ -276,7 +276,8 @@ fun AppNavHost(
         BookEditorScreen(
             book = book, chapters = chapters, isSaving = isSaving, error = editorError,
             onLoadChapters = writeVm::loadChapters, onSaveBook = writeVm::saveBook,
-            onSaveChapter = writeVm::saveChapter, onPublish = writeVm::publishBook,
+            onSaveChapter = writeVm::saveChapter, onDeleteChapter = writeVm::deleteChapter,
+            onUploadChapterImage = writeVm::uploadChapterImage, onPublish = writeVm::publishBook,
             onClearError = writeVm::clearEditorError, onBack = { selectedWritingBook = null },
             modifier = modifier.fillMaxSize()
         )
@@ -464,3 +465,9 @@ fun AppNavHost(
         }
     }
 
+
+
+private const val LIBRA_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
+
+private val UiState<FriendsState>.dataOrNull: FriendsState?
+    get() = (this as? UiState.Success)?.data
