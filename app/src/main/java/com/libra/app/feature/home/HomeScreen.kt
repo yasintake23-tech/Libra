@@ -72,6 +72,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
@@ -91,6 +92,7 @@ import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.ReactionUser
 import com.libra.app.feature.share.ShareSheet
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.ui.components.BookCover
@@ -147,6 +149,7 @@ fun HomeScreen(
         is UiState.Success -> {
             val data = uiState.data
             var selectedPost by remember { mutableStateOf<Post?>(null) }
+            var selectedLikePost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
             var replyTarget by remember { mutableStateOf<PostComment?>(null) }
             var showCreateMenu by remember { mutableStateOf(false) }
@@ -379,6 +382,10 @@ fun HomeScreen(
                     ShareSheet(content = content, onDismiss = { shareContent = null })
                 }
 
+                selectedLikePost?.let { post ->
+                    PostLikeUsersDialog(post = post, onDismiss = { selectedLikePost = null })
+                }
+
                 selectedPost?.let { post ->
                     PostCommentsDialog(
                         post = post,
@@ -511,7 +518,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onShowLikes: () -> Unit = {}, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -614,7 +621,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
                         }
                     )
                 }
-                Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
+                Text(post.likesCount.toString(), modifier = Modifier.pointerInput(post.id) { detectTapGestures(onLongPress = { onShowLikes() }) }.padding(horizontal = 4.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onComment, enabled = canComment) {
                     Icon(Icons.Default.ChatBubbleOutline, "Yorumlar")
                 }
@@ -637,6 +644,73 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
             }
         }
     }
+}
+
+@Composable
+private fun PostLikeUsersDialog(
+    post: Post,
+    onDismiss: () -> Unit
+) {
+    var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var loading by remember(post.id) { mutableStateOf(true) }
+    var error by remember(post.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(post.id) {
+        loading = true
+        error = null
+        when (val result = ServiceLocator.postRepository.getPostLikeUsers(post.id)) {
+            is com.libra.app.core.result.AppResult.Success -> users = result.data
+            is com.libra.app.core.result.AppResult.Error -> error = result.error.message
+        }
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Beğenenler", fontWeight = FontWeight.Bold)
+                Text(
+                    post.likesCount.toString() + " beğeni",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            when {
+                loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+                error != null -> Text(error ?: "Beğenenler yüklenemedi.")
+                users.isEmpty() -> Text("Henüz beğenen yok.")
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(users, key = { it.uid }) { user ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        ) {
+                            Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                UserAvatar(user.profileImageUrl, user.initials, size = 38.dp)
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    if (user.username.isNotBlank()) {
+                                        Text("@" + user.username, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
