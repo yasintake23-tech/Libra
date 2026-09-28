@@ -14,6 +14,7 @@ import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.ChatRepository
@@ -841,6 +842,47 @@ class RealtimeChatRepositoryImpl(
         channelId: String
     ): AppResult<Unit> =
         toggleReaction(ref(serverMessagesPath(serverId, channelId) + "/$messageId"), emoji)
+
+    override suspend fun getServerMessageReactionUsers(
+        serverId: String,
+        messageId: String,
+        emoji: String,
+        channelId: String
+    ): AppResult<List<ReactionUser>> {
+        if (serverId.isBlank() || messageId.isBlank() || emoji.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz tepki bilgisi."))
+        }
+
+        return try {
+            val snapshot = ref(serverMessagesPath(serverId, channelId) + "/$messageId/reactions")
+                ?.get()
+                ?.await()
+                ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+            val users = snapshot.children.mapNotNull { child ->
+                val uid = child.key.orEmpty()
+                val value = child.getValue(String::class.java).orEmpty()
+                if (uid.isBlank() || value != emoji) {
+                    null
+                } else {
+                    uid
+                }
+            }.map { uid ->
+                val profile = profileOrFallback(uid)
+                ReactionUser(
+                    uid = uid,
+                    displayName = profile.displayName,
+                    username = profile.username,
+                    photoUrl = profile.profileImageUrl,
+                    emoji = emoji
+                )
+            }
+
+            AppResult.Success(users)
+        } catch (e: Exception) {
+            error("Tepki verenler yüklenemedi.", e)
+        }
+    }
 
     private suspend fun editMessage(
         messageRef: DatabaseReference?,
