@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,6 +90,33 @@ class DirectMessagesViewModel : ViewModel() {
     fun openConversation(conversation: DirectConversation) {
         observeConversation(conversation.id)
         markRead(conversation.id)
+    }
+
+    fun createGroup(name: String, participantIds: List<String>, onComplete: (DirectConversation?) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.createGroupConversation(name, participantIds)) {
+                is AppResult.Success -> { _error.value = null; onComplete(result.data) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(null) }
+            }
+        }
+    }
+
+    fun sendGroup(conversationId: String, text: String, replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.sendGroupMessage(conversationId, text, replyTo)) {
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+            }
+        }
+    }
+
+    fun sendGroupMedia(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.sendGroupMediaMessage(conversationId, mediaUrl, mediaType, text, replyTo)) {
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+            }
+        }
     }
 
     fun markRead(conversationId: String) {
@@ -256,6 +284,8 @@ fun DirectMessagesScreen(
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
     var conversationSearch by remember { mutableStateOf("") }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
+    var selectedConversation by remember { mutableStateOf<DirectConversation?>(null) }
+    var showNewChat by remember { mutableStateOf(false) }
     val conversations by viewModel.conversations.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -263,10 +293,31 @@ fun DirectMessagesScreen(
     LaunchedEffect(initialUser?.uid) {
         initialUser?.let {
             selectedUser = it
+            selectedConversation = null
             viewModel.openConversation(it)
             viewModel.markRead(listOf(authUserId(), it.uid).sorted().joinToString("_"))
             onInitialUserConsumed()
         }
+    }
+
+    selectedConversation?.let { conversation ->
+        DirectConversationScreen(
+            user = UserProfile(uid = "", displayName = conversation.groupName.ifBlank { "Grup sohbeti" }, profileImageUrl = conversation.groupPhotoUrl),
+            conversationIdOverride = conversation.id,
+            isGroup = true,
+            messages = messages,
+            error = error,
+            onBack = { selectedConversation = null },
+            onSend = { text, reply, onComplete -> viewModel.sendGroup(conversation.id, text, reply, onComplete) },
+            onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(conversation.id, url, type, text, reply, onComplete) },
+            onEdit = { id, text -> viewModel.edit(conversation.id, id, text) },
+            onDelete = { id -> viewModel.delete(conversation.id, id) },
+            onReaction = { id, emoji -> viewModel.react(conversation.id, id, emoji) },
+            canMessage = canMessage,
+            conversationIdOverride = listOf(authUserId(), user.uid).sorted().joinToString("_"),
+            modifier = modifier
+        )
+        return
     }
 
     selectedUser?.let { user ->
