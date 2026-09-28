@@ -37,21 +37,47 @@ class WriteViewModel(
     val editorSaving: StateFlow<Boolean> = _editorSaving.asStateFlow()
     private val _editorError = MutableStateFlow<String?>(null)
     private var autosaveJob: Job? = null
+    private var booksJob: Job? = null
     val editorError: StateFlow<String?> = _editorError.asStateFlow()
     val uiState: StateFlow<UiState<WriteState>> = _uiState.asStateFlow()
 
     init { loadMyBooks() }
 
     fun loadMyBooks() {
-        viewModelScope.launch {
+        booksJob?.cancel()
+        booksJob = viewModelScope.launch {
             val userId = authRepository.currentUser.value?.uid
-            if (userId == null) { _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı.")); return@launch }
+            if (userId == null) {
+                _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı."))
+                return@launch
+            }
+
             _uiState.value = UiState.Loading
-            bookRepository.getUserWrittenBooks(userId).collect { result ->
-                _uiState.value = when (result) {
-                    is AppResult.Success -> UiState.Success(WriteState(myBooks = result.data))
-                    is AppResult.Error -> UiState.Error(result.error)
+            val firstResult = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val collector = launch {
+                bookRepository.getUserWrittenBooks(userId).collect { result ->
+                    firstResult.complete(Unit)
+                    _uiState.value = when (result) {
+                        is AppResult.Success -> UiState.Success(WriteState(myBooks = result.data))
+                        is AppResult.Error -> UiState.Error(result.error)
+                    }
                 }
+            }
+
+            val received = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
+                firstResult.await()
+                true
+            } ?: false
+
+            if (!received) {
+                collector.cancel()
+                _uiState.value = UiState.Error(
+                    com.libra.app.core.result.AppError.Database(
+                        "Yazdıkların yüklenemedi. Firebase bağlantısı yanıt vermedi."
+                    )
+                )
+            } else {
+                collector.join()
             }
         }
     }
