@@ -48,30 +48,20 @@ class LibraryViewModel(
 
             _uiState.value = UiState.Loading
 
-            val result = withTimeoutOrNull(10_000L) {
-                if (shelfType == ShelfType.MY_WRITINGS) {
+            if (shelfType == ShelfType.MY_WRITINGS) {
+                val result = withTimeoutOrNull(10_000L) {
                     bookRepository.getUserWrittenBooks(userId).first()
-                } else {
-                    bookRepository.getUserLibrary(userId, shelfType).first()
                 }
-            }
 
-            if (result == null) {
-                _uiState.value = UiState.Error(
-                    AppError.Database(
-                        if (shelfType == ShelfType.MY_WRITINGS) {
-                            "Yazdıkların yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
-                        } else {
-                            "Kütüphane yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
-                        }
+                if (result == null) {
+                    _uiState.value = UiState.Error(
+                        AppError.Database("Yazdıkların yüklenemedi. Firebase bağlantısı zaman aşımına uğradı.")
                     )
-                )
-                return@launch
-            }
+                    return@launch
+                }
 
-            when (result) {
-                is AppResult.Success -> {
-                    if (shelfType == ShelfType.MY_WRITINGS) {
+                when (result) {
+                    is AppResult.Success -> {
                         val items = result.data.map { book ->
                             UserShelfItem(
                                 id = userId + "_MY_WRITINGS_" + book.id,
@@ -85,11 +75,28 @@ class LibraryViewModel(
                         _uiState.value = UiState.Success(
                             LibraryState(ShelfType.MY_WRITINGS, items, currentSearch)
                         )
-                    } else {
-                        _uiState.value = UiState.Success(
-                            LibraryState(shelfType, result.data, currentSearch)
-                        )
                     }
+                    is AppResult.Error -> _uiState.value = UiState.Error(result.error)
+                }
+                return@launch
+            }
+
+            val result = withTimeoutOrNull(10_000L) {
+                bookRepository.getUserLibrary(userId, shelfType).first()
+            }
+
+            if (result == null) {
+                _uiState.value = UiState.Error(
+                    AppError.Database("Kütüphane yüklenemedi. Firebase bağlantısı zaman aşımına uğradı.")
+                )
+                return@launch
+            }
+
+            when (result) {
+                is AppResult.Success -> {
+                    _uiState.value = UiState.Success(
+                        LibraryState(shelfType, result.data, currentSearch)
+                    )
                 }
                 is AppResult.Error -> _uiState.value = UiState.Error(result.error)
             }
