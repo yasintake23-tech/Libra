@@ -5,6 +5,7 @@ import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.SharedContent
 import kotlinx.coroutines.flow.Flow
 
@@ -37,4 +38,5 @@ interface ChatRepository {
     suspend fun editServerMessage(serverId: String, messageId: String, text: String, channelId: String = ""): AppResult<Unit>
     suspend fun deleteServerMessage(serverId: String, messageId: String, channelId: String = ""): AppResult<Unit>
     suspend fun toggleServerMessageReaction(serverId: String, messageId: String, emoji: String, channelId: String = ""): AppResult<Unit>
+    suspend fun getServerMessageReactionUsers(serverId: String, messageId: String, emoji: String, channelId: String = ""): AppResult<List<ReactionUser>>
 }
