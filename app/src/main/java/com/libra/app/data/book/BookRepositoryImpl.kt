@@ -328,13 +328,13 @@ class BookRepositoryImpl : BookRepository {
             val id = comment.id.ifBlank { ref.push().key ?: return AppResult.Error(AppError.Database("Yorum kimliği oluşturulamadı.")) }
             val saved = comment.copy(id = id, text = text, createdAt = if (comment.createdAt == 0L) System.currentTimeMillis() else comment.createdAt)
             ref.child(id).setValue(saved).await()
-            booksRef!!.child(comment.bookId).child("commentsCount").runTransaction(object : Transaction.Handler {
+            booksRef!!.child(comment.bookId).child("commentsCount").runTransactionAwait(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
                     currentData.value = (currentData.getValue(Int::class.java) ?: 0) + 1
                     return Transaction.success(currentData)
                 }
                 override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {}
-            }).await()
+            })
             AppResult.Success(saved)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum eklenemedi: ${e.localizedMessage}", e))
@@ -352,13 +352,13 @@ class BookRepositoryImpl : BookRepository {
             val bookOwner = booksRef!!.child(bookId).child("ownerId").get().await().getValue(String::class.java)
             if (author != uid && bookOwner != uid) return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
             ref.removeValue().await()
-            booksRef!!.child(bookId).child("commentsCount").runTransaction(object : Transaction.Handler {
+            booksRef!!.child(bookId).child("commentsCount").runTransactionAwait(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
                     currentData.value = ((currentData.getValue(Int::class.java) ?: 0) - 1).coerceAtLeast(0)
                     return Transaction.success(currentData)
                 }
                 override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {}
-            }).await()
+            })
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum silinemedi: ${e.localizedMessage}", e))
