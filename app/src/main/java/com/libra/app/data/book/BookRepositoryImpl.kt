@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * Firebase Realtime Database implementation.
@@ -51,6 +54,21 @@ class BookRepositoryImpl : BookRepository {
 
     private val librariesRef: DatabaseReference? by lazy {
         database?.getReference("libraries")
+    }
+
+    private suspend fun DatabaseReference.runTransactionAwait(handler: Transaction.Handler) = suspendCancellableCoroutine<DataSnapshot> { continuation ->
+        runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result = handler.doTransaction(currentData)
+            override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {
+                if (continuation.isCompleted) return
+                when {
+                    error != null -> continuation.resumeWithException(error.toException())
+                    committed && currentData != null -> continuation.resume(currentData)
+                    else -> continuation.resumeWithException(IllegalStateException("Firebase transaction tamamlanamadı."))
+                }
+            }
+        })
+        continuation.invokeOnCancellation { }
     }
 
     private fun databaseError(): AppResult.Error =
@@ -268,14 +286,14 @@ class BookRepositoryImpl : BookRepository {
             val memberRef = bookRef.child(collection).child(userId)
             val active = !memberRef.get().await().exists()
             memberRef.setValue(if (active) true else null).await()
-            bookRef.child(counter).runTransaction(object : Transaction.Handler {
+            bookRef.child(counter).runTransactionAwait(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
                     val current = currentData.getValue(Int::class.java) ?: 0
                     currentData.value = (current + if (active) 1 else -1).coerceAtLeast(0)
                     return Transaction.success(currentData)
                 }
                 override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {}
-            }).await()
+            })
             AppResult.Success(active)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Kitap etkileşimi güncellenemedi: ${e.localizedMessage}", e))
