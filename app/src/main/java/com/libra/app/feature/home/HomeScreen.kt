@@ -12,6 +12,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -156,6 +158,7 @@ fun HomeScreen(
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
             var shareContent by remember { mutableStateOf<SharedContent?>(null) }
+            var likeUsersPost by remember { mutableStateOf<Post?>(null) }
 
             LaunchedEffect(initialCommentPostId, data.posts) {
                 val targetId = initialCommentPostId ?: return@LaunchedEffect
@@ -376,6 +379,31 @@ fun HomeScreen(
                             )
                         }
                     )
+                }
+
+                likeUsersPost?.let { post ->
+                    var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
+                    LaunchedEffect(post.id) {
+                        users = (ServiceLocator.postRepository.getPostLikeUsers(post.id) as? UiState.Success)?.data ?: emptyList()
+                    }
+                    ModalBottomSheet(onDismissRequest = { likeUsersPost = null }) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                            Text("Beğenenler", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("${users.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(12.dp))
+                            users.forEach { user ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    UserAvatar(user.profileImageUrl, user.displayName.take(1).uppercase().ifBlank { "U" }, size = 38.dp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                        Text("@${user.username}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(20.dp))
+                        }
+                    }
                 }
 
                 shareContent?.let { content ->
