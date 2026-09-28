@@ -1195,6 +1195,25 @@ private fun canViewServerChannel(
     return allowed
 }
 
+private fun canSendServerChannelMedia(
+    channel: ServerChannel,
+    permissions: List<ServerChannelPermissionOverride>,
+    member: ServerMember?,
+    rolePermissions: List<String>
+): Boolean {
+    if (member?.role == "ADMIN" || member?.role == "OWNER") return true
+
+    var allowed = when (member?.role) {
+        "MEMBER" -> channel.allowEveryoneSendMedia
+        else -> "SEND_MEDIA" in rolePermissions && channel.allowEveryoneSendMedia
+    }
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == "EVERYONE" }?.canSendMedia?.let { allowed = it }
+    val role = member?.role.orEmpty()
+    permissions.firstOrNull { it.subjectType == "ROLE" && it.subjectId == role }?.canSendMedia?.let { allowed = it }
+    permissions.firstOrNull { it.subjectType == "USER" && it.subjectId == member?.uid }?.canSendMedia?.let { allowed = it }
+    return allowed
+}
+
 private fun canSendServerChannel(
     channel: ServerChannel,
     permissions: List<ServerChannelPermissionOverride>,
@@ -1554,6 +1573,14 @@ private fun ServerChatScreen(
             currentRolePermissions
         )
     } ?: true
+    val canSendMediaInChannel = currentMember?.let {
+        canSendServerChannelMedia(
+            channel,
+            channelPermissionOverrides,
+            it,
+            currentRolePermissions
+        )
+    } ?: true
 
     LaunchedEffect(server.id, channel.id) {
         messages = emptyList()
@@ -1850,7 +1877,7 @@ private fun ServerChatScreen(
                 verticalAlignment = Alignment.Bottom
             ) {
                 IconButton(
-                    enabled = canSendInChannel && !uploading && editingMessage == null,
+                    enabled = canSendMediaInChannel && !uploading && editingMessage == null,
                     onClick = { picker.launch("image/*") }
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf ekle")
@@ -1861,7 +1888,11 @@ private fun ServerChatScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
-                            if (canSendInChannel) "Mesaj yaz…" else "Bu kanalda mesaj yazma iznin yok."
+                            when {
+                                !canSendInChannel -> "Bu kanalda mesaj yazma iznin yok."
+                                !canSendMediaInChannel -> "Mesaj yaz… (fotoğraf gönderimi kapalı)"
+                                else -> "Mesaj yaz…"
+                            }
                         )
                     },
                     enabled = canSendInChannel && !uploading,
