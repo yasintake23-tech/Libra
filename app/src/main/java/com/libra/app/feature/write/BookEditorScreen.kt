@@ -77,9 +77,7 @@ fun BookEditorScreen(
     var category by remember(book.id) { mutableStateOf(book.category) }
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
-    var chapterContent by remember(book.id) { mutableStateOf("") }
 NaN
-
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
     LaunchedEffect(chapters, selectedChapterId) {
@@ -88,7 +86,6 @@ NaN
             selectedChapterId = selected.id
             chapterTitle = selected.title
             chapterContent = selected.content
-        }
         }
     }
 
