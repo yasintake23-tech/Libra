@@ -22,6 +22,11 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -59,6 +64,8 @@ fun BookEditorScreen(
     onLoadChapters: (String) -> Unit,
     onSaveBook: (Book) -> Unit,
     onSaveChapter: (Chapter) -> Unit,
+    onDeleteChapter: (Chapter) -> Unit,
+    onUploadChapterImage: (ByteArray, String, String, (String) -> Unit) -> Unit,
     onPublish: (Book) -> Unit,
     onClearError: () -> Unit,
     onBack: () -> Unit,
@@ -70,7 +77,7 @@ fun BookEditorScreen(
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
     var chapterContent by remember(book.id) { mutableStateOf("") }
-    var categoryMenu by remember { mutableStateOf(false) }
+NaN
 
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
@@ -81,10 +88,19 @@ fun BookEditorScreen(
             chapterTitle = selected.title
             chapterContent = selected.content
         }
+        }
     }
 
     val selectedChapter = chapters.firstOrNull { it.id == selectedChapterId }
     val nextNumber = (chapters.maxOfOrNull { it.chapterNumber } ?: 0) + 1
+
+    LaunchedEffect(chapterContent, chapterTitle, selectedChapterId) {
+        val current = selectedChapter
+        if (current != null && (chapterContent != current.content || chapterTitle != current.title)) {
+            kotlinx.coroutines.delay(1200)
+            onSaveChapter(current.copy(title = chapterTitle.trim(), content = chapterContent))
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         Row(
@@ -247,6 +263,12 @@ fun BookEditorScreen(
                             singleLine = true
                         )
                         Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = { chapterContent += "\n**" }, enabled = !isSaving) { Text("Kalın") }
+                            TextButton(onClick = { chapterContent += "\n_" }, enabled = !isSaving) { Text("İtalik") }
+                            TextButton(onClick = { chapterContent += "\n> " }, enabled = !isSaving) { Text("Alıntı") }
+                            IconButton(onClick = { imagePicker.launch("image/*") }, enabled = !isSaving) { Icon(Icons.Default.Image, "Görsel ekle") }
+                        }
                         OutlinedTextField(
                             value = chapterContent,
                             onValueChange = { if (it.length <= 100000) chapterContent = it },
@@ -259,6 +281,7 @@ fun BookEditorScreen(
                             }
                         )
                         Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             enabled = !isSaving && chapterTitle.isNotBlank() && chapterContent.isNotBlank(),
                             onClick = {
@@ -278,6 +301,12 @@ fun BookEditorScreen(
                             Icon(Icons.Default.Check, null)
                             Spacer(Modifier.width(4.dp))
                             Text("Bölümü kaydet")
+                        }
+                        if (selectedChapter != null) {
+                            IconButton(onClick = { showDeleteConfirm = true }, enabled = !isSaving) {
+                                Icon(Icons.Default.Delete, "Bölümü sil")
+                            }
+                        }
                         }
                     }
                 }
@@ -321,4 +350,10 @@ fun BookEditorScreen(
             item { Spacer(Modifier.height(28.dp)) }
         }
     }
+}
+
+
+@Composable
+private fun DeleteChapterDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    androidx.compose.material3.AlertDialog(onDismissRequest = onDismiss, title = { Text("Bölümü sil?") }, text = { Text("Bu işlem bölümü kalıcı olarak kaldırır.") }, confirmButton = { TextButton(onClick = onConfirm) { Text("Sil") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } })
 }
