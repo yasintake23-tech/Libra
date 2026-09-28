@@ -244,7 +244,6 @@ class BookRepositoryImpl : BookRepository {
         val libraries = librariesRef ?: return databaseError()
         if (userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
-            if (!books.child(bookId).get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
             val now = System.currentTimeMillis()
             val updates = mutableMapOf<String, Any?>()
             ShelfType.values().forEach { shelf ->
