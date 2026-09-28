@@ -38,7 +38,7 @@ fun LibraryScreen(
     uiState: UiState<LibraryState>,
     onTabSelected: (ShelfType) -> Unit,
     onSearchChanged: (String) -> Unit,
-    onBookClick: (Book) -> Unit,
+    onBookClick: (Book, ShelfType) -> Unit,
     onNavigateToWrite: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
@@ -129,7 +129,7 @@ fun LibraryScreen(
                         items(filtered, key = { it.id }) { item ->
                             HorizontalBookCard(
                                 item.book,
-                                { onBookClick(item.book) }
+                                { onBookClick(item.book, selectedShelf) }
                             )
                         }
                     }
