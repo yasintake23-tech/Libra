@@ -566,7 +566,7 @@ class RealtimeChatRepositoryImpl(
             close()
             return@callbackFlow
         }
-        if (isGroup && membership.child("participantIds").children.none { it.getValue(String::class.java) == uid }) {
+        if (isGroup && membership?.child("participantIds")?.children?.none { it.getValue(String::class.java) == uid } != false) {
             trySend(AppResult.Error(AppError.Auth("Bu grubu görüntüleme yetkin yok.")))
             close()
             return@callbackFlow
