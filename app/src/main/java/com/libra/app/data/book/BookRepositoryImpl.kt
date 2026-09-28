@@ -1,5 +1,6 @@
 package com.libra.app.data.book
 
+import com.google.firebase.FirebaseApp
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
@@ -39,9 +40,17 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class BookRepositoryImpl : BookRepository {
 
     private val database: FirebaseDatabase? by lazy {
-        // Use the database URL from google-services.json. Hard-coding a
-        // firebaseio.com host can point the app at a different region/database.
-        runCatching { FirebaseDatabase.getInstance() }.getOrNull()
+        // This project uses the europe-west1 regional RTDB. Firebase's
+        // Android SDK requires an explicit database URL for non-us-central1
+        // instances. Read it from google-services.json via FirebaseOptions.
+        runCatching {
+            val databaseUrl = FirebaseApp.getInstance().options.databaseUrl
+            if (databaseUrl.isNullOrBlank()) {
+                FirebaseDatabase.getInstance()
+            } else {
+                FirebaseDatabase.getInstance(databaseUrl)
+            }
+        }.getOrNull()
     }
 
     private val booksRef: DatabaseReference? by lazy {
