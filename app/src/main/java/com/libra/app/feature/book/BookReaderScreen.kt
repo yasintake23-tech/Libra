@@ -77,6 +77,14 @@ fun BookReaderScreen(book: Book, userId: String, onBack: () -> Unit, modifier: M
     val listState = rememberLazyListState()
     var lastSavedIndex by remember(chapter.id) { mutableIntStateOf(-1) }
 
+    LaunchedEffect(chapter.id, savedProgress) {
+        if (savedProgress?.chapterId == chapter.id && savedProgress.position > 0) {
+            listState.scrollToItem(savedProgress.position)
+        } else {
+            listState.scrollToItem(0)
+        }
+    }
+
     LaunchedEffect(chapter.id, listState.firstVisibleItemIndex) {
         val index = listState.firstVisibleItemIndex
         if (index == lastSavedIndex) return@LaunchedEffect
