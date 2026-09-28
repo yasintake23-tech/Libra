@@ -37,7 +37,8 @@ data class ServerChannel(
     val type: String = "TEXT",
     val position: Int = 0,
     val allowEveryoneView: Boolean = true,
-    val allowEveryoneSend: Boolean = true
+    val allowEveryoneSend: Boolean = true,
+    val allowEveryoneSendMedia: Boolean = true
 )
 
 data class ServerChannelPermissionOverride(
@@ -46,7 +47,8 @@ data class ServerChannelPermissionOverride(
     val subjectId: String = "MEMBER",
     val subjectName: String = "",
     val canView: Boolean? = null,
-    val canSend: Boolean? = null
+    val canSend: Boolean? = null,
+    val canSendMedia: Boolean? = null
 )
 
 data class ServerMessage(
