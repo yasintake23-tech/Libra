@@ -20,6 +20,7 @@
         "status"
       ],
       "$bookId": {
+        ".read": "auth != null && (data.child('status').val() === 'PUBLISHED' || data.child('ownerId').val() === auth.uid)",
         ".write": "auth != null && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val() && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
         ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()",
         "comments": {
