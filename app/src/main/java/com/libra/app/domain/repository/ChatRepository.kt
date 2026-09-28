@@ -31,6 +31,9 @@ interface ChatRepository {
     suspend fun deleteDirectMessage(conversationId: String, messageId: String): AppResult<Unit>
     suspend fun toggleDirectMessageReaction(conversationId: String, messageId: String, emoji: String): AppResult<Unit>
     suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit>
+    suspend fun createGroupConversation(name: String, participantIds: List<String>): AppResult<DirectConversation>
+    suspend fun sendGroupMessage(conversationId: String, text: String, replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
+    suspend fun sendGroupMediaMessage(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
 
     fun observeServerMessages(serverId: String, limit: Long = 100, channelId: String = ""): Flow<AppResult<List<ServerMessage>>>
     suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>
