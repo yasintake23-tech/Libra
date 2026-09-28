@@ -280,7 +280,7 @@ class FirebasePostRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun addComment(postId: String, authorId: String, text: String): AppResult<PostComment> {
+    override suspend fun addComment(postId: String, authorId: String, text: String, parentCommentId: String): AppResult<PostComment> {
         val cleanText = text.trim()
         if (postId.isBlank() || authorId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         if (cleanText.isBlank()) return AppResult.Error(AppError.Validation("Yorum boş olamaz."))
@@ -300,6 +300,7 @@ class FirebasePostRepositoryImpl(
                 authorUsername = profile.username,
                 authorPhotoUrl = profile.profileImageUrl,
                 text = cleanText,
+                parentCommentId = parentCommentId.trim(),
                 createdAt = System.currentTimeMillis()
             )
             ref.set(comment).await()
@@ -308,21 +309,39 @@ class FirebasePostRepositoryImpl(
                 com.google.firebase.firestore.FieldValue.increment(1)
             ).await()
             val postSnapshot = postsRef.document(postId).get().await()
-            val recipientId = postSnapshot.getString("authorId").orEmpty()
+            val postOwnerId = postSnapshot.getString("authorId").orEmpty()
+
+            val recipientId = if (parentCommentId.isNotBlank()) {
+                postsRef.document(postId)
+                    .collection("comments")
+                    .document(parentCommentId.trim())
+                    .get()
+                    .await()
+                    .getString("authorId")
+                    .orEmpty()
+            } else {
+                postOwnerId
+            }
+
             if (recipientId.isNotBlank() && recipientId != authorId) {
-                runCatching { notificationRepository.create(
-                    AppNotification(
-                        recipientId = recipientId,
-                        actorId = authorId,
-                        actorName = profile.displayName,
-                        actorUsername = profile.username,
-                        actorPhotoUrl = profile.profileImageUrl,
-                        type = "COMMENT",
-                        title = "Yeni yorum",
-                        body = profile.displayName + " gönderine yorum yaptı.",
-                        referenceId = postId,
-                        createdAt = System.currentTimeMillis()
-                    )
+                runCatching {
+                    notificationRepository.create(
+                        AppNotification(
+                            recipientId = recipientId,
+                            actorId = authorId,
+                            actorName = profile.displayName,
+                            actorUsername = profile.username,
+                            actorPhotoUrl = profile.profileImageUrl,
+                            type = if (parentCommentId.isNotBlank()) "COMMENT_REPLY" else "COMMENT",
+                            title = if (parentCommentId.isNotBlank()) "Yorumuna yanıt" else "Yeni yorum",
+                            body = if (parentCommentId.isNotBlank()) {
+                                profile.displayName + " yorumuna yanıt verdi."
+                            } else {
+                                profile.displayName + " gönderine yorum yaptı."
+                            },
+                            referenceId = postId,
+                            createdAt = System.currentTimeMillis()
+                        )
                     )
                 }
             }
