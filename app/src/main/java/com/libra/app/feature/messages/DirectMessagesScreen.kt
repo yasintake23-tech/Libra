@@ -528,6 +528,193 @@ fun DirectMessagesScreen(
             }
         }
     }
+
+    if (showNewChat) {
+        NewChatSheet(
+            onDismiss = { showNewChat = false },
+            onDirectUser = { user ->
+                showNewChat = false
+                selectedConversation = null
+                selectedUser = user
+                viewModel.openConversation(user)
+            },
+            onCreateGroup = { name, ids ->
+                viewModel.createGroup(name, ids) { conversation ->
+                    if (conversation != null) {
+                        showNewChat = false
+                        selectedUser = null
+                        selectedConversation = conversation
+                        viewModel.openConversation(conversation)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun NewChatSheet(
+    onDismiss: () -> Unit,
+    onDirectUser: (UserProfile) -> Unit,
+    onCreateGroup: (String, List<String>) -> Unit
+) {
+    var mode by remember { mutableStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var groupName by remember { mutableStateOf("") }
+    var users by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var selected by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+
+    LaunchedEffect(query) {
+        if (query.trim().length < 2) {
+            users = emptyList()
+        } else {
+            ServiceLocator.userRepository.searchUsers(query.trim()).collect { result ->
+                if (result is AppResult.Success) users = result.data.take(20)
+            }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp).navigationBarsPadding()
+        ) {
+            Text("Yeni sohbet", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+            Spacer(Modifier.height(12.dp))
+
+            if (mode == 0) {
+                NewChatOption(
+                    icon = Icons.Default.ChatBubbleOutline,
+                    title = "Birine mesaj gönder",
+                    subtitle = "Kullanıcı adıyla kişiyi bul ve sohbet başlat.",
+                    onClick = { mode = 1 }
+                )
+                NewChatOption(
+                    icon = Icons.Default.GroupAdd,
+                    title = "Grup oluştur",
+                    subtitle = "Birden fazla kişiyi seçip yeni grup sohbeti başlat.",
+                    onClick = { mode = 2 }
+                )
+            } else {
+                TextButton(onClick = { mode = 0 }) { Text("Geri") }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Kullanıcı ara...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) }
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (mode == 2) {
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { if (it.length <= 60) groupName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Grup adı") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (selected.isNotEmpty()) {
+                        Text(
+                            selected.size.toString() + " kişi seçildi",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(users, key = { it.uid }) { user ->
+                        val isSelected = selected.any { it.uid == user.uid }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (mode == 1) {
+                                    onDirectUser(user)
+                                } else {
+                                    selected = if (isSelected) {
+                                        selected.filterNot { it.uid == user.uid }
+                                    } else {
+                                        (selected + user).take(49)
+                                    }
+                                }
+                            }
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
+                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                    Text(user.displayName, fontWeight = FontWeight.SemiBold)
+                                    if (user.username.isNotBlank()) {
+                                        Text("@" + user.username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (mode == 2 && isSelected) {
+                                    Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (mode == 2) {
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = { onCreateGroup(groupName.trim(), selected.map { it.uid }) },
+                        enabled = groupName.trim().isNotBlank() && selected.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grubu oluştur")
+                    }
+                }
+
+                if (query.trim().length < 2) {
+                    Text(
+                        "Aramak için en az 2 karakter yaz.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    )
+                } else if (users.isEmpty()) {
+                    Text(
+                        "Kullanıcı bulunamadı.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun NewChatOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, null)
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
