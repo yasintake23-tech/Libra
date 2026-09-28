@@ -1225,6 +1225,7 @@ fun ChannelPermissionDialog(
     serverId: String,
     channel: ServerChannel,
     members: List<ServerMember>,
+    roles: List<ServerRoleDefinition>,
     onDismiss: () -> Unit
 ) {
     val repo = ServiceLocator.communityRepository
@@ -1238,55 +1239,183 @@ fun ChannelPermissionDialog(
         }
     }
 
-    val subjects = remember(members) {
+    val subjects = remember(members, roles) {
         listOf(
             ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "EVERYONE", subjectName = "@everyone"),
             ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "ADMIN", subjectName = "@admin"),
             ServerChannelPermissionOverride(subjectType = "ROLE", subjectId = "MEMBER", subjectName = "@member")
-        ) + members.map {
-            ServerChannelPermissionOverride(subjectType = "USER", subjectId = it.uid, subjectName = "@" + it.username.ifBlank { it.displayName })
+        ) + roles.map { role ->
+            ServerChannelPermissionOverride(
+                subjectType = "ROLE",
+                subjectId = role.id,
+                subjectName = "@" + role.name
+            )
+        } + members.map { member ->
+            ServerChannelPermissionOverride(
+                subjectType = "USER",
+                subjectId = member.uid,
+                subjectName = "@" + member.username.ifBlank { member.displayName }
+            )
         }
-    }
+    }.distinctBy { it.subjectType + "_" + it.subjectId }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("# \${channel.name} • İzinler") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Rol veya kişi seç. Sonra kanalı görme ve mesaj yazma izinlerini ayarla.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LazyColumn(Modifier.heightIn(max = 240.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(subjects, key = { it.subjectType + ":" + it.subjectId }) { subject ->
-                        val active = selected?.subjectType == subject.subjectType && selected?.subjectId == subject.subjectId
-                        Surface(color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().clickable {
-                            selected = permissions.firstOrNull { it.subjectType == subject.subjectType && it.subjectId == subject.subjectId } ?: subject
-                        }) { Text(subject.subjectName, modifier = Modifier.padding(10.dp)) }
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("# " + channel.name, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Kanal ayarları",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.ArrowBack, "Geri")
+                        }
                     }
-                }
-                selected?.let { target ->
-                    var canView by remember(target.id, target.subjectId) { mutableStateOf(target.canView) }
-                    var canSend by remember(target.id, target.subjectId) { mutableStateOf(target.canSend) }
-                    Text("Seçili: \${target.subjectName}", fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = canView == true, onCheckedChange = { canView = if (it) true else false })
-                        Text("Kanalı görebilir")
+                )
+                HorizontalDivider()
+
+                Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    Text(
+                        "Roller ve kişiler için kanal izinlerini ayrı ayrı belirleyebilirsin.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(subjects, key = { it.subjectType + "_" + it.subjectId }) { subject ->
+                            val active = selected?.subjectType == subject.subjectType &&
+                                selected?.subjectId == subject.subjectId
+                            Surface(
+                                color = if (active) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selected = permissions.firstOrNull {
+                                            it.subjectType == subject.subjectType &&
+                                                it.subjectId == subject.subjectId
+                                        } ?: subject
+                                    }
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (subject.subjectType == "ROLE") Icons.Default.Group else Icons.Default.Person,
+                                        null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(subject.subjectName, modifier = Modifier.weight(1f))
+                                    if (active) {
+                                        Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = canSend == true, onCheckedChange = { canSend = if (it) true else false })
-                        Text("Mesaj yazabilir")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            scope.launch { repo.setChannelPermission(serverId, channel.id, target.copy(canView = canView, canSend = canSend)) }
-                        }) { Text("Kaydet") }
-                        OutlinedButton(onClick = {
-                            if (target.id.isNotBlank()) scope.launch { repo.deleteChannelPermission(serverId, channel.id, target.id) }
-                        }) { Text("Varsayılana dön") }
+
+                    selected?.let { target ->
+                        var canView by remember(target.id, target.subjectId) { mutableStateOf(target.canView) }
+                        var canSend by remember(target.id, target.subjectId) { mutableStateOf(target.canSend) }
+                        var canSendMedia by remember(target.id, target.subjectId) { mutableStateOf(target.canSendMedia) }
+
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("Seçili: " + target.subjectName, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = canView == true,
+                                        onCheckedChange = { canView = it }
+                                    )
+                                    Text("Kanalı görebilir")
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = canSend == true,
+                                        onCheckedChange = { canSend = it }
+                                    )
+                                    Text("Mesaj yazabilir")
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = canSendMedia == true,
+                                        onCheckedChange = { canSendMedia = it }
+                                    )
+                                    Text("Fotoğraf / medya gönderebilir")
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                repo.setChannelPermission(
+                                                    serverId,
+                                                    channel.id,
+                                                    target.copy(
+                                                        canView = canView,
+                                                        canSend = canSend,
+                                                        canSendMedia = canSendMedia
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    ) {
+                                        Text("Kaydet")
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (target.id.isNotBlank()) {
+                                                scope.launch {
+                                                    repo.deleteChannelPermission(
+                                                        serverId,
+                                                        channel.id,
+                                                        target.id
+                                                    )
+                                                }
+                                            }
+                                            selected = null
+                                        }
+                                    ) {
+                                        Text("Varsayılana dön")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
-    )
+        }
+    }
 }
 
 @Composable
