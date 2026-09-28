@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -92,7 +93,6 @@ import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.model.SharedContent
-import com.libra.app.domain.model.ReactionUser
 import com.libra.app.feature.share.ShareSheet
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.ui.components.BookCover
