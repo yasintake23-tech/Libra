@@ -60,6 +60,11 @@
           "$bookId": {
             ".validate": "newData.hasChildren(['progressPercent','chapterId','chapterNumber','position','updatedAt','addedAt']) && newData.child('progressPercent').isNumber() && newData.child('progressPercent').val() >= 0 && newData.child('progressPercent').val() <= 100 && newData.child('chapterId').isString() && newData.child('chapterNumber').isNumber() && newData.child('position').isNumber() && newData.child('position').val() >= 0 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now && newData.child('addedAt').isNumber() && root.child('books').child($bookId).child('status').val() === 'PUBLISHED'"
           }
+        },
+        "SAVED": {
+          "$bookId": {
+            ".validate": "newData.hasChildren(['progressPercent','addedAt']) && newData.child('progressPercent').isNumber() && newData.child('progressPercent').val() >= 0 && newData.child('progressPercent').val() <= 100 && newData.child('addedAt').isNumber() && root.child('books').child($bookId).child('status').val() === 'PUBLISHED'"
+          }
         }
       }
     },
