@@ -48,54 +48,56 @@ class LibraryViewModel(
 
             _uiState.value = UiState.Loading
 
-            if (shelfType == ShelfType.MY_WRITINGS) {
-                bookRepository.getUserWrittenBooks(userId).collect { result ->
+            // Keep a single Firebase listener alive after the first result.
+            // The previous implementation created one listener for first() and
+            // then another for collect(), which made the library unnecessarily
+            // fragile when RTDB was slow or the first listener was cancelled.
+            val flow = if (shelfType == ShelfType.MY_WRITINGS) {
+                bookRepository.getUserWrittenBooks(userId).let { source ->
+                    kotlinx.coroutines.flow.flow {
+                        source.collect { emit(it) }
+                    }
+                }
+            } else {
+                bookRepository.getUserLibrary(userId, shelfType)
+            }
+
+            var receivedFirstResult = false
+            val firstResult = withTimeoutOrNull(8_000L) {
+                flow.collect { result ->
+                    receivedFirstResult = true
                     when (result) {
                         is AppResult.Success -> {
-                            val items = result.data.map { book ->
-                                UserShelfItem(
-                                    id = "${userId}_MY_WRITINGS_${book.id}",
-                                    userId = userId,
-                                    book = book,
-                                    shelfType = ShelfType.MY_WRITINGS,
-                                    progressPercent = 0,
-                                    addedAt = book.updatedAt
-                                )
+                            val items = if (shelfType == ShelfType.MY_WRITINGS) {
+                                result.data.map { book ->
+                                    UserShelfItem(
+                                        id = "${userId}_MY_WRITINGS_${book.id}",
+                                        userId = userId,
+                                        book = book,
+                                        shelfType = ShelfType.MY_WRITINGS,
+                                        progressPercent = 0,
+                                        addedAt = book.updatedAt
+                                    )
+                                }
+                            } else {
+                                result.data
                             }
                             _uiState.value = UiState.Success(
                                 LibraryState(shelfType, items, currentSearch)
                             )
                         }
-                        is AppResult.Error -> _uiState.value = UiState.Error(result.error)
-                    }
-                }
-                return@launch
-            }
-
-            val flow = bookRepository.getUserLibrary(userId, shelfType)
-            val firstResult = withTimeoutOrNull(8_000L) {
-                flow.first { it is AppResult.Success || it is AppResult.Error }
-            }
-
-            when (firstResult) {
-                is AppResult.Success -> {
-                    _uiState.value = UiState.Success(
-                        LibraryState(shelfType, firstResult.data, currentSearch)
-                    )
-                    flow.collect { result ->
-                        when (result) {
-                            is AppResult.Success -> {
-                                _uiState.value = UiState.Success(
-                                    LibraryState(shelfType, result.data, currentSearch)
-                                )
-                            }
-                            is AppResult.Error -> _uiState.value = UiState.Error(result.error)
+                        is AppResult.Error -> {
+                            _uiState.value = UiState.Error(result.error)
                         }
                     }
                 }
-                is AppResult.Error -> _uiState.value = UiState.Error(firstResult.error)
-                null -> _uiState.value = UiState.Error(
-                    AppError.Database("Kütüphane yüklenemedi. Firebase bağlantısı yanıt vermedi.")
+            }
+
+            if (!receivedFirstResult && firstResult == null && shelfJob?.isActive == true) {
+                _uiState.value = UiState.Error(
+                    AppError.Database(
+                        "Kütüphane yüklenemedi. Firebase bağlantısı yanıt vermedi."
+                    )
                 )
             }
         }
