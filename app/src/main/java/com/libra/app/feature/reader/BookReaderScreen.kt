@@ -40,6 +40,7 @@ fun BookReaderScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var saved by remember { mutableStateOf(false) }
+    var restoredChapterKey by remember { mutableStateOf("") }
 
     LaunchedEffect(book.id) {
         ServiceLocator.bookRepository.getBookChapters(book.id).collectLatest { result ->
@@ -70,11 +71,14 @@ fun BookReaderScreen(
 
     LaunchedEffect(chapters, selectedIndex, progress?.chapterId) {
         val target = chapters.getOrNull(selectedIndex) ?: return@LaunchedEffect
+        val restoreKey = book.id + ":" + target.id
+        if (restoredChapterKey == restoreKey) return@LaunchedEffect
         val stored = progress
         kotlinx.coroutines.yield()
         scrollState.scrollTo(
             if (stored?.chapterId == target.id) stored.position.coerceAtMost(scrollState.maxValue) else 0
         )
+        restoredChapterKey = restoreKey
     }
 
     LaunchedEffect(selectedIndex, chapters) {
