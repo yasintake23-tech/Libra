@@ -309,6 +309,7 @@ fun ServerOwnerSettingsDialog(
                     ServerSettingsPage.CHANNELS -> ServerChannelsPage(
                         channels = channels,
                         members = members,
+                        roles = roles,
                         serverId = server.id,
                         onDelete = { channel ->
                             scope.launch {
@@ -729,6 +730,7 @@ private fun ServerCategoriesPage(
 private fun ServerChannelsPage(
     channels: List<ServerChannel>,
     members: List<ServerMember>,
+    roles: List<ServerRoleDefinition>,
     serverId: String,
     onDelete: (ServerChannel) -> Unit,
     onMove: (ServerChannel, Int) -> Unit
@@ -773,7 +775,7 @@ private fun ServerChannelsPage(
     }
 
     permissionChannel?.let { channel ->
-        ChannelPermissionDialog(serverId, channel, members) {
+        ChannelPermissionDialog(serverId, channel, members, roles) {
             permissionChannel = null
         }
     }
