@@ -2,6 +2,8 @@ package com.libra.app.feature.write
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,11 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
+import coil.compose.AsyncImage
 import com.libra.app.ui.components.AppButton
 import com.libra.app.ui.components.AppButtonVariant
 import com.libra.app.ui.components.BookCover
@@ -50,7 +54,7 @@ import com.libra.app.ui.components.BookCover
 @Composable
 fun WriteScreen(
     uiState: UiState<WriteState>,
-    onCreateBook: (String, String, BookCategory) -> Unit,
+    onCreateBook: (String, String, String, BookCategory, ByteArray?, String, String) -> Unit,
     onBookClick: (Book) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
@@ -120,8 +124,8 @@ fun WriteScreen(
     }
 
     if (showCreate) {
-        CreateBookDialog({ showCreate = false }) { title, description, category ->
-            onCreateBook(title, description, category)
+        CreateBookDialog({ showCreate = false }) { title, description, discoverySummary, category, coverBytes, fileName, contentType ->
+            onCreateBook(title, description, discoverySummary, category, coverBytes, fileName, contentType)
             showCreate = false
         }
     }
@@ -137,57 +141,83 @@ private fun EmptyDraft() {
 }
 
 @Composable
-private fun CreateBookDialog(onDismiss: () -> Unit, onConfirm: (String, String, BookCategory) -> Unit) {
+private fun CreateBookDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String, BookCategory, ByteArray?, String, String) -> Unit
+) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var discoverySummary by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(BookCategory.FICTION) }
     var expanded by remember { mutableStateOf(false) }
+    var coverBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var coverUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var coverFileName by remember { mutableStateOf("cover.jpg") }
+    var coverContentType by remember { mutableStateOf("image/jpeg") }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw IllegalStateException("Kapak okunamadı.")
+            if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("Kapak görseli 8 MB'dan küçük olmalı.")
+            coverBytes = bytes
+            coverUri = uri
+            coverContentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            coverFileName = "book-cover-" + System.currentTimeMillis() + "." + coverContentType.substringAfter('/').ifBlank { "jpg" }.take(8)
+        }.onFailure {
+            coverBytes = null
+            coverUri = null
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Yeni kitap") },
+        title = { Text("Yeni kitap oluştur") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Başlık") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = category.displayName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Kategori") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { expanded = true }
-                    )
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        BookCategory.values().forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(item.displayName) },
-                                onClick = { category = item; expanded = false }
-                            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().clickable { picker.launch("image/*") }, shape = RoundedCornerShape(14.dp)) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (coverUri != null) {
+                                AsyncImage(model = coverUri, contentDescription = "Kitap kapağı", modifier = Modifier.size(78.dp).clip(RoundedCornerShape(10.dp)))
+                            } else {
+                                Box(Modifier.size(78.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Description, null)
+                                }
+                            }
+                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                                Text("Kitap kapağı", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text(if (coverUri == null) "Kapak fotoğrafı seç" else "Kapağı değiştirmek için dokun", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Kısa açıklama") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                item {
+                    OutlinedTextField(value = title, onValueChange = { if (it.length <= 120) title = it }, label = { Text("Kitap adı") }, supportingText = { Text(title.length.toString() + "/120") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    Box(Modifier.fillMaxWidth()) {
+                        OutlinedTextField(value = category.displayName, onValueChange = {}, readOnly = true, label = { Text("Kategori") }, modifier = Modifier.fillMaxWidth())
+                        Box(Modifier.matchParentSize().clickable { expanded = true })
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            BookCategory.values().forEach { item -> DropdownMenuItem(text = { Text(item.displayName) }, onClick = { category = item; expanded = false }) }
+                        }
+                    }
+                }
+                item {
+                    OutlinedTextField(value = description, onValueChange = { if (it.length <= 2000) description = it }, label = { Text("Kitap açıklaması") }, supportingText = { Text(description.length.toString() + "/2000") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    OutlinedTextField(value = discoverySummary, onValueChange = { if (it.length <= 500) discoverySummary = it }, label = { Text("Keşfet özeti") }, placeholder = { Text("Kitabını keşfette tanıtacak kısa özet...") }, supportingText = { Text(discoverySummary.length.toString() + "/500") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = title.isNotBlank(), onClick = { onConfirm(title.trim(), description.trim(), category) }) { Text("Oluştur") }
+            TextButton(enabled = title.isNotBlank(), onClick = { onConfirm(title.trim(), description.trim(), discoverySummary.trim(), category, coverBytes, coverFileName, coverContentType) }) {
+                Text("Kitabı oluştur")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } }
     )

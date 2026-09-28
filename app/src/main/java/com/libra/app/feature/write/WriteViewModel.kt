@@ -9,12 +9,17 @@ import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.BookStatus
 import com.libra.app.domain.model.Chapter
+import com.libra.app.domain.model.StorageUploadRequest
+import com.libra.app.domain.repository.StorageRepository
+import kotlinx.coroutines.flow.first
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 data class WriteState(val myBooks: List<Book> = emptyList(), val isCreatingBook: Boolean = false, val lastErrorMessage: String? = null)
 
@@ -22,7 +27,8 @@ data class WriteState(val myBooks: List<Book> = emptyList(), val isCreatingBook:
 
 class WriteViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
-    private val bookRepository: BookRepository = ServiceLocator.bookRepository
+    private val bookRepository: BookRepository = ServiceLocator.bookRepository,
+    private val storageRepository: StorageRepository = ServiceLocator.storageRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<UiState<WriteState>>(UiState.Loading)
     private val _editorChapters = MutableStateFlow<List<Chapter>>(emptyList())
@@ -30,6 +36,7 @@ class WriteViewModel(
     private val _editorSaving = MutableStateFlow(false)
     val editorSaving: StateFlow<Boolean> = _editorSaving.asStateFlow()
     private val _editorError = MutableStateFlow<String?>(null)
+    private var autosaveJob: Job? = null
     val editorError: StateFlow<String?> = _editorError.asStateFlow()
     val uiState: StateFlow<UiState<WriteState>> = _uiState.asStateFlow()
 
@@ -69,6 +76,15 @@ class WriteViewModel(
                 is AppResult.Error -> _editorError.value = result.error.message
             }
             _editorSaving.value = false
+        }
+    }
+
+    fun scheduleChapterAutosave(chapter: Chapter) {
+        autosaveJob?.cancel()
+        if (chapter.bookId.isBlank() || chapter.title.trim().isBlank()) return
+        autosaveJob = viewModelScope.launch {
+            delay(1200)
+            saveChapter(chapter)
         }
     }
 
@@ -115,6 +131,7 @@ class WriteViewModel(
                     book.copy(
                         status = BookStatus.PUBLISHED,
                         chapterCount = publishedChapters.size,
+                        publishedAt = if (book.publishedAt == 0L) now else book.publishedAt,
                         updatedAt = now
                     )
                 )
@@ -129,26 +146,111 @@ class WriteViewModel(
         }
     }
 
+    fun deleteChapter(chapter: Chapter) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            when (val result = bookRepository.deleteChapter(chapter.bookId, chapter.id)) {
+                is AppResult.Success -> _editorChapters.value = _editorChapters.value.filterNot { it.id == chapter.id }
+                is AppResult.Error -> _editorError.value = result.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
+    fun uploadChapterImage(bookId: String, bytes: ByteArray, fileName: String, contentType: String, onInserted: (String) -> Unit) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            _editorError.value = null
+            when (val upload = storageRepository.uploadMedia(StorageUploadRequest(fileName = fileName, bytes = bytes, contentType = contentType)).first()) {
+                is AppResult.Success -> {
+                    val url = storageRepository.getPublicCdnUrl(upload.data)
+                    onInserted("\n[[IMAGE:$url|Görsel]]\n")
+                }
+                is AppResult.Error -> _editorError.value = upload.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
     fun clearEditorError() {
         _editorError.value = null
     }
 
-    fun createNewBook(title: String, description: String, category: BookCategory) {
+    fun createNewBook(
+        title: String,
+        description: String,
+        discoverySummary: String,
+        category: BookCategory,
+        coverBytes: ByteArray? = null,
+        coverFileName: String = "cover.jpg",
+        coverContentType: String = "image/jpeg"
+    ) {
         val user = authRepository.currentUser.value
-        if (user == null) { _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı.")); return }
-        if (title.trim().isBlank()) { _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap başlığı boş olamaz.")); return }
+        if (user == null) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı."))
+            return
+        }
+        val cleanTitle = title.trim()
+        val cleanDescription = description.trim()
+        val cleanSummary = discoverySummary.trim()
+        if (cleanTitle.isBlank()) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap başlığı boş olamaz."))
+            return
+        }
+        if (cleanTitle.length > 120 || cleanDescription.length > 2000 || cleanSummary.length > 500) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap bilgileri izin verilen uzunluğu aşıyor."))
+            return
+        }
+        if (coverBytes != null && coverBytes.size > 8 * 1024 * 1024) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kapak görseli 8 MB'dan küçük olmalı."))
+            return
+        }
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            val book = Book(ownerId = user.uid, authorName = user.displayName, title = title.trim(), description = description.trim(), category = category, status = BookStatus.DRAFT)
-            when (val result = bookRepository.createBook(book)) {
-                is AppResult.Error -> _uiState.value = UiState.Error(result.error)
-                is AppResult.Success -> {
-                    val initialChapter = Chapter(bookId = result.data.id, chapterNumber = 1, title = "1. Bölüm")
-                    when (val chapterResult = bookRepository.saveChapter(initialChapter)) {
-                        is AppResult.Error -> _uiState.value = UiState.Error(chapterResult.error)
-                        is AppResult.Success -> loadMyBooks()
+            var uploadedCoverKey: String? = null
+            try {
+                if (!coverBytes.isNullOrEmpty()) {
+                    when (val upload = storageRepository.uploadMedia(
+                        StorageUploadRequest(
+                            fileName = coverFileName.ifBlank { "cover.jpg" },
+                            bytes = coverBytes,
+                            contentType = coverContentType.ifBlank { "image/jpeg" }
+                        )
+                    ).first()) {
+                        is AppResult.Success -> uploadedCoverKey = upload.data
+                        is AppResult.Error -> {
+                            _uiState.value = UiState.Error(upload.error)
+                            return@launch
+                        }
                     }
                 }
+                val book = Book(
+                    ownerId = user.uid,
+                    authorName = user.displayName,
+                    title = cleanTitle,
+                    description = cleanDescription,
+                    discoverySummary = cleanSummary,
+                    coverImageUrl = uploadedCoverKey.orEmpty(),
+                    category = category,
+                    status = BookStatus.DRAFT
+                )
+                when (val result = bookRepository.createBook(book)) {
+                    is AppResult.Error -> {
+                        uploadedCoverKey?.let { storageRepository.deleteMedia(it) }
+                        _uiState.value = UiState.Error(result.error)
+                    }
+                    is AppResult.Success -> {
+                        when (val chapterResult = bookRepository.saveChapter(
+                            Chapter(bookId = result.data.id, chapterNumber = 1, title = "1. Bölüm")
+                        )) {
+                            is AppResult.Error -> { uploadedCoverKey?.let { storageRepository.deleteMedia(it) }; bookRepository.deleteBook(result.data.id); _uiState.value = UiState.Error(chapterResult.error) }
+                            is AppResult.Success -> loadMyBooks()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                uploadedCoverKey?.let { storageRepository.deleteMedia(it) }
+                _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Storage("Kitap oluşturulamadı: " + (e.localizedMessage ?: "Bilinmeyen hata."), e))
             }
         }
     }

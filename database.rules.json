@@ -1,5 +1,11 @@
 {
   "rules": {
+    "moderation": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBans').val() === true)"
+      }
+    },
     "users": {
       "$uid": {
         ".read": "auth != null",
@@ -14,15 +20,34 @@
         "status"
       ],
       "$bookId": {
-        ".write": "auth != null && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
-        ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()"
+        ".write": "auth != null && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val() && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()",
+        "comments": {
+          "$commentId": {
+            ".read": "auth != null",
+            ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid) || root.child('books').child($bookId).child('ownerId').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['id','bookId','userId','text','createdAt']) && newData.child('id').val() === $commentId && newData.child('bookId').val() === $bookId && newData.child('userId').isString() && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 1000 && newData.child('createdAt').isNumber()"
+          }
+        },
+        "likes": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "saves": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
       }
     },
     "chapters": {
       "$bookId": {
         "$chapterId": {
           ".read": "auth != null && (root.child('books').child($bookId).child('status').val() === 'PUBLISHED' || root.child('books').child($bookId).child('ownerId').val() === auth.uid)",
-          ".write": "auth != null && root.child('books').child($bookId).child('ownerId').val() === auth.uid"
+          ".write": "auth != null && root.child('books').child($bookId).child('ownerId').val() === auth.uid && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val()"
         }
       }
     },
@@ -50,7 +75,7 @@
         "createdAt"
       ],
       "$messageId": {
-        ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+        ".write": "auth != null && !root.child('moderation').child(auth.uid).child('messagingDisabled').val() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
         ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 1000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
         "reactions": {
           "$uid": {
@@ -67,8 +92,8 @@
           "updatedAt"
         ],
         "$conversationId": {
-          ".write": "auth != null && ($uid === auth.uid || (newData.exists() && newData.child('otherUserId').val() === auth.uid) || (data.exists() && data.child('otherUserId').val() === auth.uid))",
-          ".validate": "newData.hasChildren(['otherUserId','lastMessage','updatedAt','unreadCount']) && newData.child('otherUserId').isString() && newData.child('otherUserId').val() !== $uid && ($conversationId === ($uid + '_' + newData.child('otherUserId').val()) || $conversationId === (newData.child('otherUserId').val() + '_' + $uid)) && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0"
+          ".write": "auth != null && !root.child('moderation').child(auth.uid).child('messagingDisabled').val() && ($uid === auth.uid || (newData.child('isGroup').val() === true && newData.child('participantIds').hasChild(auth.uid)) || (newData.exists() && newData.child('otherUserId').val() === auth.uid) || (data.exists() && data.child('otherUserId').val() === auth.uid))",
+          ".validate": "newData.child('isGroup').val() === true ? (newData.hasChildren(['isGroup','groupName','participantIds','lastMessage','updatedAt','unreadCount']) && newData.child('groupName').isString() && newData.child('participantIds').hasChildren() && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0) : (newData.hasChildren(['otherUserId','lastMessage','updatedAt','unreadCount']) && newData.child('otherUserId').isString() && newData.child('otherUserId').val() !== $uid && ($conversationId === ($uid + '_' + newData.child('otherUserId').val()) || $conversationId === (newData.child('otherUserId').val() + '_' + $uid)) && newData.child('lastMessage').isString() && newData.child('updatedAt').isNumber() && newData.child('unreadCount').isNumber() && newData.child('unreadCount').val() >= 0)"
         }
       }
     },
@@ -79,8 +104,8 @@
           "createdAt"
         ],
         "$messageId": {
-          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + auth.uid))) || (data.exists() && data.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + data.child('recipientId').val()) || $conversationId === (data.child('recipientId').val() + '_' + auth.uid))))",
-          ".validate": "newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('recipientId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber() && newData.child('senderId').val() !== newData.child('recipientId').val() && ($conversationId === (newData.child('senderId').val() + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + newData.child('senderId').val()))",
+          ".write": "auth != null && !root.child('moderation').child(auth.uid).child('messagingDisabled').val() && ((newData.child('isGroup').val() === true || data.child('isGroup').val() === true) ? (root.child('directConversations').child(auth.uid).child($conversationId).child('isGroup').val() === true && ((newData.exists() && newData.child('senderId').val() === auth.uid) || (!newData.exists() && data.child('senderId').val() === auth.uid))) : ((!data.exists() && newData.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + auth.uid))) || (data.exists() && data.child('senderId').val() === auth.uid && ($conversationId === (auth.uid + '_' + data.child('recipientId').val()) || $conversationId === (data.child('recipientId').val() + '_' + auth.uid)))))",
+          ".validate": "newData.child('isGroup').val() === true ? (newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt','conversationId']) && newData.child('senderId').isString() && newData.child('recipientId').val() === '' && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber() && newData.child('conversationId').val() === $conversationId) : (newData.hasChildren(['senderId','recipientId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('recipientId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber() && newData.child('senderId').val() !== newData.child('recipientId').val() && ($conversationId === (newData.child('senderId').val() + '_' + newData.child('recipientId').val()) || $conversationId === (newData.child('recipientId').val() + '_' + newData.child('senderId').val())))",
           "reactions": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
@@ -102,11 +127,28 @@
           "createdAt"
         ],
         "$messageId": {
-          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+          ".write": "auth != null && !root.child('moderation').child(auth.uid).child('serverMessagingDisabled').val() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
           ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
           "reactions": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
+            }
+          }
+        },
+        "channels": {
+          "$channelId": {
+            ".read": "auth != null",
+            ".indexOn": [
+              "createdAt"
+            ],
+            "$messageId": {
+              ".write": "auth != null && !root.child('moderation').child(auth.uid).child('serverMessagingDisabled').val() && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+              ".validate": "newData.hasChildren(['senderId','text','mediaUrl','mediaType','createdAt']) && newData.child('senderId').isString() && newData.child('text').isString() && newData.child('text').val().length <= 2000 && newData.child('mediaUrl').isString() && (newData.child('mediaUrl').val() === '' || newData.child('mediaUrl').val().beginsWith('users/' + newData.child('senderId').val() + '/')) && newData.child('mediaType').isString() && newData.child('createdAt').isNumber()",
+              "reactions": {
+                "$uid": {
+                  ".write": "auth != null && auth.uid === $uid"
+                }
+              }
             }
           }
         }

@@ -5,7 +5,11 @@ data class CommunityServer(
     val name: String = "",
     val description: String = "",
     val ownerId: String = "",
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    val inviteKey: String = "",
+    // R2 object keys. Older server documents may not contain these fields.
+    val avatarUrl: String = "",
+    val bannerUrl: String = ""
 )
 
 enum class ServerRole { OWNER, ADMIN, MEMBER }
@@ -17,6 +21,34 @@ data class ServerMember(
     val photoUrl: String = "",
     val role: String = "MEMBER",
     val joinedAt: Long = 0L
+)
+
+data class ServerCategory(
+    val id: String = "",
+    val name: String = "",
+    val position: Int = 0
+)
+
+data class ServerChannel(
+    val id: String = "",
+    val categoryId: String = "",
+    val categoryName: String = "",
+    val name: String = "",
+    val type: String = "TEXT",
+    val position: Int = 0,
+    val allowEveryoneView: Boolean = true,
+    val allowEveryoneSend: Boolean = true,
+    val allowEveryoneSendMedia: Boolean = true
+)
+
+data class ServerChannelPermissionOverride(
+    val id: String = "",
+    val subjectType: String = "ROLE",
+    val subjectId: String = "MEMBER",
+    val subjectName: String = "",
+    val canView: Boolean? = null,
+    val canSend: Boolean? = null,
+    val canSendMedia: Boolean? = null
 )
 
 data class ServerMessage(
@@ -35,5 +67,33 @@ data class ServerMessage(
     val replyToSenderId: String = "",
     val replyToSenderName: String = "",
     val reactions: Map<String, String> = emptyMap(),
-    val sharedContent: SharedContent? = null
+    val sharedContent: SharedContent? = null,
+    val mentionedUserIds: List<String> = emptyList(),
+    val mentionsEveryone: Boolean = false,
+    val mentionsHere: Boolean = false
+)
+
+
+data class ServerRoleDefinition(
+    val id: String = "",
+    val name: String = "",
+    val permissions: List<String> = emptyList(),
+    val position: Int = 0
+)
+
+data class ServerBan(
+    val uid: String = "",
+    val displayName: String = "",
+    val username: String = "",
+    val bannedAt: Long = 0L,
+    val reason: String = ""
+)
+
+
+data class ReactionUser(
+    val uid: String = "",
+    val displayName: String = "",
+    val username: String = "",
+    val photoUrl: String = "",
+    val emoji: String = ""
 )

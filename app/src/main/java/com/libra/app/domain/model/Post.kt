@@ -12,6 +12,7 @@ data class Post(
     val mediaType: String = "",
     val tags: List<String> = emptyList(),
     val likesCount: Int = 0,
+    val commentsCount: Int = 0,
     val likedByCurrentUser: Boolean = false,
     val savedByCurrentUser: Boolean = false,
     val createdAt: Long = 0L
