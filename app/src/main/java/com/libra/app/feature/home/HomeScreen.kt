@@ -252,6 +252,7 @@ fun HomeScreen(
                                                 url = sharedContentUrl("post", post.id)
                                             )
                                         },
+                                        { likeUsersPost = post },
                                         canComment = canComment
                                     )
                                 }
