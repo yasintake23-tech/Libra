@@ -106,39 +106,78 @@ class BookRepositoryImpl : BookRepository {
     }
 
     override fun getUserLibrary(userId: String, shelfType: ShelfType): Flow<AppResult<List<UserShelfItem>>> = callbackFlow {
-        val ref = librariesRef?.child(userId)?.child(shelfType.name) ?: run { trySend(databaseError()); close(); return@callbackFlow }
+        val libraries = librariesRef?.child(userId)?.child(shelfType.name)
+            ?: run { trySend(databaseError()); close(); return@callbackFlow }
+
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 launch {
                     try {
-                        val shelfItems = mutableListOf<UserShelfItem>()
-                        for (shelfSnapshot in snapshot.children) {
-                            val bookId = shelfSnapshot.key ?: continue
-                            val book = parseBook(booksRef!!.child(bookId).get().await()) ?: continue
-                            shelfItems += UserShelfItem(
-                                id = "${userId}_${shelfType.name}_$bookId",
+                        val shelfSnapshots = snapshot.children.toList()
+                        if (shelfSnapshots.isEmpty()) {
+                            trySend(AppResult.Success(emptyList()))
+                            return@launch
+                        }
+
+                        // /books is protected by a query-based read rule.
+                        // Load published books with the exact permitted query instead
+                        // of issuing direct /books/{id} reads for every shelf item.
+                        val publishedSnapshot = booksRef
+                            ?.orderByChild("status")
+                            ?.equalTo(BookStatus.PUBLISHED.name)
+                            ?.get()
+                            ?.await()
+                            ?: run {
+                                trySend(databaseError())
+                                return@launch
+                            }
+
+                        val booksById = publishedSnapshot.children
+                            .mapNotNull { parseBook(it)?.let { book -> book.id to book } }
+                            .toMap()
+
+                        val shelfItems = shelfSnapshots.mapNotNull { shelfSnapshot ->
+                            val bookId = shelfSnapshot.key ?: return@mapNotNull null
+                            val book = booksById[bookId] ?: return@mapNotNull null
+                            UserShelfItem(
+                                id = userId + "_" + shelfType.name + "_" + bookId,
                                 userId = userId,
                                 book = book,
                                 shelfType = shelfType,
                                 progressPercent = shelfSnapshot.child("progressPercent").getValue(Int::class.java) ?: 0,
                                 addedAt = shelfSnapshot.child("addedAt").getValue(Long::class.java) ?: 0L
                             )
-                        }
-                        trySend(AppResult.Success(shelfItems.sortedByDescending { it.addedAt }))
+                        }.sortedByDescending { it.addedAt }
+
+                        trySend(AppResult.Success(shelfItems))
                     } catch (e: Exception) {
-                        trySend(AppResult.Error(AppError.Database("Kütüphane yüklenemedi: ${e.localizedMessage}", e)))
+                        trySend(
+                            AppResult.Error(
+                                AppError.Database(
+                                    "Kütüphane kitapları yüklenemedi: " + (e.localizedMessage ?: "Bilinmeyen Firebase hatası."),
+                                    e
+                                )
+                            )
+                        )
                     }
                 }
             }
 
             override fun onCancelled(error: DatabaseError) {
-                trySend(AppResult.Error(AppError.Database(error.message, error.toException())))
+                trySend(
+                    AppResult.Error(
+                        AppError.Database(
+                            "Kütüphane Firebase okuması reddedildi: " + error.message,
+                            error.toException()
+                        )
+                    )
+                )
             }
         }
-        ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
-    }
 
+        libraries.addValueEventListener(listener)
+        awaitClose { libraries.removeEventListener(listener) }
+    }
     override fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>> = callbackFlow {
         val ref = booksRef ?: run { trySend(databaseError()); close(); return@callbackFlow }
         val query = ref.orderByChild("ownerId").equalTo(userId)
