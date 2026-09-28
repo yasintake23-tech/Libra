@@ -277,7 +277,10 @@ fun AppNavHost(
             book = book, chapters = chapters, isSaving = isSaving, error = editorError,
             onLoadChapters = writeVm::loadChapters, onSaveBook = writeVm::saveBook,
             onSaveChapter = writeVm::saveChapter, onDeleteChapter = writeVm::deleteChapter,
-            onUploadChapterImage = writeVm::uploadChapterImage, onPublish = writeVm::publishBook,
+            onUploadChapterImage = { bytes, fileName, contentType, onInserted ->
+                writeVm.uploadChapterImage(book.id, bytes, fileName, contentType, onInserted)
+            },
+            onPublish = writeVm::publishBook,
             onClearError = writeVm::clearEditorError, onBack = { selectedWritingBook = null },
             modifier = modifier.fillMaxSize()
         )
