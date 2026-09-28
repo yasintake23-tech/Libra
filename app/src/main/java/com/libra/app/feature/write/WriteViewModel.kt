@@ -209,7 +209,7 @@ class WriteViewModel(
             _uiState.value = UiState.Loading
             var uploadedCoverKey: String? = null
             try {
-                if (!coverBytes.isNullOrEmpty()) {
+                if (coverBytes != null && coverBytes.isNotEmpty()) {
                     when (val upload = storageRepository.uploadMedia(
                         StorageUploadRequest(
                             fileName = coverFileName.ifBlank { "cover.jpg" },
