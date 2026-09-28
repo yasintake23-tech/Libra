@@ -222,7 +222,7 @@ fun BookReaderScreen(
                     }
 
                     Surface(
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding(),
+                        Modifier.fillMaxWidth().navigationBarsPadding(),
                         color = surface,
                         tonalElevation = 5.dp
                     ) {
