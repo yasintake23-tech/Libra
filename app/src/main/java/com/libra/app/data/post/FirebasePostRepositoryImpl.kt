@@ -266,15 +266,6 @@ class FirebasePostRepositoryImpl(
         }
     }
 
-    override suspend fun getPostLikeUsers(postId: String): AppResult<List<com.libra.app.domain.model.UserProfile>> {
-        if (postId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz gönderi."))
-        return try {
-            val ids = postsRef.document(postId).collection("likes").get().await().documents.map { it.id }
-            val users = ids.mapNotNull { uid -> (userRepository.getUserProfileFresh(uid) as? AppResult.Success)?.data }
-            AppResult.Success(users)
-        } catch (e: Exception) { AppResult.Error(AppError.Database("Beğenenler yüklenemedi.", e)) }
-    }
-
     override suspend fun deletePost(postId: String, userId: String): AppResult<Unit> {
         return try {
             val ref = postsRef.document(postId)
