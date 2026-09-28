@@ -77,6 +77,7 @@ fun BookEditorScreen(
     var category by remember(book.id) { mutableStateOf(book.category) }
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
     var isCreatingChapter by remember(book.id) { mutableStateOf(false) }
+    var newChapterNumber by remember(book.id) { mutableStateOf<Int?>(null) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
     var chapterContent by remember(book.id) { mutableStateOf("") }
     var categoryMenu by remember(book.id) { mutableStateOf(false) }
@@ -96,8 +97,21 @@ fun BookEditorScreen(
     }
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
-    LaunchedEffect(chapters, selectedChapterId, isCreatingChapter) {
-        if (isCreatingChapter) return@LaunchedEffect
+    LaunchedEffect(chapters, selectedChapterId, isCreatingChapter, newChapterNumber) {
+        if (isCreatingChapter) {
+            val created = newChapterNumber?.let { number ->
+                chapters.firstOrNull { it.chapterNumber == number }
+            }
+            if (created != null) {
+                isCreatingChapter = false
+                newChapterNumber = null
+                selectedChapterId = created.id
+                chapterTitle = created.title
+                chapterContent = created.content
+            }
+            return@LaunchedEffect
+        }
+
         val selected = chapters.firstOrNull { it.id == selectedChapterId }
             ?: chapters.firstOrNull()
         if (selected != null && selected.id != selectedChapterId) {
@@ -217,6 +231,7 @@ fun BookEditorScreen(
                         enabled = !isSaving,
                         onClick = {
                             isCreatingChapter = true
+                            newChapterNumber = nextNumber
                             selectedChapterId = null
                             chapterTitle = "$nextNumber. Bölüm"
                             chapterContent = ""
@@ -315,7 +330,9 @@ fun BookEditorScreen(
                                         isPublished = selectedChapter?.isPublished == true
                                     )
                                 )
-                                isCreatingChapter = false
+                                if (selectedChapter != null) {
+                                    isCreatingChapter = false
+                                }
                             }
                         ) {
                             Icon(Icons.Default.Check, null)
