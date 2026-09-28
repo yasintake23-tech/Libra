@@ -314,7 +314,6 @@ fun DirectMessagesScreen(
             onDelete = { id -> viewModel.delete(conversation.id, id) },
             onReaction = { id, emoji -> viewModel.react(conversation.id, id, emoji) },
             canMessage = canMessage,
-            conversationIdOverride = listOf(authUserId(), user.uid).sorted().joinToString("_"),
             modifier = modifier
         )
         return
@@ -333,14 +332,22 @@ fun DirectMessagesScreen(
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
             onOpenProfile = { onOpenProfile(user.uid) },
             canMessage = canMessage,
+            conversationIdOverride = listOf(authUserId(), user.uid).sorted().joinToString("_"),
             modifier = modifier
         )
         return
     }
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("DM", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-        Text("Arkadaşlarınla konuş, topluluklara katıl.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Mesajlar", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                Text("Birebir veya grup sohbeti başlat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { showNewChat = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Yeni sohbet")
+            }
+        }
         Spacer(Modifier.height(12.dp))
 
         if (section == MessageSection.MESSAGES) {
@@ -434,12 +441,18 @@ fun DirectMessagesScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            selectedUser = UserProfile(
-                                                uid = conversation.otherUserId,
-                                                displayName = conversation.otherUserName,
-                                                username = conversation.otherUserUsername,
-                                                profileImageUrl = conversation.otherUserPhotoUrl
-                                            )
+                                            if (conversation.isGroup) {
+                                                selectedConversation = conversation
+                                                selectedUser = null
+                                            } else {
+                                                selectedUser = UserProfile(
+                                                    uid = conversation.otherUserId,
+                                                    displayName = conversation.otherUserName,
+                                                    username = conversation.otherUserUsername,
+                                                    profileImageUrl = conversation.otherUserPhotoUrl
+                                                )
+                                                selectedConversation = null
+                                            }
                                             viewModel.openConversation(conversation)
                                         },
                                     shape = RoundedCornerShape(14.dp)
@@ -449,8 +462,8 @@ fun DirectMessagesScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         UserAvatar(
-                                            conversation.otherUserPhotoUrl,
-                                            conversation.otherUserName.take(1).uppercase(),
+                                            if (conversation.isGroup) conversation.groupPhotoUrl else conversation.otherUserPhotoUrl,
+                                            (if (conversation.isGroup) conversation.groupName else conversation.otherUserName).take(1).uppercase(),
                                             size = 48.dp
                                         )
                                         Column(
@@ -459,15 +472,23 @@ fun DirectMessagesScreen(
                                                 .padding(horizontal = 12.dp)
                                         ) {
                                             Text(
-                                                conversation.otherUserName,
+                                                if (conversation.isGroup) conversation.groupName else conversation.otherUserName,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.clickable { onOpenProfile(conversation.otherUserId) }
+                                                modifier = if (conversation.isGroup) Modifier else Modifier.clickable { onOpenProfile(conversation.otherUserId) }
                                             )
-                                            Text(
-                                                "@" + conversation.otherUserUsername,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                            if (conversation.isGroup) {
+                                                Text(
+                                                    conversation.participantIds.size.toString() + " kişi",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            } else {
+                                                Text(
+                                                    "@" + conversation.otherUserUsername,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                             if (conversation.lastMessage.isNotBlank()) {
                                                 Text(
                                                     conversation.lastMessage,
