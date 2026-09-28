@@ -408,7 +408,6 @@ class BookRepositoryImpl : BookRepository {
         if (progress.userId.isBlank() || progress.bookId.isBlank()) return AppResult.Error(AppError.Validation("Okuma ilerlemesi için kullanıcı ve kitap gerekli."))
         val ref = librariesRef?.child(progress.userId)?.child(ShelfType.READING.name)?.child(progress.bookId) ?: return databaseError()
         return try {
-            if (!booksRef!!.child(progress.bookId).get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
             val now = System.currentTimeMillis()
             val existingAddedAt = ref.child("addedAt").get().await().getValue(Long::class.java) ?: now
             val saved = progress.copy(
