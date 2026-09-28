@@ -721,6 +721,8 @@ private fun NewChatOption(
 @Composable
 private fun DirectConversationScreen(
     user: UserProfile,
+    conversationIdOverride: String? = null,
+    isGroup: Boolean = false,
     messages: List<DirectMessage>,
     error: String?,
     onBack: () -> Unit,
@@ -748,7 +750,7 @@ private fun DirectConversationScreen(
     var pendingMediaType by remember { mutableStateOf("image/jpeg") }
     var mediaUploadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var sending by remember { mutableStateOf(false) }
-    val conversationId = remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
+    val conversationId = conversationIdOverride ?: remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
 
     val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -801,10 +803,23 @@ private fun DirectConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            UserAvatar(user.profileImageUrl, user.initials, size = 40.dp, onClick = onOpenProfile)
+            UserAvatar(
+                user.profileImageUrl,
+                user.initials,
+                size = 40.dp,
+                onClick = { if (!isGroup) onOpenProfile() }
+            )
             Column(Modifier.padding(start = 10.dp)) {
-                Text(user.displayName, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpenProfile))
-                Text(user.handle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    user.displayName,
+                    fontWeight = FontWeight.Bold,
+                    modifier = if (isGroup) Modifier else Modifier.clickable(onClick = onOpenProfile)
+                )
+                Text(
+                    if (isGroup) "Grup sohbeti" else user.handle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
