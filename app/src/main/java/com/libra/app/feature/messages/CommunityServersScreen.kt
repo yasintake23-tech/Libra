@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
@@ -1111,7 +1112,7 @@ private fun ServerWorkspace(
     }
 
     permissionChannel?.let { channel ->
-        ChannelPermissionDialog(server.id, channel, members) { permissionChannel = null }
+        ChannelPermissionDialog(server.id, channel, members, serverRoles) { permissionChannel = null }
     }
 
     if (showOwnerManagement && isOwner) {
@@ -1251,6 +1252,7 @@ private fun NameDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelPermissionDialog(
     serverId: String,
