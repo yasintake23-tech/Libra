@@ -9,6 +9,9 @@ import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.BookStatus
 import com.libra.app.domain.model.Chapter
+import com.libra.app.domain.model.StorageUploadRequest
+import com.libra.app.domain.repository.StorageRepository
+import kotlinx.coroutines.flow.first
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +25,8 @@ data class WriteState(val myBooks: List<Book> = emptyList(), val isCreatingBook:
 
 class WriteViewModel(
     private val authRepository: AuthRepository = ServiceLocator.authRepository,
-    private val bookRepository: BookRepository = ServiceLocator.bookRepository
+    private val bookRepository: BookRepository = ServiceLocator.bookRepository,
+    private val storageRepository: StorageRepository = ServiceLocator.storageRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<UiState<WriteState>>(UiState.Loading)
     private val _editorChapters = MutableStateFlow<List<Chapter>>(emptyList())
@@ -133,22 +137,81 @@ class WriteViewModel(
         _editorError.value = null
     }
 
-    fun createNewBook(title: String, description: String, category: BookCategory) {
+    fun createNewBook(
+        title: String,
+        description: String,
+        discoverySummary: String,
+        category: BookCategory,
+        coverBytes: ByteArray? = null,
+        coverFileName: String = "cover.jpg",
+        coverContentType: String = "image/jpeg"
+    ) {
         val user = authRepository.currentUser.value
-        if (user == null) { _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı.")); return }
-        if (title.trim().isBlank()) { _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap başlığı boş olamaz.")); return }
+        if (user == null) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Auth("Oturum bulunamadı."))
+            return
+        }
+        val cleanTitle = title.trim()
+        val cleanDescription = description.trim()
+        val cleanSummary = discoverySummary.trim()
+        if (cleanTitle.isBlank()) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap başlığı boş olamaz."))
+            return
+        }
+        if (cleanTitle.length > 120 || cleanDescription.length > 2000 || cleanSummary.length > 500) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kitap bilgileri izin verilen uzunluğu aşıyor."))
+            return
+        }
+        if (coverBytes != null && coverBytes.size > 8 * 1024 * 1024) {
+            _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Validation("Kapak görseli 8 MB'dan küçük olmalı."))
+            return
+        }
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            val book = Book(ownerId = user.uid, authorName = user.displayName, title = title.trim(), description = description.trim(), category = category, status = BookStatus.DRAFT)
-            when (val result = bookRepository.createBook(book)) {
-                is AppResult.Error -> _uiState.value = UiState.Error(result.error)
-                is AppResult.Success -> {
-                    val initialChapter = Chapter(bookId = result.data.id, chapterNumber = 1, title = "1. Bölüm")
-                    when (val chapterResult = bookRepository.saveChapter(initialChapter)) {
-                        is AppResult.Error -> _uiState.value = UiState.Error(chapterResult.error)
-                        is AppResult.Success -> loadMyBooks()
+            var uploadedCoverKey: String? = null
+            try {
+                if (!coverBytes.isNullOrEmpty()) {
+                    when (val upload = storageRepository.uploadMedia(
+                        StorageUploadRequest(
+                            fileName = coverFileName.ifBlank { "cover.jpg" },
+                            bytes = coverBytes,
+                            contentType = coverContentType.ifBlank { "image/jpeg" }
+                        )
+                    ).first()) {
+                        is AppResult.Success -> uploadedCoverKey = upload.data
+                        is AppResult.Error -> {
+                            _uiState.value = UiState.Error(upload.error)
+                            return@launch
+                        }
                     }
                 }
+                val book = Book(
+                    ownerId = user.uid,
+                    authorName = user.displayName,
+                    title = cleanTitle,
+                    description = cleanDescription,
+                    discoverySummary = cleanSummary,
+                    coverImageUrl = uploadedCoverKey.orEmpty(),
+                    category = category,
+                    status = BookStatus.DRAFT
+                )
+                when (val result = bookRepository.createBook(book)) {
+                    is AppResult.Error -> {
+                        uploadedCoverKey?.let { storageRepository.deleteMedia(it) }
+                        _uiState.value = UiState.Error(result.error)
+                    }
+                    is AppResult.Success -> {
+                        when (val chapterResult = bookRepository.saveChapter(
+                            Chapter(bookId = result.data.id, chapterNumber = 1, title = "1. Bölüm")
+                        )) {
+                            is AppResult.Error -> _uiState.value = UiState.Error(chapterResult.error)
+                            is AppResult.Success -> loadMyBooks()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                uploadedCoverKey?.let { storageRepository.deleteMedia(it) }
+                _uiState.value = UiState.Error(com.libra.app.core.result.AppError.Storage("Kitap oluşturulamadı: " + (e.localizedMessage ?: "Bilinmeyen hata."), e))
             }
         }
     }
