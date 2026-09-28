@@ -28,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -77,7 +78,22 @@ fun BookEditorScreen(
     var category by remember(book.id) { mutableStateOf(book.category) }
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
-NaN
+    var chapterContent by remember(book.id) { mutableStateOf("") }
+    var categoryMenu by remember(book.id) { mutableStateOf(false) }
+    var showDeleteConfirm by remember(book.id) { mutableStateOf(false) }
+    val context = LocalContext.current
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null && bytes.isNotEmpty()) {
+                    onUploadChapterImage(book.id, bytes, "chapter-image.jpg", "image/jpeg") { inserted ->
+                        chapterContent += inserted
+                    }
+                }
+            }
+        }
+    }
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
     LaunchedEffect(chapters, selectedChapterId) {
