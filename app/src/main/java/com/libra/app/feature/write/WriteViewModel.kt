@@ -119,6 +119,7 @@ class WriteViewModel(
                     book.copy(
                         status = BookStatus.PUBLISHED,
                         chapterCount = publishedChapters.size,
+                        publishedAt = if (book.publishedAt == 0L) now else book.publishedAt,
                         updatedAt = now
                     )
                 )
@@ -204,7 +205,7 @@ class WriteViewModel(
                         when (val chapterResult = bookRepository.saveChapter(
                             Chapter(bookId = result.data.id, chapterNumber = 1, title = "1. Bölüm")
                         )) {
-                            is AppResult.Error -> _uiState.value = UiState.Error(chapterResult.error)
+                            is AppResult.Error -> { uploadedCoverKey?.let { storageRepository.deleteMedia(it) }; bookRepository.deleteBook(result.data.id); _uiState.value = UiState.Error(chapterResult.error) }
                             is AppResult.Success -> loadMyBooks()
                         }
                     }
