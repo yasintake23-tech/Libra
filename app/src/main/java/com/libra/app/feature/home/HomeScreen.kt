@@ -110,6 +110,7 @@ fun HomeScreen(
     onNavigateToDiscover: () -> Unit,
     onNavigateToServers: () -> Unit,
     onNotifications: () -> Unit,
+    unreadNotificationCount: Int = 0,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     onCreatePost: (String) -> Unit = {},
@@ -123,7 +124,7 @@ fun HomeScreen(
     onDeletePost: (Post) -> Unit = {},
     onOpenComments: (Post) -> Unit = {},
     comments: List<PostComment> = emptyList(),
-    onAddComment: (Post, String) -> Unit = { _, _ -> },
+    onAddComment: (Post, String, String) -> Unit = { _, _, _ -> },
     onDeleteComment: (Post, PostComment) -> Unit = { _, _ -> },
     isCommenting: Boolean = false,
     commentError: String? = null,
@@ -145,6 +146,7 @@ fun HomeScreen(
             val data = uiState.data
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
+            var replyTarget by remember { mutableStateOf<PostComment?>(null) }
             var showCreateMenu by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
@@ -156,7 +158,12 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 18.dp)
                 ) {
                     item {
-                        HomeHeader(data.currentUser, onNavigateToProfile, onNotifications)
+                        HomeHeader(
+                            data.currentUser,
+                            onNavigateToProfile,
+                            onNotifications,
+                            unreadNotificationCount
+                        )
                     }
 
                     item {
@@ -208,6 +215,7 @@ fun HomeScreen(
                                             if (canComment) {
                                                 selectedPost = post
                                                 commentText = ""
+                                                replyTarget = null
                                                 onOpenComments(post)
                                             }
                                         },
@@ -364,9 +372,12 @@ fun HomeScreen(
                         comments = comments,
                         text = commentText,
                         onTextChanged = { if (it.length <= 500) commentText = it },
+                        replyTarget = replyTarget,
+                        onReply = { replyTarget = it },
                         onSend = {
-                            onAddComment(post, commentText.trim())
+                            onAddComment(post, commentText.trim(), replyTarget?.id.orEmpty())
                             commentText = ""
+                            replyTarget = null
                         },
                         onDeleteComment = { onDeleteComment(post, it) },
                         isSending = isCommenting,
@@ -375,6 +386,7 @@ fun HomeScreen(
                         onDismiss = {
                             selectedPost = null
                             commentText = ""
+                            replyTarget = null
                             onCloseComments()
                         }
                     )
@@ -621,6 +633,8 @@ private fun PostCommentsDialog(
     comments: List<PostComment>,
     text: String,
     onTextChanged: (String) -> Unit,
+    replyTarget: PostComment?,
+    onReply: (PostComment?) -> Unit,
     onSend: () -> Unit,
     onDeleteComment: (PostComment) -> Unit,
     isSending: Boolean,
@@ -636,16 +650,10 @@ private fun PostCommentsDialog(
         contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) }
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .imePadding()
-                .navigationBarsPadding()
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().imePadding().navigationBarsPadding()
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
             ) {
                 Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -654,86 +662,99 @@ private fun PostCommentsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
             androidx.compose.material3.HorizontalDivider()
-
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (comments.isEmpty()) {
                     item {
-                        Box(
-                            Modifier.fillMaxWidth().padding(vertical = 50.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Henüz yorum yok. İlk yorumu sen bırak.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Box(Modifier.fillMaxWidth().padding(vertical = 50.dp), contentAlignment = Alignment.Center) {
+                            Text("Henüz yorum yok. İlk yorumu sen bırak.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 } else {
                     items(comments, key = { it.id }) { comment ->
-                        Row(verticalAlignment = Alignment.Top) {
+                        val isReply = comment.parentCommentId.isNotBlank()
+                        Row(
+                            modifier = Modifier.padding(start = if (isReply) 38.dp else 0.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
                             UserAvatar(
                                 comment.authorPhotoUrl,
                                 comment.authorName.take(1).uppercase().ifBlank { "L" },
-                                size = 36.dp
+                                size = if (isReply) 32.dp else 36.dp
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(
-                                    comment.authorName.ifBlank { "Libra kullanıcısı" },
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(comment.text, style = MaterialTheme.typography.bodyMedium)
-                                if (comment.authorId == currentUserId) {
-                                    TextButton(
-                                        onClick = { onDeleteComment(comment) },
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) { Text("Sil") }
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                ) {
+                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                        Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                        Text(comment.text, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (comment.authorId != currentUserId) {
+                                        TextButton(onClick = { onReply(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                            Text("Yanıtla")
+                                        }
+                                    }
+                                    if (comment.authorId == currentUserId) {
+                                        TextButton(onClick = { onDeleteComment(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                            Text("Sil")
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-
-            if (error != null) {
-                TextButton(
-                    onClick = onClearError,
-                    modifier = Modifier.padding(horizontal = 14.dp)
+            if (replyTarget != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
                 ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Yanıtlanıyor", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                "@${replyTarget.authorUsername.ifBlank { replyTarget.authorName }}: ${replyTarget.text}",
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        TextButton(onClick = { onReply(null) }) { Text("Kapat") }
+                    }
+                }
+            }
+            if (error != null) {
+                TextButton(onClick = onClearError, modifier = Modifier.padding(horizontal = 14.dp)) {
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
             }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                tonalElevation = 3.dp
-            ) {
+            Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = onTextChanged,
-                        placeholder = { Text("Yorum yaz…") },
+                        placeholder = { Text(if (replyTarget != null) "Yanıtını yaz…" else "Yorum yaz…") },
                         modifier = Modifier.weight(1f),
                         minLines = 1,
                         maxLines = 4,
                         shape = RoundedCornerShape(22.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    TextButton(
-                        enabled = text.trim().isNotEmpty() && !isSending,
-                        onClick = onSend
-                    ) {
+                    TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
                         Text(if (isSending) "…" else "Gönder")
                     }
                 }
@@ -761,7 +782,7 @@ private fun EmptyFeed(onDiscover: () -> Unit, onWrite: () -> Unit) {
 }
 
 @Composable
-private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotifications: () -> Unit) {
+private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotifications: () -> Unit, unreadNotificationCount: Int = 0) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -781,8 +802,29 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotification
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.IconButton(onClick = onNotifications) {
-                Icon(Icons.Default.NotificationsNone, "Bildirimler")
+            Box {
+                androidx.compose.material3.IconButton(onClick = onNotifications) {
+                    Icon(
+                        Icons.Default.NotificationsNone,
+                        "Bildirimler",
+                        tint = if (unreadNotificationCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (unreadNotificationCount > 0) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 1.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ) {
+                        Text(
+                            if (unreadNotificationCount > 99) "99+" else unreadNotificationCount.toString(),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
             UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp, modifier = Modifier.clickable(onClick = onProfile))
         }
