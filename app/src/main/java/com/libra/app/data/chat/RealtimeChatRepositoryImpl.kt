@@ -512,6 +512,7 @@ class RealtimeChatRepositoryImpl(
             "senderPhotoUrl" to profile.profileImageUrl,
             "recipientId" to "",
             "conversationId" to conversationId,
+            "isGroup" to true,
             "text" to clean,
             "mediaUrl" to mediaUrl,
             "mediaType" to mediaType,
@@ -555,9 +556,16 @@ class RealtimeChatRepositoryImpl(
             return@callbackFlow
         }
 
+        val membership = ref("directConversations/$uid/$conversationId")?.get()?.await()
+        val isGroup = membership?.child("isGroup")?.getValue(Boolean::class.java) == true
         val participants = conversationId.split("_")
-        if (participants.size != 2 || uid !in participants) {
+        if (!isGroup && (participants.size != 2 || uid !in participants)) {
             trySend(AppResult.Error(AppError.Auth("Bu sohbeti görüntüleme yetkin yok.")))
+            close()
+            return@callbackFlow
+        }
+        if (isGroup && membership.child("participantIds").children.none { it.getValue(String::class.java) == uid }) {
+            trySend(AppResult.Error(AppError.Auth("Bu grubu görüntüleme yetkin yok.")))
             close()
             return@callbackFlow
         }
@@ -577,7 +585,7 @@ class RealtimeChatRepositoryImpl(
             override fun onDataChange(snapshot: DataSnapshot) {
                 val messages = snapshot.children
                     .mapNotNull(::directMessageFrom)
-                    .filter { it.senderId == uid || it.recipientId == uid }
+                    .filter { isGroup || it.senderId == uid || it.recipientId == uid }
                     .sortedBy { it.createdAt }
 
                 trySend(AppResult.Success(messages))
