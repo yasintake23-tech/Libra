@@ -415,12 +415,12 @@ class HomeViewModel(
         _commentError.value = null
     }
 
-    fun addComment(post: Post, text: String) {
+    fun addComment(post: Post, text: String, parentCommentId: String = "") {
         val userId = authRepository.currentUser.value?.uid ?: return
         viewModelScope.launch {
             _isCommenting.value = true
             _commentError.value = null
-            when (val result = postRepository.addComment(post.id, userId, text)) {
+            when (val result = postRepository.addComment(post.id, userId, text, parentCommentId)) {
                 is AppResult.Error -> _commentError.value = result.error.message
                 is AppResult.Success -> Unit
             }
