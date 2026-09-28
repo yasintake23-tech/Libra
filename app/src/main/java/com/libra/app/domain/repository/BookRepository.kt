@@ -31,6 +31,7 @@ interface BookRepository {
     // Chapters
     fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>>
     suspend fun saveChapter(chapter: Chapter): AppResult<Chapter>
+    suspend fun deleteChapter(bookId: String, chapterId: String): AppResult<Unit>
 
     // Book social and reader state. Implemented by the data layer in the next book-system phase.
     suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> =

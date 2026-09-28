@@ -208,6 +208,18 @@ class BookRepositoryImpl : BookRepository {
         awaitClose { ref.removeEventListener(listener) }
     }
 
+    override suspend fun deleteChapter(bookId: String, chapterId: String): AppResult<Unit> {
+        val ref = chaptersRef?.child(bookId)?.child(chapterId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
+            if (owner != uid) return AppResult.Error(AppError.Auth("Bu bölümü silme yetkin yok."))
+            ref.removeValue().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) { AppResult.Error(AppError.Database("Bölüm silinemedi: ${e.localizedMessage}", e)) }
+    }
+
     override suspend fun saveChapter(chapter: Chapter): AppResult<Chapter> {
         val chapters = chaptersRef ?: return databaseError()
         if (chapter.bookId.isBlank()) return AppResult.Error(AppError.Validation("Bölüm bir kitaba bağlı olmalı."))

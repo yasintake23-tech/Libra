@@ -146,6 +146,32 @@ class WriteViewModel(
         }
     }
 
+    fun deleteChapter(chapter: Chapter) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            when (val result = bookRepository.deleteChapter(chapter.bookId, chapter.id)) {
+                is AppResult.Success -> _editorChapters.value = _editorChapters.value.filterNot { it.id == chapter.id }
+                is AppResult.Error -> _editorError.value = result.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
+    fun uploadChapterImage(bookId: String, bytes: ByteArray, fileName: String, contentType: String, onInserted: (String) -> Unit) {
+        viewModelScope.launch {
+            _editorSaving.value = true
+            _editorError.value = null
+            when (val upload = storageRepository.uploadMedia(StorageUploadRequest(fileName = fileName, bytes = bytes, contentType = contentType)).first()) {
+                is AppResult.Success -> {
+                    val url = storageRepository.getPublicCdnUrl(upload.data)
+                    onInserted("\n[[IMAGE:$url|Görsel]]\n")
+                }
+                is AppResult.Error -> _editorError.value = upload.error.message
+            }
+            _editorSaving.value = false
+        }
+    }
+
     fun clearEditorError() {
         _editorError.value = null
     }
