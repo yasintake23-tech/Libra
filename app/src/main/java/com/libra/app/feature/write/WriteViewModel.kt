@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 data class WriteState(val myBooks: List<Book> = emptyList(), val isCreatingBook: Boolean = false, val lastErrorMessage: String? = null)
 
@@ -34,6 +36,7 @@ class WriteViewModel(
     private val _editorSaving = MutableStateFlow(false)
     val editorSaving: StateFlow<Boolean> = _editorSaving.asStateFlow()
     private val _editorError = MutableStateFlow<String?>(null)
+    private var autosaveJob: Job? = null
     val editorError: StateFlow<String?> = _editorError.asStateFlow()
     val uiState: StateFlow<UiState<WriteState>> = _uiState.asStateFlow()
 
@@ -73,6 +76,15 @@ class WriteViewModel(
                 is AppResult.Error -> _editorError.value = result.error.message
             }
             _editorSaving.value = false
+        }
+    }
+
+    fun scheduleChapterAutosave(chapter: Chapter) {
+        autosaveJob?.cancel()
+        if (chapter.bookId.isBlank() || chapter.title.trim().isBlank()) return
+        autosaveJob = viewModelScope.launch {
+            delay(1200)
+            saveChapter(chapter)
         }
     }
 
