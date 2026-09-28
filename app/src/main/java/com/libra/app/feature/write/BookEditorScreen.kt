@@ -28,7 +28,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -365,11 +364,12 @@ fun BookEditorScreen(
         }
     }
 
-    if (showDeleteConfirm && selectedChapter != null) {
+    val chapterToDelete = selectedChapter
+    if (showDeleteConfirm && chapterToDelete != null) {
         DeleteChapterDialog(
             onDismiss = { showDeleteConfirm = false },
             onConfirm = {
-                onDeleteChapter(selectedChapter)
+                onDeleteChapter(chapterToDelete)
                 showDeleteConfirm = false
                 selectedChapterId = null
                 chapterTitle = ""
