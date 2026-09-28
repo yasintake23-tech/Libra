@@ -44,9 +44,14 @@ fun LibraryScreen(
     modifier: Modifier = Modifier
 ) {
     val state = (uiState as? UiState.Success)?.data
-    val selectedShelf = state?.selectedShelf ?: ShelfType.READING
+    var visibleShelf by remember { mutableStateOf(state?.selectedShelf ?: ShelfType.READING) }
+    val selectedShelf = visibleShelf
     val query = state?.searchQuery.orEmpty()
     val tabIndex = ShelfType.values().indexOf(selectedShelf).coerceAtLeast(0)
+
+    LaunchedEffect(state?.selectedShelf) {
+        state?.selectedShelf?.let { visibleShelf = it }
+    }
 
     Column(
         modifier = modifier.fillMaxSize().testTag("library_screen")
@@ -85,7 +90,10 @@ fun LibraryScreen(
             ShelfType.values().forEach { shelf ->
                 Tab(
                     selected = shelf == selectedShelf,
-                    onClick = { onTabSelected(shelf) },
+                    onClick = {
+                        visibleShelf = shelf
+                        onTabSelected(shelf)
+                    },
                     text = { Text(shelf.titleTr) }
                 )
             }
