@@ -760,6 +760,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
             if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin değiştirebilir."))
+            if (override.subjectType != "ROLE" && override.subjectType != "USER") return AppResult.Error(AppError.Validation("Geçersiz izin hedefi."))
             if (override.subjectId.isBlank()) return AppResult.Error(AppError.Validation("İzin hedefi bulunamadı."))
             val id = override.id.ifBlank { override.subjectType + "_" + override.subjectId }
             serverRef.collection("channels").document(channelId)
