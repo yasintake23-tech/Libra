@@ -50,6 +50,7 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
@@ -785,12 +786,22 @@ private fun ServerWorkspace(
                     val categoryChannels = visibleChannelsByCategory[category.id].orEmpty()
                     val collapsed = collapsedCategories.contains(category.id)
                     item(key = "category-" + category.id) {
-                        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
-                            Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(start = 10.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+                        ) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { collapsedCategories = if (collapsed) collapsedCategories - category.id else collapsedCategories + category.id }, modifier = Modifier.size(34.dp)) {
                                     Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, "Kategoriyi aç/kapat", modifier = Modifier.size(18.dp))
                                 }
-                                Text(category.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(
+                                    category.name,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 if (isOwner) {
                                     IconButton(onClick = { showCreateChannel = category }, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Add, "Kanal ekle", modifier = Modifier.size(18.dp)) }
                                     IconButton(onClick = { categoryMenu = category }, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.MoreVert, "Kategori seçenekleri", modifier = Modifier.size(18.dp)) }
