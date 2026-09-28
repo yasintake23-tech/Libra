@@ -88,3 +88,12 @@ data class ServerBan(
     val bannedAt: Long = 0L,
     val reason: String = ""
 )
+
+
+data class ReactionUser(
+    val uid: String = "",
+    val displayName: String = "",
+    val username: String = "",
+    val photoUrl: String = "",
+    val emoji: String = ""
+)
