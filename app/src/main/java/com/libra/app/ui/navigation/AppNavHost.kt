@@ -89,6 +89,7 @@ fun AppNavHost(
     var showGlobalChat by remember { mutableStateOf(false) }
     var showCommunityServers by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
+    var unreadNotificationCount by remember { mutableStateOf(0) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
@@ -137,6 +138,21 @@ fun AppNavHost(
     // This lets a fresh install see a mandatory/new release before login or registration.
     LaunchedEffect(currentUser?.uid) {
         updateVm.checkForUpdate()
+    }
+
+    LaunchedEffect(currentUser?.uid) {
+        val uid = currentUser?.uid.orEmpty()
+        if (uid.isBlank()) {
+            unreadNotificationCount = 0
+            return@LaunchedEffect
+        }
+
+        ServiceLocator.notificationRepository.observeNotifications(uid).collect { result ->
+            unreadNotificationCount = when (result) {
+                is com.libra.app.core.result.AppResult.Success -> result.data.count { !it.read }
+                is com.libra.app.core.result.AppResult.Error -> unreadNotificationCount
+            }
+        }
     }
 
     LaunchedEffect(currentUser?.uid, selectedTab) {
@@ -339,6 +355,7 @@ fun AppNavHost(
                         { selectedTab = BottomNavTab.DISCOVER },
                         { showCommunityServers = true },
                         { showNotifications = true },
+                        unreadNotificationCount,
                         vm::loadHomeData,
                         onCreatePost = vm::createPost,
                         onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
