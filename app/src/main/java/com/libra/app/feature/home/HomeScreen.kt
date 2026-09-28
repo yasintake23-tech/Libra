@@ -384,7 +384,7 @@ fun HomeScreen(
                 likeUsersPost?.let { post ->
                     var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
                     LaunchedEffect(post.id) {
-                        users = (ServiceLocator.postRepository.getPostLikeUsers(post.id) as? UiState.Success)?.data ?: emptyList()
+                        users = (ServiceLocator.postRepository.getPostLikeUsers(post.id) as? com.libra.app.core.result.AppResult.Success)?.data ?: emptyList()
                     }
                     ModalBottomSheet(onDismissRequest = { likeUsersPost = null }) {
                         Column(Modifier.fillMaxWidth().padding(20.dp)) {
