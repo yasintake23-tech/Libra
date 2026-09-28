@@ -237,6 +237,35 @@ class FirebasePostRepositoryImpl(
         }
     }
 
+    override suspend fun getPostLikeUsers(postId: String): AppResult<List<com.libra.app.domain.model.UserProfile>> {
+        if (postId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz gönderi."))
+        }
+
+        return try {
+            val snapshot = postsRef.document(postId).collection("likes")
+                .orderBy("likedAt", Query.Direction.ASCENDING)
+                .limit(200)
+                .get()
+                .await()
+
+            val users = snapshot.documents.mapNotNull { like ->
+                val uid = like.getString("userId").orEmpty().ifBlank { like.id }
+                if (uid.isBlank()) {
+                    null
+                } else {
+                    runCatching {
+                        (userRepository.getUserProfileFresh(uid) as? AppResult.Success)?.data
+                    }.getOrNull()
+                }
+            }
+
+            AppResult.Success(users)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Beğenenler yüklenemedi.", e))
+        }
+    }
+
     override suspend fun deletePost(postId: String, userId: String): AppResult<Unit> {
         return try {
             val ref = postsRef.document(postId)
