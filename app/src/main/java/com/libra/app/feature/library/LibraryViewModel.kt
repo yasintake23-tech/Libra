@@ -48,79 +48,53 @@ class LibraryViewModel(
 
             _uiState.value = UiState.Loading
 
-            if (shelfType == ShelfType.MY_WRITINGS) {
-                val firstResult = kotlinx.coroutines.CompletableDeferred<Unit>()
-                val collector = launch {
-                    bookRepository.getUserWrittenBooks(userId).collect { result ->
-                        firstResult.complete(Unit)
-                        when (result) {
-                            is AppResult.Success -> {
-                                val items = result.data.map { book ->
-                                    UserShelfItem(
-                                        id = "${userId}_MY_WRITINGS_${book.id}",
-                                        userId = userId,
-                                        book = book,
-                                        shelfType = ShelfType.MY_WRITINGS,
-                                        progressPercent = 0,
-                                        addedAt = book.updatedAt
-                                    )
-                                }
-                                _uiState.value = UiState.Success(
-                                    LibraryState(ShelfType.MY_WRITINGS, items, currentSearch)
-                                )
-                            }
-                            is AppResult.Error -> _uiState.value = UiState.Error(result.error)
-                        }
-                    }
-                }
-
-                val received = withTimeoutOrNull(8_000L) {
-                    firstResult.await()
-                    true
-                } ?: false
-
-                if (!received) {
-                    collector.cancel()
-                    _uiState.value = UiState.Error(
-                        AppError.Database("Yazdıkların yüklenemedi. Firebase bağlantısı yanıt vermedi.")
-                    )
+            val result = withTimeoutOrNull(10_000L) {
+                if (shelfType == ShelfType.MY_WRITINGS) {
+                    bookRepository.getUserWrittenBooks(userId).first()
                 } else {
-                    collector.join()
+                    bookRepository.getUserLibrary(userId, shelfType).first()
                 }
+            }
+
+            if (result == null) {
+                _uiState.value = UiState.Error(
+                    AppError.Database(
+                        if (shelfType == ShelfType.MY_WRITINGS) {
+                            "Yazdıkların yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
+                        } else {
+                            "Kütüphane yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
+                        }
+                    )
+                )
                 return@launch
             }
 
-            val firstResult = kotlinx.coroutines.CompletableDeferred<Unit>()
-            val collector = launch {
-                bookRepository.getUserLibrary(userId, shelfType).collect { result ->
-                    firstResult.complete(Unit)
-                    when (result) {
-                        is AppResult.Success -> {
-                            _uiState.value = UiState.Success(
-                                LibraryState(shelfType, result.data, currentSearch)
+            when (result) {
+                is AppResult.Success -> {
+                    if (shelfType == ShelfType.MY_WRITINGS) {
+                        val items = result.data.map { book ->
+                            UserShelfItem(
+                                id = userId + "_MY_WRITINGS_" + book.id,
+                                userId = userId,
+                                book = book,
+                                shelfType = ShelfType.MY_WRITINGS,
+                                progressPercent = 0,
+                                addedAt = book.updatedAt
                             )
                         }
-                        is AppResult.Error -> _uiState.value = UiState.Error(result.error)
+                        _uiState.value = UiState.Success(
+                            LibraryState(ShelfType.MY_WRITINGS, items, currentSearch)
+                        )
+                    } else {
+                        _uiState.value = UiState.Success(
+                            LibraryState(shelfType, result.data, currentSearch)
+                        )
                     }
                 }
-            }
-
-            val received = withTimeoutOrNull(8_000L) {
-                firstResult.await()
-                true
-            } ?: false
-
-            if (!received) {
-                collector.cancel()
-                _uiState.value = UiState.Error(
-                    AppError.Database("Kütüphane yüklenemedi. Firebase bağlantısı yanıt vermedi.")
-                )
-            } else {
-                collector.join()
+                is AppResult.Error -> _uiState.value = UiState.Error(result.error)
             }
         }
     }
-
     fun loadShelfDefault() = loadShelf(ShelfType.READING)
 
     fun updateSearchQuery(query: String) {
