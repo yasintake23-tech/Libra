@@ -76,6 +76,7 @@ fun BookEditorScreen(
     var description by remember(book.id) { mutableStateOf(book.description) }
     var category by remember(book.id) { mutableStateOf(book.category) }
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
+    var isCreatingChapter by remember(book.id) { mutableStateOf(false) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
     var chapterContent by remember(book.id) { mutableStateOf("") }
     var categoryMenu by remember(book.id) { mutableStateOf(false) }
@@ -95,8 +96,10 @@ fun BookEditorScreen(
     }
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
-    LaunchedEffect(chapters, selectedChapterId) {
-        val selected = chapters.firstOrNull { it.id == selectedChapterId } ?: chapters.firstOrNull()
+    LaunchedEffect(chapters, selectedChapterId, isCreatingChapter) {
+        if (isCreatingChapter) return@LaunchedEffect
+        val selected = chapters.firstOrNull { it.id == selectedChapterId }
+            ?: chapters.firstOrNull()
         if (selected != null && selected.id != selectedChapterId) {
             selectedChapterId = selected.id
             chapterTitle = selected.title
@@ -106,6 +109,7 @@ fun BookEditorScreen(
 
     val selectedChapter = chapters.firstOrNull { it.id == selectedChapterId }
     val nextNumber = (chapters.maxOfOrNull { it.chapterNumber } ?: 0) + 1
+    val editorChapterNumber = selectedChapter?.chapterNumber ?: nextNumber
 
     LaunchedEffect(chapterContent, chapterTitle, selectedChapterId) {
         val current = selectedChapter
@@ -212,6 +216,7 @@ fun BookEditorScreen(
                     TextButton(
                         enabled = !isSaving,
                         onClick = {
+                            isCreatingChapter = true
                             selectedChapterId = null
                             chapterTitle = "$nextNumber. Bölüm"
                             chapterContent = ""
@@ -235,6 +240,7 @@ fun BookEditorScreen(
                                 Modifier.clip(RoundedCornerShape(9.dp))
                                     .background(if (chapter.id == selectedChapterId) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surface)
                                     .clickable {
+                                        isCreatingChapter = false
                                         selectedChapterId = chapter.id
                                         chapterTitle = chapter.title
                                         chapterContent = chapter.content
@@ -262,7 +268,7 @@ fun BookEditorScreen(
                             Icon(Icons.Default.MenuBook, null, Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (selectedChapter != null) "Bölüm " + selectedChapter.chapterNumber else "Yeni bölüm",
+                                if (selectedChapter != null) "Bölüm " + selectedChapter.chapterNumber else "Yeni bölüm #$editorChapterNumber",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -309,6 +315,7 @@ fun BookEditorScreen(
                                         isPublished = selectedChapter?.isPublished == true
                                     )
                                 )
+                                isCreatingChapter = false
                             }
                         ) {
                             Icon(Icons.Default.Check, null)
