@@ -89,7 +89,9 @@ fun BookReaderScreen(
         val max = scrollState.maxValue
         val percent = if (max > 0) {
             ((scrollState.value.toFloat() / max) * 100f).roundToInt().coerceIn(0, 100)
-        } else 0
+        } else {
+            if (current.content.isNotBlank()) 100 else 0
+        }
         val key = "${current.id}:${scrollState.value}:$percent"
         if (!force && key == lastLocalKey) return null
         lastLocalKey = key
@@ -131,7 +133,9 @@ fun BookReaderScreen(
 
     val percent = if (scrollState.maxValue > 0) {
         ((scrollState.value.toFloat() / scrollState.maxValue) * 100f).roundToInt().coerceIn(0, 100)
-    } else 0
+    } else {
+        if (chapter?.content?.isNotBlank() == true) 100 else 0
+    }
 
     val background = when (preferences.theme) {
         ReaderTheme.LIGHT -> MaterialTheme.colorScheme.background
