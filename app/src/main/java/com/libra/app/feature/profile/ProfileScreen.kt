@@ -1,9 +1,12 @@
 package com.libra.app.feature.profile
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,8 +44,11 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.Post
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.ui.components.CosmeticRoleReveal
 import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun ProfileScreen(
@@ -89,12 +97,23 @@ private fun ProfileContent(
     var showSavedPosts by remember { mutableStateOf(false) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
+    var adminRole by remember { mutableStateOf<com.libra.app.domain.model.AdminRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
             ServiceLocator.userRepository.getFollowers(profile.uid).let {
                 if (it is com.libra.app.core.result.AppResult.Success) followers = it.data
             }
+        }
+        launch {
+            ServiceLocator.adminRepository.observeCosmeticRoles().first().let { result ->
+                if (result is com.libra.app.core.result.AppResult.Success) cosmeticRoles = result.data
+            }
+        }
+        launch {
+            adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
         }
         launch {
             ServiceLocator.userRepository.getFollowing(profile.uid).let {
@@ -167,12 +186,17 @@ private fun ProfileContent(
 
             Spacer(Modifier.height(10.dp))
 
-            Text(
-                profile.displayName,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold
-                )
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(profile.displayName, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                adminRole?.let { role ->
+                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                    CosmeticRoleBadge(role) { selectedCosmetic = role }
+                }
+            }
 
             Text(
                 profile.handle,
@@ -248,6 +272,13 @@ private fun ProfileContent(
             )
         }
 
+        selectedCosmetic?.let { role ->
+            CosmeticRoleReveal(
+                role = role,
+                onDismiss = { selectedCosmetic = null }
+            )
+        }
+
         TextButton(
             onClick = onSignOut,
             modifier = Modifier.fillMaxWidth()
@@ -257,6 +288,7 @@ private fun ProfileContent(
         }
     }
 }
+
 
 @Composable
 private fun ProfileAction(

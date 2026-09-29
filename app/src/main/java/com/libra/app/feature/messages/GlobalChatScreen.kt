@@ -102,6 +102,7 @@ fun GlobalChatScreen(
     onBack: () -> Unit,
     viewModel: GlobalChatViewModel = viewModel(),
     onOpenProfile: (String) -> Unit = {},
+    canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -255,16 +256,17 @@ fun GlobalChatScreen(
         }
 
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(enabled = !uploading && editingMessage == null, onClick = { picker.launch("image/*") }) { Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf") }
+            IconButton(enabled = canMessage && !uploading && editingMessage == null, onClick = { picker.launch("image/*") }) { Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf") }
             OutlinedTextField(
                 value = draft,
-                onValueChange = { if (it.length <= 1000) draft = it },
+                onValueChange = { if (canMessage && it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text(if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
+                enabled = canMessage,
+                placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
             IconButton(
-                enabled = (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
+                enabled = canMessage && (draft.isNotBlank() || pendingUrl.isNotBlank()) && !uploading,
                 onClick = {
                     val edit = editingMessage
                     if (edit != null) { viewModel.edit(edit.id, draft); editingMessage = null }

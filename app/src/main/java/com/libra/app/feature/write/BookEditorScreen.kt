@@ -22,6 +22,12 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -59,6 +65,8 @@ fun BookEditorScreen(
     onLoadChapters: (String) -> Unit,
     onSaveBook: (Book) -> Unit,
     onSaveChapter: (Chapter) -> Unit,
+    onDeleteChapter: (Chapter) -> Unit,
+    onUploadChapterImage: (ByteArray, String, String, (String) -> Unit) -> Unit,
     onPublish: (Book) -> Unit,
     onClearError: () -> Unit,
     onBack: () -> Unit,
@@ -68,14 +76,44 @@ fun BookEditorScreen(
     var description by remember(book.id) { mutableStateOf(book.description) }
     var category by remember(book.id) { mutableStateOf(book.category) }
     var selectedChapterId by remember(book.id) { mutableStateOf<String?>(null) }
+    var isCreatingChapter by remember(book.id) { mutableStateOf(false) }
+    var newChapterNumber by remember(book.id) { mutableStateOf<Int?>(null) }
     var chapterTitle by remember(book.id) { mutableStateOf("") }
     var chapterContent by remember(book.id) { mutableStateOf("") }
-    var categoryMenu by remember { mutableStateOf(false) }
-
+    var categoryMenu by remember(book.id) { mutableStateOf(false) }
+    var showDeleteConfirm by remember(book.id) { mutableStateOf(false) }
+    val context = LocalContext.current
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null && bytes.isNotEmpty()) {
+                    onUploadChapterImage(bytes, "chapter-image.jpg", "image/jpeg") { inserted ->
+                        chapterContent += inserted
+                    }
+                }
+            }
+        }
+    }
     LaunchedEffect(book.id) { onLoadChapters(book.id) }
 
-    LaunchedEffect(chapters, selectedChapterId) {
-        val selected = chapters.firstOrNull { it.id == selectedChapterId } ?: chapters.firstOrNull()
+    LaunchedEffect(chapters, selectedChapterId, isCreatingChapter, newChapterNumber) {
+        if (isCreatingChapter) {
+            val created = newChapterNumber?.let { number ->
+                chapters.firstOrNull { it.chapterNumber == number }
+            }
+            if (created != null) {
+                isCreatingChapter = false
+                newChapterNumber = null
+                selectedChapterId = created.id
+                chapterTitle = created.title
+                chapterContent = created.content
+            }
+            return@LaunchedEffect
+        }
+
+        val selected = chapters.firstOrNull { it.id == selectedChapterId }
+            ?: chapters.firstOrNull()
         if (selected != null && selected.id != selectedChapterId) {
             selectedChapterId = selected.id
             chapterTitle = selected.title
@@ -85,6 +123,15 @@ fun BookEditorScreen(
 
     val selectedChapter = chapters.firstOrNull { it.id == selectedChapterId }
     val nextNumber = (chapters.maxOfOrNull { it.chapterNumber } ?: 0) + 1
+    val editorChapterNumber = selectedChapter?.chapterNumber ?: nextNumber
+
+    LaunchedEffect(chapterContent, chapterTitle, selectedChapterId) {
+        val current = selectedChapter
+        if (current != null && (chapterContent != current.content || chapterTitle != current.title)) {
+            kotlinx.coroutines.delay(1200)
+            onSaveChapter(current.copy(title = chapterTitle.trim(), content = chapterContent))
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         Row(
@@ -183,6 +230,8 @@ fun BookEditorScreen(
                     TextButton(
                         enabled = !isSaving,
                         onClick = {
+                            isCreatingChapter = true
+                            newChapterNumber = nextNumber
                             selectedChapterId = null
                             chapterTitle = "$nextNumber. Bölüm"
                             chapterContent = ""
@@ -206,6 +255,7 @@ fun BookEditorScreen(
                                 Modifier.clip(RoundedCornerShape(9.dp))
                                     .background(if (chapter.id == selectedChapterId) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surface)
                                     .clickable {
+                                        isCreatingChapter = false
                                         selectedChapterId = chapter.id
                                         chapterTitle = chapter.title
                                         chapterContent = chapter.content
@@ -233,7 +283,7 @@ fun BookEditorScreen(
                             Icon(Icons.Default.MenuBook, null, Modifier.size(22.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (selectedChapter != null) "Bölüm " + selectedChapter.chapterNumber else "Yeni bölüm",
+                                if (selectedChapter != null) "Bölüm " + selectedChapter.chapterNumber else "Yeni bölüm #$editorChapterNumber",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -247,6 +297,12 @@ fun BookEditorScreen(
                             singleLine = true
                         )
                         Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = { chapterContent += "\n**" }, enabled = !isSaving) { Text("Kalın") }
+                            TextButton(onClick = { chapterContent += "\n_" }, enabled = !isSaving) { Text("İtalik") }
+                            TextButton(onClick = { chapterContent += "\n> " }, enabled = !isSaving) { Text("Alıntı") }
+                            IconButton(onClick = { imagePicker.launch("image/*") }, enabled = !isSaving) { Icon(Icons.Default.Image, "Görsel ekle") }
+                        }
                         OutlinedTextField(
                             value = chapterContent,
                             onValueChange = { if (it.length <= 100000) chapterContent = it },
@@ -259,6 +315,7 @@ fun BookEditorScreen(
                             }
                         )
                         Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             enabled = !isSaving && chapterTitle.isNotBlank() && chapterContent.isNotBlank(),
                             onClick = {
@@ -273,11 +330,20 @@ fun BookEditorScreen(
                                         isPublished = selectedChapter?.isPublished == true
                                     )
                                 )
+                                if (selectedChapter != null) {
+                                    isCreatingChapter = false
+                                }
                             }
                         ) {
                             Icon(Icons.Default.Check, null)
                             Spacer(Modifier.width(4.dp))
                             Text("Bölümü kaydet")
+                        }
+                        if (selectedChapter != null) {
+                            IconButton(onClick = { showDeleteConfirm = true }, enabled = !isSaving) {
+                                Icon(Icons.Default.Delete, "Bölümü sil")
+                            }
+                        }
                         }
                     }
                 }
@@ -321,4 +387,24 @@ fun BookEditorScreen(
             item { Spacer(Modifier.height(28.dp)) }
         }
     }
+
+    val chapterToDelete = selectedChapter
+    if (showDeleteConfirm && chapterToDelete != null) {
+        DeleteChapterDialog(
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                onDeleteChapter(chapterToDelete)
+                showDeleteConfirm = false
+                selectedChapterId = null
+                chapterTitle = ""
+                chapterContent = ""
+            }
+        )
+    }
+}
+
+
+@Composable
+private fun DeleteChapterDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    androidx.compose.material3.AlertDialog(onDismissRequest = onDismiss, title = { Text("Bölümü sil?") }, text = { Text("Bu işlem bölümü kalıcı olarak kaldırır.") }, confirmButton = { TextButton(onClick = onConfirm) { Text("Sil") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } })
 }

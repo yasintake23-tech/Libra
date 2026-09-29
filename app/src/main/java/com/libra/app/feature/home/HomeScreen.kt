@@ -12,6 +12,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,6 +54,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -72,7 +76,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -99,6 +105,7 @@ import com.libra.app.ui.components.SectionHeader
 import com.libra.app.ui.components.UserAvatar
 import com.libra.app.ui.components.VerticalBookCard
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     uiState: UiState<HomeData>,
@@ -109,17 +116,21 @@ fun HomeScreen(
     onNavigateToDiscover: () -> Unit,
     onNavigateToServers: () -> Unit,
     onNotifications: () -> Unit,
+    unreadNotificationCount: Int = 0,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     onCreatePost: (String) -> Unit = {},
     onOpenCreatePost: () -> Unit = {},
     onOpenCreateStory: () -> Unit = {},
+    canPost: Boolean = true,
+    canStory: Boolean = true,
+    canComment: Boolean = true,
     onToggleLike: (Post) -> Unit = {},
     onToggleSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
     onOpenComments: (Post) -> Unit = {},
     comments: List<PostComment> = emptyList(),
-    onAddComment: (Post, String) -> Unit = { _, _ -> },
+    onAddComment: (Post, String, String) -> Unit = { _, _, _ -> },
     onDeleteComment: (Post, PostComment) -> Unit = { _, _ -> },
     isCommenting: Boolean = false,
     commentError: String? = null,
@@ -131,7 +142,9 @@ fun HomeScreen(
     onStoryReply: (Story) -> Unit = {},
     onStoryLike: (Story) -> Unit = {},
     onStoriesRefresh: () -> Unit = {},
-    onOpenProfile: (String) -> Unit = {}
+    onOpenProfile: (String) -> Unit = {},
+    initialCommentPostId: String? = null,
+    onInitialCommentPostConsumed: () -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -140,11 +153,26 @@ fun HomeScreen(
         is UiState.Success -> {
             val data = uiState.data
             var selectedPost by remember { mutableStateOf<Post?>(null) }
+            var selectedLikePost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
+            var replyTarget by remember { mutableStateOf<PostComment?>(null) }
             var showCreateMenu by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
             var shareContent by remember { mutableStateOf<SharedContent?>(null) }
+            var likeUsersPost by remember { mutableStateOf<Post?>(null) }
+
+            LaunchedEffect(initialCommentPostId, data.posts) {
+                val targetId = initialCommentPostId ?: return@LaunchedEffect
+                val targetPost = data.posts.firstOrNull { it.id == targetId }
+                if (targetPost != null) {
+                    selectedPost = targetPost
+                    commentText = ""
+                    replyTarget = null
+                    onOpenComments(targetPost)
+                    onInitialCommentPostConsumed()
+                }
+            }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -152,7 +180,12 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 18.dp)
                 ) {
                     item {
-                        HomeHeader(data.currentUser, onNavigateToProfile, onNotifications)
+                        HomeHeader(
+                            data.currentUser,
+                            onNavigateToProfile,
+                            onNotifications,
+                            unreadNotificationCount
+                        )
                     }
 
                     item {
@@ -201,9 +234,12 @@ fun HomeScreen(
                                         { onDeletePost(post) },
                                         { onToggleSave(post) },
                                         {
-                                            selectedPost = post
-                                            commentText = ""
-                                            onOpenComments(post)
+                                            if (canComment) {
+                                                selectedPost = post
+                                                commentText = ""
+                                                replyTarget = null
+                                                onOpenComments(post)
+                                            }
                                         },
                                         { onOpenProfile(post.authorId) },
                                         {
@@ -217,7 +253,9 @@ fun HomeScreen(
                                                 mediaUrl = post.mediaUrl,
                                                 url = sharedContentUrl("post", post.id)
                                             )
-                                        }
+                                        },
+                                        { likeUsersPost = post },
+                                        canComment = canComment
                                     )
                                 }
                             }
@@ -273,6 +311,8 @@ fun HomeScreen(
                     )
                 ) {
                     CreateChoiceMenu(
+                        canStory = canStory,
+                        canPost = canPost,
                         onStory = {
                             showCreateMenu = false
                             onOpenCreateStory()
@@ -344,8 +384,37 @@ fun HomeScreen(
                     )
                 }
 
+                likeUsersPost?.let { post ->
+                    var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
+                    LaunchedEffect(post.id) {
+                        users = (ServiceLocator.postRepository.getPostLikeUsers(post.id) as? com.libra.app.core.result.AppResult.Success)?.data ?: emptyList()
+                    }
+                    ModalBottomSheet(onDismissRequest = { likeUsersPost = null }) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                            Text("Beğenenler", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("${users.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(12.dp))
+                            users.forEach { user ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    UserAvatar(user.profileImageUrl, user.displayName.take(1).uppercase().ifBlank { "U" }, size = 38.dp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                        Text("@${user.username}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(20.dp))
+                        }
+                    }
+                }
+
                 shareContent?.let { content ->
                     ShareSheet(content = content, onDismiss = { shareContent = null })
+                }
+
+                selectedLikePost?.let { post ->
+                    PostLikeUsersDialog(post = post, onDismiss = { selectedLikePost = null })
                 }
 
                 selectedPost?.let { post ->
@@ -355,9 +424,12 @@ fun HomeScreen(
                         comments = comments,
                         text = commentText,
                         onTextChanged = { if (it.length <= 500) commentText = it },
+                        replyTarget = replyTarget,
+                        onReply = { replyTarget = it },
                         onSend = {
-                            onAddComment(post, commentText.trim())
+                            onAddComment(post, commentText.trim(), replyTarget?.id.orEmpty())
                             commentText = ""
+                            replyTarget = null
                         },
                         onDeleteComment = { onDeleteComment(post, it) },
                         isSending = isCommenting,
@@ -366,6 +438,7 @@ fun HomeScreen(
                         onDismiss = {
                             selectedPost = null
                             commentText = ""
+                            replyTarget = null
                             onCloseComments()
                         }
                     )
@@ -434,6 +507,8 @@ private fun EmptySection(text: String) {
 
 @Composable
 private fun CreateChoiceMenu(
+    canStory: Boolean = true,
+    canPost: Boolean = true,
     onStory: () -> Unit,
     onPost: () -> Unit
 ) {
@@ -449,7 +524,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onStory)
+                     .clickable(enabled = canStory, onClick = onStory).alpha(if (canStory) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -461,7 +536,7 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onPost)
+                     .clickable(enabled = canPost, onClick = onPost).alpha(if (canPost) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -474,7 +549,7 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}) {
+private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onShowLikes: () -> Unit = {}, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
@@ -563,14 +638,110 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onDe
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onLike) {
-                    Icon(if (post.likedByCurrentUser) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Beğen")
+                    Icon(
+                        imageVector = if (post.likedByCurrentUser) {
+                            Icons.Default.Favorite
+                        } else {
+                            Icons.Default.FavoriteBorder
+                        },
+                        contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen",
+                        tint = if (post.likedByCurrentUser) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
-                Text(post.likesCount.toString(), style = MaterialTheme.typography.labelMedium)
-                IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Yorumlar") }
-                IconButton(onClick = onSave) { Icon(if (post.savedByCurrentUser) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Kaydet") }
+                Text(post.likesCount.toString(), modifier = Modifier.pointerInput(post.id) { detectTapGestures(onLongPress = { onShowLikes() }) }.padding(horizontal = 4.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                IconButton(onClick = onComment, enabled = canComment) {
+                    Icon(Icons.Default.ChatBubbleOutline, "Yorumlar")
+                }
+                Text(post.commentsCount.toString(), style = MaterialTheme.typography.labelMedium)
+                IconButton(onClick = onSave) {
+                    Icon(
+                        imageVector = if (post.savedByCurrentUser) {
+                            Icons.Default.Bookmark
+                        } else {
+                            Icons.Default.BookmarkBorder
+                        },
+                        contentDescription = if (post.savedByCurrentUser) "Kaydedildi" else "Kaydet",
+                        tint = if (post.savedByCurrentUser) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun PostLikeUsersDialog(
+    post: Post,
+    onDismiss: () -> Unit
+) {
+    var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var loading by remember(post.id) { mutableStateOf(true) }
+    var error by remember(post.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(post.id) {
+        loading = true
+        error = null
+        when (val result = ServiceLocator.postRepository.getPostLikeUsers(post.id)) {
+            is com.libra.app.core.result.AppResult.Success -> users = result.data
+            is com.libra.app.core.result.AppResult.Error -> error = result.error.message
+        }
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Beğenenler", fontWeight = FontWeight.Bold)
+                Text(
+                    post.likesCount.toString() + " beğeni",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            when {
+                loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+                error != null -> Text(error ?: "Beğenenler yüklenemedi.")
+                users.isEmpty() -> Text("Henüz beğenen yok.")
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(users, key = { it.uid }) { user ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        ) {
+                            Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                UserAvatar(user.profileImageUrl, user.initials, size = 38.dp)
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    if (user.username.isNotBlank()) {
+                                        Text("@" + user.username, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -581,6 +752,8 @@ private fun PostCommentsDialog(
     comments: List<PostComment>,
     text: String,
     onTextChanged: (String) -> Unit,
+    replyTarget: PostComment?,
+    onReply: (PostComment?) -> Unit,
     onSend: () -> Unit,
     onDeleteComment: (PostComment) -> Unit,
     isSending: Boolean,
@@ -596,16 +769,10 @@ private fun PostCommentsDialog(
         contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) }
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .imePadding()
-                .navigationBarsPadding()
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().imePadding().navigationBarsPadding()
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
             ) {
                 Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -614,86 +781,99 @@ private fun PostCommentsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
             androidx.compose.material3.HorizontalDivider()
-
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (comments.isEmpty()) {
                     item {
-                        Box(
-                            Modifier.fillMaxWidth().padding(vertical = 50.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Henüz yorum yok. İlk yorumu sen bırak.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Box(Modifier.fillMaxWidth().padding(vertical = 50.dp), contentAlignment = Alignment.Center) {
+                            Text("Henüz yorum yok. İlk yorumu sen bırak.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 } else {
                     items(comments, key = { it.id }) { comment ->
-                        Row(verticalAlignment = Alignment.Top) {
+                        val isReply = comment.parentCommentId.isNotBlank()
+                        Row(
+                            modifier = Modifier.padding(start = if (isReply) 38.dp else 0.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
                             UserAvatar(
                                 comment.authorPhotoUrl,
                                 comment.authorName.take(1).uppercase().ifBlank { "L" },
-                                size = 36.dp
+                                size = if (isReply) 32.dp else 36.dp
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(
-                                    comment.authorName.ifBlank { "Libra kullanıcısı" },
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(comment.text, style = MaterialTheme.typography.bodyMedium)
-                                if (comment.authorId == currentUserId) {
-                                    TextButton(
-                                        onClick = { onDeleteComment(comment) },
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) { Text("Sil") }
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                ) {
+                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                        Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                        Text(comment.text, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (comment.authorId != currentUserId) {
+                                        TextButton(onClick = { onReply(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                            Text("Yanıtla")
+                                        }
+                                    }
+                                    if (comment.authorId == currentUserId) {
+                                        TextButton(onClick = { onDeleteComment(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                            Text("Sil")
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-
-            if (error != null) {
-                TextButton(
-                    onClick = onClearError,
-                    modifier = Modifier.padding(horizontal = 14.dp)
+            if (replyTarget != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
                 ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Yanıtlanıyor", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                "@${replyTarget.authorUsername.ifBlank { replyTarget.authorName }}: ${replyTarget.text}",
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        TextButton(onClick = { onReply(null) }) { Text("Kapat") }
+                    }
+                }
+            }
+            if (error != null) {
+                TextButton(onClick = onClearError, modifier = Modifier.padding(horizontal = 14.dp)) {
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
             }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                tonalElevation = 3.dp
-            ) {
+            Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = onTextChanged,
-                        placeholder = { Text("Yorum yaz…") },
+                        placeholder = { Text(if (replyTarget != null) "Yanıtını yaz…" else "Yorum yaz…") },
                         modifier = Modifier.weight(1f),
                         minLines = 1,
                         maxLines = 4,
                         shape = RoundedCornerShape(22.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    TextButton(
-                        enabled = text.trim().isNotEmpty() && !isSending,
-                        onClick = onSend
-                    ) {
+                    TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
                         Text(if (isSending) "…" else "Gönder")
                     }
                 }
@@ -721,7 +901,7 @@ private fun EmptyFeed(onDiscover: () -> Unit, onWrite: () -> Unit) {
 }
 
 @Composable
-private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotifications: () -> Unit) {
+private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotifications: () -> Unit, unreadNotificationCount: Int = 0) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -741,8 +921,29 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotification
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.IconButton(onClick = onNotifications) {
-                Icon(Icons.Default.NotificationsNone, "Bildirimler")
+            Box {
+                androidx.compose.material3.IconButton(onClick = onNotifications) {
+                    Icon(
+                        Icons.Default.NotificationsNone,
+                        "Bildirimler",
+                        tint = if (unreadNotificationCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (unreadNotificationCount > 0) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 1.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ) {
+                        Text(
+                            if (unreadNotificationCount > 99) "99+" else unreadNotificationCount.toString(),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
             UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp, modifier = Modifier.clickable(onClick = onProfile))
         }

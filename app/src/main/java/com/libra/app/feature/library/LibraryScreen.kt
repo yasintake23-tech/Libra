@@ -23,6 +23,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -38,15 +43,20 @@ fun LibraryScreen(
     uiState: UiState<LibraryState>,
     onTabSelected: (ShelfType) -> Unit,
     onSearchChanged: (String) -> Unit,
-    onBookClick: (Book) -> Unit,
+    onBookClick: (Book, ShelfType) -> Unit,
     onNavigateToWrite: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state = (uiState as? UiState.Success)?.data
-    val selectedShelf = state?.selectedShelf ?: ShelfType.READING
+    var visibleShelf by remember { mutableStateOf(state?.selectedShelf ?: ShelfType.READING) }
+    val selectedShelf = visibleShelf
     val query = state?.searchQuery.orEmpty()
     val tabIndex = ShelfType.values().indexOf(selectedShelf).coerceAtLeast(0)
+
+    LaunchedEffect(state?.selectedShelf) {
+        state?.selectedShelf?.let { visibleShelf = it }
+    }
 
     Column(
         modifier = modifier.fillMaxSize().testTag("library_screen")
@@ -85,7 +95,10 @@ fun LibraryScreen(
             ShelfType.values().forEach { shelf ->
                 Tab(
                     selected = shelf == selectedShelf,
-                    onClick = { onTabSelected(shelf) },
+                    onClick = {
+                        visibleShelf = shelf
+                        onTabSelected(shelf)
+                    },
                     text = { Text(shelf.titleTr) }
                 )
             }
@@ -129,7 +142,7 @@ fun LibraryScreen(
                         items(filtered, key = { it.id }) { item ->
                             HorizontalBookCard(
                                 item.book,
-                                { onBookClick(item.book) }
+                                { onBookClick(item.book, selectedShelf) }
                             )
                         }
                     }
