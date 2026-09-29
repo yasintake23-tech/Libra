@@ -40,28 +40,47 @@ class LibraryViewModel(
     fun loadShelf(shelfType: ShelfType) {
         shelfJob?.cancel()
         shelfJob = viewModelScope.launch {
-            val userId = authRepository.currentUser.value?.uid
-            if (userId == null) {
-                _uiState.value = UiState.Error(AppError.Auth("Oturum bulunamadı."))
+            // The navigation layer already knows the user is authenticated, but
+            // AuthRepository may publish the profile a moment later than the
+            // LibraryViewModel is created. Wait for that profile instead of
+            // starting a load with a null UID.
+            val userId = withTimeoutOrNull(5_000L) {
+                authRepository.currentUser.first { it != null }?.uid
+            }
+
+            if (userId.isNullOrBlank()) {
+                _uiState.value = UiState.Error(
+                    AppError.Auth("Oturum bilgisi hazırlanamadı. Lütfen tekrar dene.")
+                )
                 return@launch
             }
 
             _uiState.value = UiState.Loading
 
-            if (shelfType == ShelfType.MY_WRITINGS) {
-                val result = withTimeoutOrNull(10_000L) {
+            val result = withTimeoutOrNull(10_000L) {
+                if (shelfType == ShelfType.MY_WRITINGS) {
                     bookRepository.getUserWrittenBooks(userId).first()
+                } else {
+                    bookRepository.getUserLibrary(userId, shelfType).first()
                 }
+            }
 
-                if (result == null) {
-                    _uiState.value = UiState.Error(
-                        AppError.Database("Yazdıkların yüklenemedi. Firebase bağlantısı zaman aşımına uğradı.")
+            if (result == null) {
+                _uiState.value = UiState.Error(
+                    AppError.Database(
+                        if (shelfType == ShelfType.MY_WRITINGS) {
+                            "Yazdıkların yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
+                        } else {
+                            "Kütüphane yüklenemedi. Firebase bağlantısı zaman aşımına uğradı."
+                        }
                     )
-                    return@launch
-                }
+                )
+                return@launch
+            }
 
-                when (result) {
-                    is AppResult.Success -> {
+            when (result) {
+                is AppResult.Success -> {
+                    if (shelfType == ShelfType.MY_WRITINGS) {
                         val items = result.data.map { book ->
                             UserShelfItem(
                                 id = userId + "_MY_WRITINGS_" + book.id,
@@ -75,28 +94,11 @@ class LibraryViewModel(
                         _uiState.value = UiState.Success(
                             LibraryState(ShelfType.MY_WRITINGS, items, currentSearch)
                         )
+                    } else {
+                        _uiState.value = UiState.Success(
+                            LibraryState(shelfType, result.data, currentSearch)
+                        )
                     }
-                    is AppResult.Error -> _uiState.value = UiState.Error(result.error)
-                }
-                return@launch
-            }
-
-            val result = withTimeoutOrNull(10_000L) {
-                bookRepository.getUserLibrary(userId, shelfType).first()
-            }
-
-            if (result == null) {
-                _uiState.value = UiState.Error(
-                    AppError.Database("Kütüphane yüklenemedi. Firebase bağlantısı zaman aşımına uğradı.")
-                )
-                return@launch
-            }
-
-            when (result) {
-                is AppResult.Success -> {
-                    _uiState.value = UiState.Success(
-                        LibraryState(shelfType, result.data, currentSearch)
-                    )
                 }
                 is AppResult.Error -> _uiState.value = UiState.Error(result.error)
             }
