@@ -122,48 +122,44 @@ class BookRepositoryImpl : BookRepository {
             override fun onDataChange(snapshot: DataSnapshot) {
                 launch {
                     try {
-                        val shelfSnapshots = snapshot.children.toList()
-                        if (shelfSnapshots.isEmpty()) {
-                            trySend(AppResult.Success(emptyList()))
-                            return@launch
-                        }
-
-                        // /books is protected by a query-based read rule.
-                        // Load published books with the exact permitted query instead
-                        // of issuing direct /books/{id} reads for every shelf item.
-                        val publishedSnapshot = booksRef
-                            ?.orderByChild("status")
-                            ?.equalTo(BookStatus.PUBLISHED.name)
-                            ?.get()
-                            ?.await()
-                            ?: run {
-                                trySend(databaseError())
-                                return@launch
+                        withTimeout(8_000L) {
+                            val shelfSnapshots = snapshot.children.toList()
+                            if (shelfSnapshots.isEmpty()) {
+                                trySend(AppResult.Success(emptyList()))
+                                return@withTimeout
                             }
 
-                        val booksById = publishedSnapshot.children
-                            .mapNotNull { parseBook(it)?.let { book -> book.id to book } }
-                            .toMap()
+                            // Read each referenced book directly. The /books/$bookId
+                            // rule already authorizes published books, so this path is
+                            // compatible with the deployed rules even when the root
+                            // /books query rule has not yet been deployed.
+                            val shelfItems = shelfSnapshots.mapNotNull { shelfSnapshot ->
+                                val bookId = shelfSnapshot.key ?: return@mapNotNull null
+                                val bookSnapshot = booksRef?.child(bookId)?.get()?.await()
+                                    ?: return@mapNotNull null
+                                val book = parseBook(bookSnapshot) ?: return@mapNotNull null
 
-                        val shelfItems = shelfSnapshots.mapNotNull { shelfSnapshot ->
-                            val bookId = shelfSnapshot.key ?: return@mapNotNull null
-                            val book = booksById[bookId] ?: return@mapNotNull null
-                            UserShelfItem(
-                                id = userId + "_" + shelfType.name + "_" + bookId,
-                                userId = userId,
-                                book = book,
-                                shelfType = shelfType,
-                                progressPercent = shelfSnapshot.child("progressPercent").getValue(Int::class.java) ?: 0,
-                                addedAt = shelfSnapshot.child("addedAt").getValue(Long::class.java) ?: 0L
-                            )
-                        }.sortedByDescending { it.addedAt }
+                                // Library shelves are only valid for published books.
+                                if (book.status != BookStatus.PUBLISHED) return@mapNotNull null
 
-                        trySend(AppResult.Success(shelfItems))
+                                UserShelfItem(
+                                    id = userId + "_" + shelfType.name + "_" + bookId,
+                                    userId = userId,
+                                    book = book,
+                                    shelfType = shelfType,
+                                    progressPercent = shelfSnapshot.child("progressPercent").getValue(Int::class.java) ?: 0,
+                                    addedAt = shelfSnapshot.child("addedAt").getValue(Long::class.java) ?: 0L
+                                )
+                            }.sortedByDescending { it.addedAt }
+
+                            trySend(AppResult.Success(shelfItems))
+                        }
                     } catch (e: Exception) {
                         trySend(
                             AppResult.Error(
                                 AppError.Database(
-                                    "Kütüphane kitapları yüklenemedi: " + (e.localizedMessage ?: "Bilinmeyen Firebase hatası."),
+                                    "Kütüphane kitapları yüklenemedi: " +
+                                        (e.localizedMessage ?: "Bilinmeyen Firebase hatası."),
                                     e
                                 )
                             )
