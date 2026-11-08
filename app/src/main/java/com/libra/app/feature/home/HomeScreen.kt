@@ -53,9 +53,13 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -229,12 +233,11 @@ fun HomeScreen(
                             } else {
                                 items(data.posts, key = { it.id }) { post ->
                                     PostCard(
-                                        post,
-                                        data.currentUser?.uid.orEmpty(),
-                                        { onToggleLike(post) },
-                                        { onDeletePost(post) },
-                                        { onToggleSave(post) },
-                                        {
+                                        post = post,
+                                        currentUserId = data.currentUser?.uid.orEmpty(),
+                                        onLike = { onToggleLike(post) },
+                                        onShowLikes = { likeUsersPost = post },
+                                        onComment = {
                                             if (canComment) {
                                                 selectedPost = post
                                                 commentText = ""
@@ -242,8 +245,8 @@ fun HomeScreen(
                                                 onOpenComments(post)
                                             }
                                         },
-                                        { onOpenProfile(post.authorId) },
-                                        {
+                                        onSave = { onToggleSave(post) },
+                                        onShare = {
                                             shareContent = SharedContent(
                                                 type = "post",
                                                 id = post.id,
@@ -255,7 +258,16 @@ fun HomeScreen(
                                                 url = sharedContentUrl("post", post.id)
                                             )
                                         },
-                                        { likeUsersPost = post },
+                                        onOpenProfile = { onOpenProfile(post.authorId) },
+                                        onDetailClick = {
+                                            if (canComment) {
+                                                selectedPost = post
+                                                commentText = ""
+                                                replyTarget = null
+                                                onOpenComments(post)
+                                            }
+                                        },
+                                        onDelete = { onDeletePost(post) },
                                         canComment = canComment
                                     )
                                 }
@@ -450,13 +462,35 @@ fun HomeScreen(
                             Text("Beğenenler", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Text("${users.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
-                            users.forEach { user ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    UserAvatar(user.profileImageUrl, user.displayName.take(1).uppercase().ifBlank { "U" }, size = 38.dp)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
-                                        Text("@${user.username}", style = MaterialTheme.typography.labelSmall)
+                            if (users.isEmpty()) {
+                                Text("Henüz beğenen yok.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                users.forEach { user ->
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                likeUsersPost = null
+                                                onOpenProfile(user.uid)
+                                            }
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        UserAvatar(
+                                            photoUrl = user.profileImageUrl,
+                                            initials = user.displayName.take(1).uppercase().ifBlank { "U" },
+                                            size = 38.dp,
+                                            onClick = {
+                                                likeUsersPost = null
+                                                onOpenProfile(user.uid)
+                                            }
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                            Text("@${user.username}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                             }
@@ -470,7 +504,11 @@ fun HomeScreen(
                 }
 
                 selectedLikePost?.let { post ->
-                    PostLikeUsersDialog(post = post, onDismiss = { selectedLikePost = null })
+                    PostLikeUsersDialog(
+                        post = post,
+                        onOpenProfile = onOpenProfile,
+                        onDismiss = { selectedLikePost = null }
+                    )
                 }
 
                 selectedPost?.let { post ->
@@ -491,6 +529,7 @@ fun HomeScreen(
                         isSending = isCommenting,
                         error = commentError,
                         onClearError = onClearCommentError,
+                        onOpenProfile = onOpenProfile,
                         onDismiss = {
                             selectedPost = null
                             commentText = ""
@@ -605,42 +644,153 @@ private fun CreateChoiceMenu(
 }
 
 @Composable
-private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onShowLikes: () -> Unit = {}, onDelete: () -> Unit, onSave: () -> Unit, onComment: () -> Unit, onOpenProfile: () -> Unit = {}, onShare: () -> Unit = {}, canComment: Boolean = true) {
+private fun PostCard(
+    post: Post,
+    currentUserId: String,
+    onLike: () -> Unit,
+    onShowLikes: () -> Unit = {},
+    onComment: () -> Unit = {},
+    onSave: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
+    onDetailClick: () -> Unit = onComment,
+    onDelete: () -> Unit = {},
+    canComment: Boolean = true
+) {
+    var showOptionsMenu by remember { mutableStateOf(false) }
+
     Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UserAvatar(post.authorPhotoUrl, post.authorName.take(1).uppercase().ifBlank { "L" }, size = 42.dp, onClick = onOpenProfile)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(post.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onOpenProfile))
-                    Text("@${post.authorUsername.ifBlank { "kullanici" }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Paylaş") }
-                if (post.authorId == currentUserId) {
-                    IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, "Gönderiyi sil") }
-                }
-            }
-            if (post.title.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    post.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+            // Header Row: Avatar, Names, Options Menu
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                UserAvatar(
+                    photoUrl = post.authorPhotoUrl,
+                    initials = post.authorName.take(1).uppercase().ifBlank { "L" },
+                    size = 42.dp,
+                    onClick = onOpenProfile
                 )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(post.text, style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.width(10.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenProfile)
+                ) {
+                    Text(
+                        text = post.authorName.ifBlank { "Libra kullanıcısı" },
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "@${post.authorUsername.ifBlank { "kullanici" }}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
+                // Options dropdown menu (Üç nokta menüsü -> Gönderi seçenekleri)
+                Box {
+                    IconButton(onClick = { showOptionsMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Gönderi seçenekleri"
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showOptionsMenu,
+                        onDismissRequest = { showOptionsMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Paylaş") },
+                            onClick = {
+                                showOptionsMenu = false
+                                onShare()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Share, contentDescription = null)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (post.savedByCurrentUser) "Kaydedilenlerden Çıkar" else "Kaydet")
+                            },
+                            onClick = {
+                                showOptionsMenu = false
+                                onSave()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (post.savedByCurrentUser) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Profili Gör") },
+                            onClick = {
+                                showOptionsMenu = false
+                                onOpenProfile()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Person, contentDescription = null)
+                            }
+                        )
+                        if (post.authorId == currentUserId) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text("Gönderiyi Sil", color = MaterialTheme.colorScheme.error)
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    onDelete()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Post Title & Body (clickable to open details)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDetailClick)
+            ) {
+                if (post.title.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        post.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(post.text, style = MaterialTheme.typography.bodyLarge)
+            }
+
+            // Post Media Image (Gönderi görseli -> Gönderi detayları)
             if (post.mediaUrl.isNotBlank() && (post.mediaType == "image" || post.mediaType.startsWith("image/"))) {
                 Spacer(Modifier.height(12.dp))
                 var mediaFailed by remember(post.mediaUrl) { mutableStateOf(false) }
                 if (mediaFailed) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
                         shape = RoundedCornerShape(14.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
@@ -675,7 +825,11 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onSh
                         AsyncImage(
                             model = mediaUrl,
                             contentDescription = "Gönderi fotoğrafı",
-                            modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable(onClick = onDetailClick),
                             contentScale = ContentScale.Crop,
                             onError = { mediaFailed = true }
                         )
@@ -692,7 +846,14 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onSh
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(8.dp))
+
+            // Action Row: Like, Like Count, Comment, Comment Count, Share, Save
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Like Button
                 IconButton(onClick = onLike) {
                     Icon(
                         imageVector = if (post.likedByCurrentUser) {
@@ -708,11 +869,49 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onSh
                         }
                     )
                 }
-                Text(post.likesCount.toString(), modifier = Modifier.pointerInput(post.id) { detectTapGestures(onLongPress = { onShowLikes() }) }.padding(horizontal = 4.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+
+                // Like Count (Single click opens Likers list!)
+                Text(
+                    text = post.likesCount.toString(),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClick = onShowLikes)
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+
+                Spacer(Modifier.width(8.dp))
+
+                // Comment Button
                 IconButton(onClick = onComment, enabled = canComment) {
-                    Icon(Icons.Default.ChatBubbleOutline, "Yorumlar")
+                    Icon(
+                        imageVector = Icons.Default.ChatBubbleOutline,
+                        contentDescription = "Yorumlar"
+                    )
                 }
-                Text(post.commentsCount.toString(), style = MaterialTheme.typography.labelMedium)
+
+                // Comment Count (Single click opens Comments!)
+                Text(
+                    text = post.commentsCount.toString(),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(enabled = canComment, onClick = onComment)
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                // Share Button
+                IconButton(onClick = onShare) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Paylaş",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Save Button
                 IconButton(onClick = onSave) {
                     Icon(
                         imageVector = if (post.savedByCurrentUser) {
@@ -736,6 +935,7 @@ private fun PostCard(post: Post, currentUserId: String, onLike: () -> Unit, onSh
 @Composable
 private fun PostLikeUsersDialog(
     post: Post,
+    onOpenProfile: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
@@ -777,12 +977,25 @@ private fun PostLikeUsersDialog(
                 ) {
                     items(users, key = { it.uid }) { user ->
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onDismiss()
+                                    onOpenProfile(user.uid)
+                                },
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                         ) {
                             Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                UserAvatar(user.profileImageUrl, user.initials, size = 38.dp)
+                                UserAvatar(
+                                    photoUrl = user.profileImageUrl,
+                                    initials = user.initials,
+                                    size = 38.dp,
+                                    onClick = {
+                                        onDismiss()
+                                        onOpenProfile(user.uid)
+                                    }
+                                )
                                 Spacer(Modifier.width(9.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -815,6 +1028,7 @@ private fun PostCommentsDialog(
     isSending: Boolean,
     error: String?,
     onClearError: () -> Unit,
+    onOpenProfile: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -857,9 +1071,13 @@ private fun PostCommentsDialog(
                             verticalAlignment = Alignment.Top
                         ) {
                             UserAvatar(
-                                comment.authorPhotoUrl,
-                                comment.authorName.take(1).uppercase().ifBlank { "L" },
-                                size = if (isReply) 32.dp else 36.dp
+                                photoUrl = comment.authorPhotoUrl,
+                                initials = comment.authorName.take(1).uppercase().ifBlank { "L" },
+                                size = if (isReply) 32.dp else 36.dp,
+                                onClick = {
+                                    onDismiss()
+                                    onOpenProfile(comment.authorId)
+                                }
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
@@ -869,7 +1087,14 @@ private fun PostCommentsDialog(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                                 ) {
                                     Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                        Text(comment.authorName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            text = comment.authorName.ifBlank { "Libra kullanıcısı" },
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.clickable {
+                                                onDismiss()
+                                                onOpenProfile(comment.authorId)
+                                            }
+                                        )
                                         Text(comment.text, style = MaterialTheme.typography.bodyMedium)
                                     }
                                 }
@@ -1001,7 +1226,7 @@ private fun HomeHeader(user: UserProfile?, onProfile: () -> Unit, onNotification
                     }
                 }
             }
-            UserAvatar(user?.profileImageUrl, user?.initials ?: "L", size = 40.dp, modifier = Modifier.clickable(onClick = onProfile))
+            UserAvatar(photoUrl = user?.profileImageUrl, initials = user?.initials ?: "L", size = 40.dp, onClick = onProfile)
         }
     }
 }

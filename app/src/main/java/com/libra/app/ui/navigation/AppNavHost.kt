@@ -366,7 +366,11 @@ fun AppNavHost(
         return
     }
     if (showCommunityServers) {
-        CommunityServersScreen(onBack = { showCommunityServers = false }, modifier = modifier.fillMaxSize())
+        CommunityServersScreen(
+            onBack = { showCommunityServers = false },
+            onOpenProfile = ::openPublicProfile,
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
     if (showGlobalChat) {
@@ -469,16 +473,11 @@ fun AppNavHost(
                     )
                 }
                 BottomNavTab.DISCOVER -> FriendsScreen(
-                    friendsState, friendsVm::updateSearchQuery,
-                    { user -> scope.launch { when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                        is com.libra.app.core.result.AppResult.Success -> if (result.data != null) selectedPublicProfile = result.data else Toast.makeText(context, "Bu kullanıcı artık mevcut değil.", Toast.LENGTH_SHORT).show()
-                        is com.libra.app.core.result.AppResult.Error -> Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
-                    }}},
-                    { user -> scope.launch { when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                        is com.libra.app.core.result.AppResult.Success -> if (result.data != null) selectedPublicProfile = result.data
-                        is com.libra.app.core.result.AppResult.Error -> Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
-                    }}},
-                    friendsVm::loadSocialData
+                    uiState = friendsState,
+                    onSearchChanged = friendsVm::updateSearchQuery,
+                    onFollowUser = { user -> friendsVm.toggleFollowUser(user) },
+                    onUserClick = { user -> openPublicProfile(user.uid) },
+                    onRetry = friendsVm::loadSocialData
                 )
                 BottomNavTab.WRITE -> {
                     val state by writeVm.uiState.collectAsState()
@@ -518,18 +517,20 @@ fun AppNavHost(
                         },
                         onRemoveFromShelf = vm::removeFromShelf,
                         onAddToSaved = { book -> vm.addToShelf(book, ShelfType.SAVED) },
-                        onNavigateToDiscover = { selectedTab = BottomNavTab.HOME }
+                        onNavigateToDiscover = { selectedTab = BottomNavTab.DISCOVER }
                     )
                 }
                 BottomNavTab.PROFILE -> {
                     val vm: ProfileViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
                     ProfileScreen(
-                        state,
-                        { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
-                        vm::loadProfile,
+                        uiState = state,
+                        onSignOutClick = { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                        onRetry = vm::loadProfile,
                         onSettingsClick = { showSettings = true },
-                        onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null
+                        onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null,
+                        onMyBooksClick = { selectedTab = BottomNavTab.LIBRARY },
+                        onOpenProfile = ::openPublicProfile
                     )
                 }
             }

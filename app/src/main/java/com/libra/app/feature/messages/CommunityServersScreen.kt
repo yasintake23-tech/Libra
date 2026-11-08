@@ -78,6 +78,7 @@ import kotlin.math.roundToInt
 @Composable
 fun CommunityServersScreen(
     onBack: () -> Unit,
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val communityRepository = ServiceLocator.communityRepository
@@ -176,6 +177,7 @@ fun CommunityServersScreen(
                     server = server,
                     channel = channel,
                     onBack = { selectedChannel = null },
+                    onOpenProfile = onOpenProfile,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -1482,6 +1484,7 @@ private fun ServerChatScreen(
     server: CommunityServer,
     channel: ServerChannel,
     onBack: () -> Unit,
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val chatRepository = ServiceLocator.chatRepository
@@ -1732,7 +1735,12 @@ private fun ServerChatScreen(
                         if (groupedWithPrevious) {
                             Spacer(Modifier.width(36.dp))
                         } else {
-                            UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp)
+                            UserAvatar(
+                                photoUrl = message.senderPhotoUrl,
+                                initials = message.senderName.take(1).uppercase(),
+                                size = 30.dp,
+                                onClick = { onOpenProfile(message.senderId) }
+                            )
                         }
                         Spacer(Modifier.width(6.dp))
                     }
@@ -1764,7 +1772,8 @@ private fun ServerChatScreen(
                                     Text(
                                         message.senderName.ifBlank { "Libra kullanıcısı" },
                                         style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.clickable { onOpenProfile(message.senderId) }
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     val messageTime = remember(message.id, message.createdAt) {
@@ -1883,8 +1892,26 @@ private fun ServerChatScreen(
                     Text("${reactionUsers.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     reactionUsers.forEach { user ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            UserAvatar(user.photoUrl, user.displayName.take(1).uppercase().ifBlank { "U" }, size = 36.dp)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    reactionLookup = null
+                                    onOpenProfile(user.uid)
+                                }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            UserAvatar(
+                                photoUrl = user.photoUrl,
+                                initials = user.displayName.take(1).uppercase().ifBlank { "U" },
+                                size = 36.dp,
+                                onClick = {
+                                    reactionLookup = null
+                                    onOpenProfile(user.uid)
+                                }
+                            )
                             Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
@@ -2101,7 +2128,9 @@ private fun ServerChatScreen(
                 ) {
                     items(members, key = { it.uid }) { member ->
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenProfile(member.uid) },
                             shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                         ) {
@@ -2110,9 +2139,10 @@ private fun ServerChatScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 UserAvatar(
-                                    member.photoUrl,
-                                    member.displayName.take(1).uppercase(),
-                                    size = 40.dp
+                                    photoUrl = member.photoUrl,
+                                    initials = member.displayName.take(1).uppercase(),
+                                    size = 40.dp,
+                                    onClick = { onOpenProfile(member.uid) }
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
