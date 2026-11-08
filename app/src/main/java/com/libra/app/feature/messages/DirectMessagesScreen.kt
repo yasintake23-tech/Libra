@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ChevronRight
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,6 +91,33 @@ class DirectMessagesViewModel : ViewModel() {
     fun openConversation(conversation: DirectConversation) {
         observeConversation(conversation.id)
         markRead(conversation.id)
+    }
+
+    fun createGroup(name: String, participantIds: List<String>, onComplete: (DirectConversation?) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.createGroupConversation(name, participantIds)) {
+                is AppResult.Success -> { _error.value = null; onComplete(result.data) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(null) }
+            }
+        }
+    }
+
+    fun sendGroup(conversationId: String, text: String, replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.sendGroupMessage(conversationId, text, replyTo)) {
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+            }
+        }
+    }
+
+    fun sendGroupMedia(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repository.sendGroupMediaMessage(conversationId, mediaUrl, mediaType, text, replyTo)) {
+                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+            }
+        }
     }
 
     fun markRead(conversationId: String) {
@@ -250,11 +279,14 @@ fun DirectMessagesScreen(
     onInitialUserConsumed: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    canMessage: Boolean = true,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
     var conversationSearch by remember { mutableStateOf("") }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
+    var selectedConversation by remember { mutableStateOf<DirectConversation?>(null) }
+    var showNewChat by remember { mutableStateOf(false) }
     val conversations by viewModel.conversations.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -262,10 +294,30 @@ fun DirectMessagesScreen(
     LaunchedEffect(initialUser?.uid) {
         initialUser?.let {
             selectedUser = it
+            selectedConversation = null
             viewModel.openConversation(it)
             viewModel.markRead(listOf(authUserId(), it.uid).sorted().joinToString("_"))
             onInitialUserConsumed()
         }
+    }
+
+    selectedConversation?.let { conversation ->
+        DirectConversationScreen(
+            user = UserProfile(uid = "", displayName = conversation.groupName.ifBlank { "Grup sohbeti" }, profileImageUrl = conversation.groupPhotoUrl),
+            conversationIdOverride = conversation.id,
+            isGroup = true,
+            messages = messages,
+            error = error,
+            onBack = { selectedConversation = null },
+            onSend = { text, reply, onComplete -> viewModel.sendGroup(conversation.id, text, reply, onComplete) },
+            onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(conversation.id, url, type, text, reply, onComplete) },
+            onEdit = { id, text -> viewModel.edit(conversation.id, id, text) },
+            onDelete = { id -> viewModel.delete(conversation.id, id) },
+            onReaction = { id, emoji -> viewModel.react(conversation.id, id, emoji) },
+            canMessage = canMessage,
+            modifier = modifier
+        )
+        return
     }
 
     selectedUser?.let { user ->
@@ -280,14 +332,23 @@ fun DirectMessagesScreen(
             onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
             onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
             onOpenProfile = { onOpenProfile(user.uid) },
+            canMessage = canMessage,
+            conversationIdOverride = listOf(authUserId(), user.uid).sorted().joinToString("_"),
             modifier = modifier
         )
         return
     }
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("DM", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-        Text("Arkadaşlarınla konuş, topluluklara katıl.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Mesajlar", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                Text("Birebir veya grup sohbeti başlat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { showNewChat = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Yeni sohbet")
+            }
+        }
         Spacer(Modifier.height(12.dp))
 
         if (section == MessageSection.MESSAGES) {
@@ -381,12 +442,18 @@ fun DirectMessagesScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            selectedUser = UserProfile(
-                                                uid = conversation.otherUserId,
-                                                displayName = conversation.otherUserName,
-                                                username = conversation.otherUserUsername,
-                                                profileImageUrl = conversation.otherUserPhotoUrl
-                                            )
+                                            if (conversation.isGroup) {
+                                                selectedConversation = conversation
+                                                selectedUser = null
+                                            } else {
+                                                selectedUser = UserProfile(
+                                                    uid = conversation.otherUserId,
+                                                    displayName = conversation.otherUserName,
+                                                    username = conversation.otherUserUsername,
+                                                    profileImageUrl = conversation.otherUserPhotoUrl
+                                                )
+                                                selectedConversation = null
+                                            }
                                             viewModel.openConversation(conversation)
                                         },
                                     shape = RoundedCornerShape(14.dp)
@@ -396,8 +463,8 @@ fun DirectMessagesScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         UserAvatar(
-                                            conversation.otherUserPhotoUrl,
-                                            conversation.otherUserName.take(1).uppercase(),
+                                            if (conversation.isGroup) conversation.groupPhotoUrl else conversation.otherUserPhotoUrl,
+                                            (if (conversation.isGroup) conversation.groupName else conversation.otherUserName).take(1).uppercase(),
                                             size = 48.dp
                                         )
                                         Column(
@@ -406,15 +473,23 @@ fun DirectMessagesScreen(
                                                 .padding(horizontal = 12.dp)
                                         ) {
                                             Text(
-                                                conversation.otherUserName,
+                                                if (conversation.isGroup) conversation.groupName else conversation.otherUserName,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.clickable { onOpenProfile(conversation.otherUserId) }
+                                                modifier = if (conversation.isGroup) Modifier else Modifier.clickable { onOpenProfile(conversation.otherUserId) }
                                             )
-                                            Text(
-                                                "@" + conversation.otherUserUsername,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                            if (conversation.isGroup) {
+                                                Text(
+                                                    conversation.participantIds.size.toString() + " kişi",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            } else {
+                                                Text(
+                                                    "@" + conversation.otherUserUsername,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                             if (conversation.lastMessage.isNotBlank()) {
                                                 Text(
                                                     conversation.lastMessage,
@@ -454,12 +529,202 @@ fun DirectMessagesScreen(
             }
         }
     }
+
+    if (showNewChat) {
+        NewChatSheet(
+            onDismiss = { showNewChat = false },
+            onDirectUser = { user ->
+                showNewChat = false
+                selectedConversation = null
+                selectedUser = user
+                viewModel.openConversation(user)
+            },
+            onCreateGroup = { name, ids ->
+                viewModel.createGroup(name, ids) { conversation ->
+                    if (conversation != null) {
+                        showNewChat = false
+                        selectedUser = null
+                        selectedConversation = conversation
+                        viewModel.openConversation(conversation)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewChatSheet(
+    onDismiss: () -> Unit,
+    onDirectUser: (UserProfile) -> Unit,
+    onCreateGroup: (String, List<String>) -> Unit
+) {
+    var mode by remember { mutableStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var groupName by remember { mutableStateOf("") }
+    var users by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var selected by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+
+    LaunchedEffect(query) {
+        if (query.trim().length < 2) {
+            users = emptyList()
+        } else {
+            ServiceLocator.userRepository.searchUsers(query.trim()).collect { result ->
+                if (result is AppResult.Success) users = result.data.take(20)
+            }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp).navigationBarsPadding()
+        ) {
+            Text("Yeni sohbet", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+            Spacer(Modifier.height(12.dp))
+
+            if (mode == 0) {
+                NewChatOption(
+                    icon = Icons.Default.ChatBubbleOutline,
+                    title = "Birine mesaj gönder",
+                    subtitle = "Kullanıcı adıyla kişiyi bul ve sohbet başlat.",
+                    onClick = { mode = 1 }
+                )
+                NewChatOption(
+                    icon = Icons.Default.GroupAdd,
+                    title = "Grup oluştur",
+                    subtitle = "Birden fazla kişiyi seçip yeni grup sohbeti başlat.",
+                    onClick = { mode = 2 }
+                )
+            } else {
+                TextButton(onClick = { mode = 0 }) { Text("Geri") }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Kullanıcı ara...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) }
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (mode == 2) {
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { if (it.length <= 60) groupName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Grup adı") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (selected.isNotEmpty()) {
+                        Text(
+                            selected.size.toString() + " kişi seçildi",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(users, key = { it.uid }) { user ->
+                        val isSelected = selected.any { it.uid == user.uid }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (mode == 1) {
+                                    onDirectUser(user)
+                                } else {
+                                    selected = if (isSelected) {
+                                        selected.filterNot { it.uid == user.uid }
+                                    } else {
+                                        (selected + user).take(49)
+                                    }
+                                }
+                            }
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
+                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                    Text(user.displayName, fontWeight = FontWeight.SemiBold)
+                                    if (user.username.isNotBlank()) {
+                                        Text("@" + user.username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (mode == 2 && isSelected) {
+                                    Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (mode == 2) {
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = { onCreateGroup(groupName.trim(), selected.map { it.uid }) },
+                        enabled = groupName.trim().isNotBlank() && selected.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grubu oluştur")
+                    }
+                }
+
+                if (query.trim().length < 2) {
+                    Text(
+                        "Aramak için en az 2 karakter yaz.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    )
+                } else if (users.isEmpty()) {
+                    Text(
+                        "Kullanıcı bulunamadı.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun NewChatOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, null)
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DirectConversationScreen(
     user: UserProfile,
+    conversationIdOverride: String? = null,
+    isGroup: Boolean = false,
     messages: List<DirectMessage>,
     error: String?,
     onBack: () -> Unit,
@@ -469,6 +734,7 @@ private fun DirectConversationScreen(
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
     onOpenProfile: () -> Unit = {},
+    canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var draft by remember { mutableStateOf("") }
@@ -486,7 +752,7 @@ private fun DirectConversationScreen(
     var pendingMediaType by remember { mutableStateOf("image/jpeg") }
     var mediaUploadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var sending by remember { mutableStateOf(false) }
-    val conversationId = remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
+    val conversationId = conversationIdOverride ?: remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
 
     val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -539,10 +805,23 @@ private fun DirectConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            UserAvatar(user.profileImageUrl, user.initials, size = 40.dp, onClick = onOpenProfile)
+            UserAvatar(
+                user.profileImageUrl,
+                user.initials,
+                size = 40.dp,
+                onClick = { if (!isGroup) onOpenProfile() }
+            )
             Column(Modifier.padding(start = 10.dp)) {
-                Text(user.displayName, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpenProfile))
-                Text(user.handle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    user.displayName,
+                    fontWeight = FontWeight.Bold,
+                    modifier = if (isGroup) Modifier else Modifier.clickable(onClick = onOpenProfile)
+                )
+                Text(
+                    if (isGroup) "Grup sohbeti" else user.handle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -818,18 +1097,19 @@ private fun DirectConversationScreen(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(enabled = !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
+            IconButton(enabled = canMessage && !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
                 value = draft,
-                onValueChange = { if (it.length <= 1000) draft = it },
+                onValueChange = { if (canMessage && it.length <= 1000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text(if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
+                enabled = canMessage,
+                placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
             IconButton(
-                enabled = !sending &&
+                enabled = canMessage && !sending &&
                     (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
                     !mediaUploading,
                 onClick = {
@@ -920,23 +1200,120 @@ private fun SectionButton(text: String, selected: Boolean, onClick: () -> Unit, 
 
 @Composable
 private fun CommunityList(onGlobalChatClick: () -> Unit, onServersClick: () -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Topluluklar", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
-        item { CommunityCard(Icons.Default.Forum, "Genel Chat", "Tüm Libra üyelerinin ortak sohbeti.", onGlobalChatClick) }
-        item { CommunityCard(Icons.Default.Groups, "Sunucular", "Kitap türlerine göre topluluklar.", onServersClick) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column {
+                Text(
+                    "Topluluklar",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Sohbet et, toplulukları keşfet ve kendi alanlarını bul.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            CommunityFeatureCard(
+                icon = Icons.Default.Forum,
+                eyebrow = "ORTAK SOHBET",
+                title = "Genel Chat",
+                subtitle = "Tüm Libra üyeleriyle aynı sohbette buluş.",
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                iconContainerColor = MaterialTheme.colorScheme.background,
+                onClick = onGlobalChatClick
+            )
+        }
+
+        item {
+            CommunityFeatureCard(
+                icon = Icons.Default.Groups,
+                eyebrow = "TOPLULUKLARI KEŞFET",
+                title = "Sunucular",
+                subtitle = "Kitap, yazarlık ve ilgi alanlarına göre topluluklara katıl.",
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                iconContainerColor = MaterialTheme.colorScheme.background,
+                onClick = onServersClick,
+                large = true
+            )
+        }
     }
 }
 
 @Composable
-private fun CommunityCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) { Icon(icon, null) }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun CommunityFeatureCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    eyebrow: String,
+    title: String,
+    subtitle: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    iconContainerColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    large: Boolean = false
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(if (large) 24.dp else 20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = if (large) 22.dp else 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (large) 60.dp else 54.dp)
+                    .clip(CircleShape)
+                    .background(iconContainerColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (large) 28.dp else 25.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
             }
-            Icon(Icons.Default.ChevronRight, null)
+
+            Spacer(Modifier.width(14.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    eyebrow,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    maxLines = if (large) 3 else 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = "Aç",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
