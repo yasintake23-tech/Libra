@@ -320,9 +320,8 @@ class CreateBookModuleTest {
         override fun getBooksByCategory(category: BookCategory): Flow<AppResult<List<Book>>> = flowOf(AppResult.Success(createdBooks.filter { it.category == category }))
         override fun getBookById(bookId: String): Flow<AppResult<Book?>> = flowOf(AppResult.Success(createdBooks.find { it.id == bookId }))
         override fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>> = flowOf(AppResult.Success(savedChapters.filter { it.bookId == bookId }))
-        override fun getChapterById(bookId: String, chapterId: String): Flow<AppResult<Chapter?>> = flowOf(AppResult.Success(savedChapters.find { it.id == chapterId }))
         override fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>> = flowOf(AppResult.Success(createdBooks.filter { it.ownerId == userId }))
-        override fun getUserLibrary(userId: String, shelfType: ShelfType): Flow<AppResult<List<Book>>> = flowOf(AppResult.Success(emptyList()))
+        override fun getUserLibrary(userId: String, shelfType: ShelfType): Flow<AppResult<List<com.libra.app.domain.model.UserShelfItem>>> = flowOf(AppResult.Success(emptyList()))
 
         override suspend fun createBook(book: Book): AppResult<Book> {
             val bookWithId = book.copy(id = book.id.ifBlank { "book_" + System.currentTimeMillis() })
@@ -355,14 +354,6 @@ class CreateBookModuleTest {
 
         override suspend fun addBookToShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit> = AppResult.Success(Unit)
         override suspend fun removeBookFromShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit> = AppResult.Success(Unit)
-        override fun observeEngagement(bookId: String, currentUserId: String): Flow<AppResult<BookEngagement>> = flowOf(AppResult.Success(BookEngagement()))
-        override suspend fun toggleLike(bookId: String, userId: String): AppResult<Boolean> = AppResult.Success(true)
-        override suspend fun toggleSave(bookId: String, userId: String): AppResult<Boolean> = AppResult.Success(true)
-        override fun observeComments(bookId: String): Flow<AppResult<List<BookComment>>> = flowOf(AppResult.Success(emptyList()))
-        override suspend fun addComment(bookId: String, userId: String, userName: String, userAvatarUrl: String, text: String): AppResult<BookComment> = AppResult.Success(BookComment())
-        override suspend fun deleteComment(bookId: String, commentId: String): AppResult<Unit> = AppResult.Success(Unit)
-        override fun observeReadingProgress(userId: String, bookId: String): Flow<AppResult<ReadingProgress?>> = flowOf(AppResult.Success(null))
-        override suspend fun saveReadingProgress(progress: ReadingProgress): AppResult<Unit> = AppResult.Success(Unit)
     }
 
     private class FakeStorageRepository : StorageRepository {
