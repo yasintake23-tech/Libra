@@ -301,12 +301,12 @@ fun HomeScreen(
                                                 )
                                                 Spacer(Modifier.height(6.dp))
                                                 LinearProgressIndicator(
-                                                    progress = { (readingItem.progressPercent.coerceIn(0, 100) / 100f) },
+                                                    progress = (readingItem.progressPercent.coerceIn(0, 100) / 100f),
                                                     modifier = Modifier.fillMaxWidth().height(4.dp)
                                                 )
                                             }
                                             Spacer(Modifier.width(10.dp))
-                                            FilledTonalButton(
+                                            Button(
                                                 onClick = { onBookClick(readingItem.book) },
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                             ) {

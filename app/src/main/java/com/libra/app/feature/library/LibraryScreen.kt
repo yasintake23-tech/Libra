@@ -168,7 +168,7 @@ fun LibraryScreen(
                                             }
                                             Spacer(Modifier.height(4.dp))
                                             LinearProgressIndicator(
-                                                progress = { item.progressPercent.coerceIn(0, 100) / 100f },
+                                                progress = item.progressPercent.coerceIn(0, 100) / 100f,
                                                 modifier = Modifier.fillMaxWidth().height(4.dp)
                                             )
                                         }

@@ -57,6 +57,31 @@ fun BookReaderScreen(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
+    fun currentProgress(force: Boolean = false): ReadingProgress? {
+        val current = chapters.getOrNull(selectedIndex) ?: return null
+        val max = scrollState.maxValue
+        val percent = if (max > 0) {
+            ((scrollState.value.toFloat() / max) * 100f).roundToInt().coerceIn(0, 100)
+        } else {
+            if (current.content.isNotBlank()) 100 else 0
+        }
+        val key = "${current.id}:${scrollState.value}:$percent"
+        if (!force && key == lastLocalKey) return null
+        lastLocalKey = key
+        return ReadingProgress(
+            userId = userId,
+            bookId = book.id,
+            chapterId = current.id,
+            chapterNumber = current.chapterNumber,
+            progressPercent = percent,
+            position = scrollState.value
+        )
+    }
+
+    fun saveNow(force: Boolean = false) {
+        currentProgress(force)?.let { vm.saveProgress(it, store) }
+    }
+
     BackHandler {
         when {
             showSettings -> showSettings = false
@@ -107,31 +132,6 @@ fun BookReaderScreen(
             scrollState.scrollTo(0)
         }
         isRestoringPosition = false
-    }
-
-    fun currentProgress(force: Boolean = false): ReadingProgress? {
-        val current = chapter ?: return null
-        val max = scrollState.maxValue
-        val percent = if (max > 0) {
-            ((scrollState.value.toFloat() / max) * 100f).roundToInt().coerceIn(0, 100)
-        } else {
-            if (current.content.isNotBlank()) 100 else 0
-        }
-        val key = "${current.id}:${scrollState.value}:$percent"
-        if (!force && key == lastLocalKey) return null
-        lastLocalKey = key
-        return ReadingProgress(
-            userId = userId,
-            bookId = book.id,
-            chapterId = current.id,
-            chapterNumber = current.chapterNumber,
-            progressPercent = percent,
-            position = scrollState.value
-        )
-    }
-
-    fun saveNow(force: Boolean = false) {
-        currentProgress(force)?.let { vm.saveProgress(it, store) }
     }
 
     LaunchedEffect(chapter?.id) {
@@ -268,7 +268,6 @@ fun BookReaderScreen(
                                 enabled = selectedIndex > 0,
                                 onClick = {
                                     saveNow(true)
-                                    restorePositionForChapter = false
                                     selectedIndex--
                                     scope.launch { scrollState.scrollTo(0) }
                                 }
@@ -286,7 +285,6 @@ fun BookReaderScreen(
                                 enabled = selectedIndex < chapters.lastIndex,
                                 onClick = {
                                     saveNow(true)
-                                    restorePositionForChapter = false
                                     selectedIndex++
                                     scope.launch { scrollState.scrollTo(0) }
                                 }
@@ -346,7 +344,6 @@ fun BookReaderScreen(
                         if (index == selectedIndex) Text("Şu an", style = MaterialTheme.typography.labelSmall)
                         else TextButton(onClick = {
                             saveNow(true)
-                            restorePositionForChapter = false
                             selectedIndex = index
                             showChapters = false
                             scope.launch { scrollState.scrollTo(0) }
