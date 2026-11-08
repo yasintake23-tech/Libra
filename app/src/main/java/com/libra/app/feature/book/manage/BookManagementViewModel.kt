@@ -268,8 +268,10 @@ class BookManagementViewModel(
             _state.value = _state.value.copy(isSaving = true, errorMessage = null)
             when (val result = bookRepository.saveChapter(newChapter)) {
                 is AppResult.Success -> {
+                    val updatedChapters = (_state.value.chapters.filterNot { it.id == result.data.id } + result.data).sortedBy { it.chapterNumber }
                     _state.value = _state.value.copy(
                         isSaving = false,
+                        chapters = updatedChapters,
                         activeStudioChapter = result.data,
                         selectedChapterId = result.data.id,
                         activeSubPage = ManagementSubPage.STUDIO,
@@ -327,8 +329,10 @@ class BookManagementViewModel(
 
             when (val result = bookRepository.saveChapter(target)) {
                 is AppResult.Success -> {
+                    val updatedChapters = _state.value.chapters.map { if (it.id == result.data.id) result.data else it }
                     _state.value = _state.value.copy(
                         activeStudioChapter = result.data,
+                        chapters = updatedChapters,
                         isSaving = false,
                         isAutoSaving = false,
                         hasUnsavedChanges = false,
@@ -356,7 +360,9 @@ class BookManagementViewModel(
         viewModelScope.launch {
             when (val result = bookRepository.saveChapter(updated)) {
                 is AppResult.Success -> {
+                    val updatedChapters = _state.value.chapters.map { if (it.id == result.data.id) result.data else it }
                     _state.value = _state.value.copy(
+                        chapters = updatedChapters,
                         successMessage = if (result.data.isPublished) "Bölüm yayınlandı." else "Bölüm taslağa alındı."
                     )
                 }
@@ -372,8 +378,10 @@ class BookManagementViewModel(
             _state.value = _state.value.copy(isSaving = true, errorMessage = null)
             when (val result = bookRepository.duplicateChapter(chapter.bookId, chapter.id)) {
                 is AppResult.Success -> {
+                    val updatedChapters = (_state.value.chapters.filterNot { it.id == result.data.id } + result.data).sortedBy { it.chapterNumber }
                     _state.value = _state.value.copy(
                         isSaving = false,
+                        chapters = updatedChapters,
                         successMessage = "Bölüm kopyalandı."
                     )
                 }
@@ -392,9 +400,11 @@ class BookManagementViewModel(
             _state.value = _state.value.copy(isSaving = true, errorMessage = null)
             when (val result = bookRepository.deleteChapter(chapter.bookId, chapter.id)) {
                 is AppResult.Success -> {
+                    val remainingChapters = _state.value.chapters.filterNot { it.id == chapter.id }
                     _state.value = _state.value.copy(
                         isSaving = false,
-                        activeStudioChapter = _state.value.chapters.filterNot { it.id == chapter.id }.firstOrNull(),
+                        chapters = remainingChapters,
+                        activeStudioChapter = remainingChapters.firstOrNull(),
                         successMessage = "Bölüm silindi."
                     )
                 }
@@ -442,8 +452,10 @@ class BookManagementViewModel(
             _state.value = _state.value.copy(isPublishing = true, errorMessage = null)
             when (val result = bookRepository.publishBook(current.id)) {
                 is AppResult.Success -> {
+                    val publishedChapters = _state.value.chapters.map { it.copy(isPublished = true) }
                     _state.value = _state.value.copy(
                         book = result.data,
+                        chapters = publishedChapters,
                         isPublishing = false,
                         successMessage = "Tebrikler! Kitabın başarıyla yayınlandı!"
                     )

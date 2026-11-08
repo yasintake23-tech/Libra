@@ -300,11 +300,11 @@ class BookEcosystemTest {
             return AppResult.Success(Unit)
         }
 
-        override suspend fun reorderChapters(bookId: String, reordered: List<Chapter>): AppResult<Unit> {
-            reordered.forEachIndexed { idx, ch ->
-                val existingIdx = chapters.indexOfFirst { it.id == ch.id }
+        override suspend fun reorderChapters(bookId: String, chapters: List<Chapter>): AppResult<Unit> {
+            chapters.forEachIndexed { idx, ch ->
+                val existingIdx = this.chapters.indexOfFirst { it.id == ch.id }
                 if (existingIdx >= 0) {
-                    chapters[existingIdx] = ch.copy(chapterNumber = idx + 1)
+                    this.chapters[existingIdx] = ch.copy(chapterNumber = idx + 1)
                 }
             }
             return AppResult.Success(Unit)
