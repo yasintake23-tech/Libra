@@ -60,6 +60,7 @@ import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileEditScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
+import com.libra.app.feature.book.manage.BookManagementRootScreen
 import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
@@ -313,18 +314,20 @@ fun AppNavHost(
     }
 
     selectedWritingBook?.let { book ->
-        val chapters by writeVm.editorChapters.collectAsState()
-        val isSaving by writeVm.editorSaving.collectAsState()
-        val editorError by writeVm.editorError.collectAsState()
-        BookEditorScreen(
-            book = book, chapters = chapters, isSaving = isSaving, error = editorError,
-            onLoadChapters = writeVm::loadChapters, onSaveBook = writeVm::saveBook,
-            onSaveChapter = writeVm::saveChapter, onDeleteChapter = writeVm::deleteChapter,
-            onUploadChapterImage = { bytes, fileName, contentType, onInserted ->
-                writeVm.uploadChapterImage(book.id, bytes, fileName, contentType, onInserted)
+        BookManagementRootScreen(
+            book = book,
+            onBack = {
+                selectedWritingBook = null
+                writeVm.loadMyBooks()
             },
-            onPublish = writeVm::publishBook,
-            onClearError = writeVm::clearEditorError, onBack = { selectedWritingBook = null },
+            onPreviewBook = { target ->
+                selectedBook = target
+            },
+            onDeleteBook = { target ->
+                writeVm.deleteBook(target.id)
+                selectedWritingBook = null
+            },
+            onOpenProfile = ::openPublicProfile,
             modifier = modifier.fillMaxSize()
         )
         return

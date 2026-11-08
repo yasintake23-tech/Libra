@@ -315,9 +315,8 @@ class BookRepositoryImpl : BookRepository {
         val ref = chaptersRef?.child(bookId) ?: run { trySend(databaseError()); close(); return@callbackFlow }
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val chapters = snapshot.children.mapNotNull { child ->
-                    runCatching { child.getValue(Chapter::class.java)?.let { it.copy(id = child.key ?: it.id, bookId = bookId) } }.getOrNull()
-                }.sortedBy { it.chapterNumber }
+                val chapters = snapshot.children.mapNotNull { parseChapter(it, bookId) }
+                    .sortedBy { it.chapterNumber }
                 trySend(AppResult.Success(chapters))
             }
             override fun onCancelled(error: DatabaseError) { trySend(AppResult.Error(AppError.Database(error.message, error.toException()))) }
@@ -334,6 +333,7 @@ class BookRepositoryImpl : BookRepository {
             val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
             if (owner != uid) return AppResult.Error(AppError.Auth("Bu bölümü silme yetkin yok."))
             ref.removeValue().await()
+            syncBookChapterCount(bookId)
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Bölüm silinemedi: ${e.localizedMessage}", e)) }
     }
@@ -345,9 +345,180 @@ class BookRepositoryImpl : BookRepository {
         val now = System.currentTimeMillis()
         val id = chapter.id.ifBlank { chapters.child(chapter.bookId).push().key ?: return AppResult.Error(AppError.Database("Bölüm kimliği oluşturulamadı.")) }
         val wordCount = chapter.content.trim().split(Regex("\\s+")).count { it.isNotBlank() }
-        val saved = chapter.copy(id = id, wordCount = wordCount, updatedAt = now, createdAt = if (chapter.createdAt == 0L) now else chapter.createdAt)
-        return try { chapters.child(saved.bookId).child(saved.id).setValue(saved).await(); AppResult.Success(saved) }
-        catch (e: Exception) { AppResult.Error(AppError.Database("Bölüm kaydedilemedi: ${e.localizedMessage}", e)) }
+        val saved = chapter.copy(
+            id = id,
+            wordCount = wordCount,
+            updatedAt = now,
+            createdAt = if (chapter.createdAt == 0L) now else chapter.createdAt
+        )
+        return try {
+            chapters.child(saved.bookId).child(saved.id).setValue(saved).await()
+            syncBookChapterCount(saved.bookId)
+            AppResult.Success(saved)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bölüm kaydedilemedi: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun reorderChapters(bookId: String, chapters: List<Chapter>): AppResult<Unit> {
+        val ref = chaptersRef?.child(bookId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
+            if (owner != uid) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
+            val updates = mutableMapOf<String, Any>()
+            val now = System.currentTimeMillis()
+            chapters.forEachIndexed { index, chapter ->
+                val newNumber = index + 1
+                updates["${chapter.id}/chapterNumber"] = newNumber
+                updates["${chapter.id}/updatedAt"] = now
+            }
+            ref.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bölümler sıralanamadı: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun duplicateChapter(bookId: String, chapterId: String): AppResult<Chapter> {
+        val ref = chaptersRef?.child(bookId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
+            if (owner != uid) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
+            val snapshot = ref.child(chapterId).get().await()
+            val original = parseChapter(snapshot, bookId) ?: return AppResult.Error(AppError.NotFound("Kopyalanacak bölüm bulunamadı."))
+            val allChaptersSnap = ref.get().await()
+            val totalCount = allChaptersSnap.childrenCount.toInt()
+            val newId = ref.push().key ?: return AppResult.Error(AppError.Database("Yeni bölüm kimliği oluşturulamadı."))
+            val now = System.currentTimeMillis()
+            val duplicate = original.copy(
+                id = newId,
+                title = "${original.title} (Kopya)",
+                chapterNumber = totalCount + 1,
+                isPublished = false,
+                createdAt = now,
+                updatedAt = now
+            )
+            ref.child(newId).setValue(duplicate).await()
+            syncBookChapterCount(bookId)
+            AppResult.Success(duplicate)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bölüm kopyalanamadı: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun publishBook(bookId: String): AppResult<Book> {
+        val bRef = booksRef?.child(bookId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val bookSnap = bRef.get().await()
+            val currentBook = parseBook(bookSnap) ?: return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            if (currentBook.ownerId != uid) return AppResult.Error(AppError.Auth("Bu kitabı yayınlama yetkin yok."))
+
+            val chapSnap = chaptersRef?.child(bookId)?.get()?.await()
+            val chapters = chapSnap?.children?.mapNotNull { parseChapter(it, bookId) } ?: emptyList()
+            if (chapters.isEmpty()) {
+                return AppResult.Error(AppError.Validation("Yayınlamak için en az bir bölüm bulunmalıdır."))
+            }
+
+            val now = System.currentTimeMillis()
+            val chapUpdates = mutableMapOf<String, Any>()
+            chapters.forEach { ch ->
+                chapUpdates["${ch.id}/isPublished"] = true
+                chapUpdates["${ch.id}/publishedAt"] = if (ch.publishedAt == 0L) now else ch.publishedAt
+                chapUpdates["${ch.id}/updatedAt"] = now
+            }
+            chaptersRef?.child(bookId)?.updateChildren(chapUpdates)?.await()
+
+            val publishedBook = currentBook.copy(
+                status = BookStatus.PUBLISHED,
+                publishedAt = if (currentBook.publishedAt == 0L) now else currentBook.publishedAt,
+                updatedAt = now,
+                chapterCount = chapters.size
+            )
+            bRef.setValue(publishedBook).await()
+            AppResult.Success(publishedBook)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap yayınlanamadı: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun unpublishBook(bookId: String): AppResult<Book> {
+        val bRef = booksRef?.child(bookId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val bookSnap = bRef.get().await()
+            val currentBook = parseBook(bookSnap) ?: return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            if (currentBook.ownerId != uid) return AppResult.Error(AppError.Auth("Bu kitabı düzenleme yetkin yok."))
+            val now = System.currentTimeMillis()
+            val draftBook = currentBook.copy(
+                status = BookStatus.DRAFT,
+                updatedAt = now
+            )
+            bRef.setValue(draftBook).await()
+            AppResult.Success(draftBook)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap taslağa alınamadı: ${e.localizedMessage}", e))
+        }
+    }
+
+    private suspend fun syncBookChapterCount(bookId: String) {
+        runCatching {
+            val count = chaptersRef?.child(bookId)?.get()?.await()?.childrenCount?.toInt() ?: 0
+            booksRef?.child(bookId)?.child("chapterCount")?.setValue(count)?.await()
+        }
+    }
+
+    private fun parseChapter(child: DataSnapshot, defaultBookId: String): Chapter? {
+        if (!child.exists()) return null
+        val key = child.key.orEmpty()
+        val id = child.child("id").getValue(String::class.java)?.ifBlank { key } ?: key
+        if (id.isBlank()) return null
+        val bookId = child.child("bookId").getValue(String::class.java)?.ifBlank { defaultBookId } ?: defaultBookId
+
+        val chapterNumber = (child.child("chapterNumber").value as? Number)?.toInt()
+            ?: (child.child("chapterNumber").value as? String)?.toIntOrNull()
+            ?: 1
+
+        val title = child.child("title").getValue(String::class.java).orEmpty()
+        val content = child.child("content").getValue(String::class.java).orEmpty()
+
+        val rawWordCount = (child.child("wordCount").value as? Number)?.toInt()
+            ?: (child.child("wordCount").value as? String)?.toIntOrNull()
+            ?: 0
+        val wordCount = if (rawWordCount > 0) rawWordCount else {
+            content.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+        }
+
+        val rawPublished = child.child("isPublished").value
+        val isPublished = when (rawPublished) {
+            is Boolean -> rawPublished
+            is String -> rawPublished.equals("true", ignoreCase = true)
+            is Number -> rawPublished.toInt() != 0
+            else -> false
+        }
+
+        val publishedAt = (child.child("publishedAt").value as? Number)?.toLong() ?: 0L
+        val createdAt = (child.child("createdAt").value as? Number)?.toLong() ?: 0L
+        val updatedAt = (child.child("updatedAt").value as? Number)?.toLong() ?: createdAt
+
+        return Chapter(
+            id = id,
+            bookId = bookId,
+            chapterNumber = chapterNumber,
+            title = title,
+            content = content,
+            wordCount = wordCount,
+            isPublished = isPublished,
+            publishedAt = publishedAt,
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        )
     }
 
     override suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> {
@@ -539,7 +710,81 @@ class BookRepositoryImpl : BookRepository {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    private fun parseBook(snapshot: DataSnapshot): Book? = if (!snapshot.exists()) null else runCatching {
-        snapshot.getValue(Book::class.java)?.let { it.copy(id = snapshot.key ?: it.id) }
-    }.getOrNull()
+    private fun parseBook(snapshot: DataSnapshot): Book? {
+        if (!snapshot.exists()) return null
+        return runCatching {
+            snapshot.getValue(Book::class.java)?.let { it.copy(id = snapshot.key ?: it.id) }
+        }.getOrNull() ?: runCatching {
+            val key = snapshot.key.orEmpty()
+            val id = snapshot.child("id").getValue(String::class.java)?.ifBlank { key } ?: key
+            val ownerId = snapshot.child("ownerId").getValue(String::class.java).orEmpty()
+            val authorName = snapshot.child("authorName").getValue(String::class.java).orEmpty()
+            val title = snapshot.child("title").getValue(String::class.java).orEmpty()
+            val description = snapshot.child("description").getValue(String::class.java).orEmpty()
+            val discoverySummary = snapshot.child("discoverySummary").getValue(String::class.java).orEmpty()
+            val coverImageUrl = snapshot.child("coverImageUrl").getValue(String::class.java).orEmpty()
+
+            val catName = snapshot.child("category").getValue(String::class.java).orEmpty()
+            val category = BookCategory.entries.firstOrNull { it.name.equals(catName, ignoreCase = true) }
+                ?: BookCategory.FICTION
+
+            val statusName = snapshot.child("status").getValue(String::class.java).orEmpty()
+            val status = BookStatus.entries.firstOrNull { it.name.equals(statusName, ignoreCase = true) }
+                ?: BookStatus.DRAFT
+
+            val rating = (snapshot.child("rating").value as? Number)?.toFloat() ?: 0f
+            val ratingCount = (snapshot.child("ratingCount").value as? Number)?.toInt() ?: 0
+            val readCount = (snapshot.child("readCount").value as? Number)?.toInt() ?: 0
+            val likesCount = (snapshot.child("likesCount").value as? Number)?.toInt() ?: 0
+            val savesCount = (snapshot.child("savesCount").value as? Number)?.toInt() ?: 0
+            val commentsCount = (snapshot.child("commentsCount").value as? Number)?.toInt() ?: 0
+            val chapterCount = (snapshot.child("chapterCount").value as? Number)?.toInt() ?: 0
+            val createdAt = (snapshot.child("createdAt").value as? Number)?.toLong() ?: 0L
+            val updatedAt = (snapshot.child("updatedAt").value as? Number)?.toLong() ?: createdAt
+            val publishedAt = (snapshot.child("publishedAt").value as? Number)?.toLong() ?: 0L
+
+            val tags = snapshot.child("tags").children.mapNotNull { it.getValue(String::class.java) }
+            val language = snapshot.child("language").getValue(String::class.java) ?: "tr"
+            val genre = snapshot.child("genre").getValue(String::class.java).orEmpty()
+            val subGenre = snapshot.child("subGenre").getValue(String::class.java).orEmpty()
+            val targetAudience = snapshot.child("targetAudience").getValue(String::class.java) ?: "ALL"
+            val contentWarnings = snapshot.child("contentWarnings").children.mapNotNull { it.getValue(String::class.java) }
+            val isSeries = snapshot.child("isSeries").getValue(Boolean::class.java) ?: false
+            val seriesName = snapshot.child("seriesName").getValue(String::class.java).orEmpty()
+            val seriesOrder = (snapshot.child("seriesOrder").value as? Number)?.toInt() ?: 0
+            val visibility = snapshot.child("visibility").getValue(String::class.java) ?: "PUBLIC"
+
+            Book(
+                id = id,
+                ownerId = ownerId,
+                authorName = authorName,
+                title = title,
+                description = description,
+                discoverySummary = discoverySummary,
+                coverImageUrl = coverImageUrl,
+                category = category,
+                status = status,
+                rating = rating,
+                ratingCount = ratingCount,
+                readCount = readCount,
+                likesCount = likesCount,
+                savesCount = savesCount,
+                commentsCount = commentsCount,
+                chapterCount = chapterCount,
+                createdAt = createdAt,
+                updatedAt = updatedAt,
+                publishedAt = publishedAt,
+                tags = tags,
+                language = language,
+                genre = genre,
+                subGenre = subGenre,
+                targetAudience = targetAudience,
+                contentWarnings = contentWarnings,
+                isSeries = isSeries,
+                seriesName = seriesName,
+                seriesOrder = seriesOrder,
+                visibility = visibility
+            )
+        }.getOrNull()
+    }
 }

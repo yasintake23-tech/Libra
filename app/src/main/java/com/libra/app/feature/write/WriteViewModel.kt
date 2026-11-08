@@ -183,6 +183,13 @@ class WriteViewModel(
         }
     }
 
+    fun deleteBook(bookId: String) {
+        viewModelScope.launch {
+            bookRepository.deleteBook(bookId)
+            loadMyBooks()
+        }
+    }
+
     fun uploadChapterImage(bookId: String, bytes: ByteArray, fileName: String, contentType: String, onInserted: (String) -> Unit) {
         viewModelScope.launch {
             _editorSaving.value = true

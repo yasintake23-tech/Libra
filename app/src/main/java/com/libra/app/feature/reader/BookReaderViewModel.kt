@@ -55,11 +55,22 @@ class BookReaderViewModel : ViewModel() {
         chaptersJob = viewModelScope.launch {
             ServiceLocator.bookRepository.getBookChapters(book.id).collect { result ->
                 when (result) {
-                    is AppResult.Success -> _state.value = _state.value.copy(
-                        chapters = result.data.filter { it.isPublished }.sortedBy { it.chapterNumber },
-                        loading = false,
-                        error = null
-                    )
+                    is AppResult.Success -> {
+                        val allChapters = result.data.sortedBy { it.chapterNumber }
+                        val isAuthor = userId.isNotBlank() && book.ownerId == userId
+                        val publishedChapters = allChapters.filter { it.isPublished }
+                        val visibleChapters = when {
+                            isAuthor -> allChapters
+                            publishedChapters.isNotEmpty() -> publishedChapters
+                            book.status == com.libra.app.domain.model.BookStatus.PUBLISHED -> allChapters
+                            else -> emptyList()
+                        }
+                        _state.value = _state.value.copy(
+                            chapters = visibleChapters,
+                            loading = false,
+                            error = null
+                        )
+                    }
                     is AppResult.Error -> _state.value = _state.value.copy(loading = false, error = result.error.message)
                 }
             }

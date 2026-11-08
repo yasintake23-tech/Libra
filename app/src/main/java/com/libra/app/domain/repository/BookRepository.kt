@@ -33,6 +33,14 @@ interface BookRepository {
     fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>>
     suspend fun saveChapter(chapter: Chapter): AppResult<Chapter>
     suspend fun deleteChapter(bookId: String, chapterId: String): AppResult<Unit>
+    suspend fun reorderChapters(bookId: String, chapters: List<Chapter>): AppResult<Unit> =
+        AppResult.Success(Unit)
+    suspend fun duplicateChapter(bookId: String, chapterId: String): AppResult<Chapter> =
+        AppResult.Error(AppError.Database("Bölüm çoğaltma işlemi desteklenmiyor."))
+    suspend fun publishBook(bookId: String): AppResult<Book> =
+        AppResult.Error(AppError.Database("Yayınlama işlemi desteklenmiyor."))
+    suspend fun unpublishBook(bookId: String): AppResult<Book> =
+        AppResult.Error(AppError.Database("Yayından kaldırma işlemi desteklenmiyor."))
 
     // Book social and reader state. Implemented by the data layer in the next book-system phase.
     suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> =

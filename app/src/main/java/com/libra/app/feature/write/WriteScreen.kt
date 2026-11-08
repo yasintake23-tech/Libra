@@ -177,29 +177,48 @@ private fun AuthorBookCard(book: Book, onOpenEditor: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onOpenEditor),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(book, Modifier.width(62.dp).aspectRatio(.69f))
-            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                Text(book.title.ifBlank { "Adsız kitap" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(book.category.displayName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Surface(
-                    modifier = Modifier.padding(top = 5.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            BookCover(book, Modifier.width(64.dp).aspectRatio(.68f))
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (book.status == BookStatus.PUBLISHED) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color(0xFFF57C00).copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            if (book.status == BookStatus.PUBLISHED) "Yayında" else "Taslak",
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (book.status == BookStatus.PUBLISHED) Color(0xFF2E7D32) else Color(0xFFF57C00)
+                        )
+                    }
                     Text(
-                        if (book.status == BookStatus.PUBLISHED) "Yayında" else "Taslak",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall
+                        book.category.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(book.title.ifBlank { "Adsız Kitap" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${if (book.chapterCount > 0) book.chapterCount else 1} Bölüm • ${book.readCount} Okunma",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            TextButton(onClick = onOpenEditor) {
-                Icon(Icons.Default.Edit, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Editör")
+            Button(
+                onClick = onOpenEditor,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("Yönet", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
             }
         }
     }
