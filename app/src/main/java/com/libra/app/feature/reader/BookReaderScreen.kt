@@ -45,6 +45,8 @@ fun BookReaderScreen(
 ) {
     val vm: BookReaderViewModel = viewModel(key = "reader-${book.id}-${userId}")
     val state by vm.state.collectAsState()
+    val chapters = state.chapters
+    val progress = state.progress
     val context = LocalContext.current
     val store = remember { ReaderPreferencesStore(context) }
     var preferences by remember { mutableStateOf(store.read()) }
@@ -96,9 +98,6 @@ fun BookReaderScreen(
     LaunchedEffect(book.id, userId) {
         vm.load(book, userId, store)
     }
-
-    val chapters = state.chapters
-    val progress = state.progress
 
     LaunchedEffect(chapters, initialChapterId, progress?.chapterId) {
         if (chapters.isEmpty() || restored) return@LaunchedEffect
