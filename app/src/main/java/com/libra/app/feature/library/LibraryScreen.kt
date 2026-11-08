@@ -510,7 +510,7 @@ private fun LibraryBookCard(
                             )
 
                             Text(
-                                text = book.category.titleTr,
+                                text = book.category.displayName,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
