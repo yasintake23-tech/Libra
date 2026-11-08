@@ -1,5 +1,6 @@
 package com.libra.app.feature.reader
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +28,10 @@ import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ReadingProgress
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,6 +57,17 @@ fun BookReaderScreen(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
+    BackHandler {
+        when {
+            showSettings -> showSettings = false
+            showChapters -> showChapters = false
+            else -> {
+                saveNow(force = true)
+                onBack()
+            }
+        }
+    }
+
     LaunchedEffect(book.id, userId) {
         vm.load(book, userId, store)
     }
@@ -74,14 +89,24 @@ fun BookReaderScreen(
     }
 
     val chapter = chapters.getOrNull(selectedIndex)
-    var restorePositionForChapter by remember(chapter?.id, progress?.chapterId) { mutableStateOf(true) }
+    var isRestoringPosition by remember(chapter?.id) { mutableStateOf(true) }
 
-    LaunchedEffect(chapter?.id, progress?.chapterId, restored) {
+    LaunchedEffect(chapter?.id, restored) {
         val current = chapter ?: return@LaunchedEffect
-        delay(100)
-        val shouldRestore = progress?.chapterId == current.id && restorePositionForChapter
-        scrollState.scrollTo(if (shouldRestore) progress.position.coerceIn(0, scrollState.maxValue) else 0)
-        restorePositionForChapter = false
+        isRestoringPosition = true
+        val shouldRestore = progress?.chapterId == current.id && progress.position > 0
+        if (shouldRestore) {
+            withTimeoutOrNull(1500L) {
+                snapshotFlow { scrollState.maxValue }
+                    .filter { max -> max > 0 }
+                    .first()
+            }
+            val target = progress.position.coerceIn(0, scrollState.maxValue)
+            scrollState.scrollTo(target)
+        } else {
+            scrollState.scrollTo(0)
+        }
+        isRestoringPosition = false
     }
 
     fun currentProgress(force: Boolean = false): ReadingProgress? {
@@ -112,7 +137,7 @@ fun BookReaderScreen(
     LaunchedEffect(chapter?.id) {
         snapshotFlow { scrollState.value }
             .collect { position ->
-                if (scrollState.maxValue <= 0 || chapter == null) return@collect
+                if (isRestoringPosition || scrollState.maxValue <= 0 || chapter == null) return@collect
                 val percent = ((position.toFloat() / scrollState.maxValue) * 100f).roundToInt()
                 if (percent % 5 == 0 || position == scrollState.maxValue) {
                     saveJob?.cancel()
@@ -193,8 +218,16 @@ fun BookReaderScreen(
                 state.error != null -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
-                chapter == null -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("Bu kitapta henüz yayınlanmış bölüm yok.", color = foreground)
+                chapter == null -> Column(
+                    Modifier.fillMaxSize().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Bu kitapta henüz yayınlanmış bölüm yok.", color = foreground, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(onClick = { onBack() }) {
+                        Text("Geri Dön")
+                    }
                 }
                 else -> {
                     Column(

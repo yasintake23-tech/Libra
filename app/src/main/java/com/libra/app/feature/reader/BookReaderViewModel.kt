@@ -35,7 +35,14 @@ class BookReaderViewModel : ViewModel() {
             _state.value = ReaderState(loading = false, error = "Kitap ve kullanıcı bilgisi bulunamadı.")
             return
         }
-        if (currentBookId == book.id && currentUserId == userId && _state.value.chapters.isNotEmpty()) return
+        if (currentBookId == book.id && currentUserId == userId && _state.value.chapters.isNotEmpty()) {
+            val local = localStore.readProgress(userId, book.id)
+            if (local != null && local.updatedAt > localProgressUpdatedAt) {
+                localProgressUpdatedAt = local.updatedAt
+                _state.value = _state.value.copy(progress = local)
+            }
+            return
+        }
         currentBookId = book.id
         currentUserId = userId
         chaptersJob?.cancel()
