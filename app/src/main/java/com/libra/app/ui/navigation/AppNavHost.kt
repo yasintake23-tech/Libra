@@ -63,6 +63,7 @@ import com.libra.app.feature.settings.SettingsScreen
 import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
+import com.libra.app.feature.write.create.CreateBookScreen
 import com.libra.app.feature.reader.BookReaderScreen
 import com.libra.app.feature.book.BookDetailScreen
 import com.libra.app.ui.components.LoadingView
@@ -97,6 +98,7 @@ fun AppNavHost(
     var readerBook by remember { mutableStateOf<Book?>(null) }
     var readerChapterId by remember { mutableStateOf<String?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
+    var showCreateBook by remember { mutableStateOf(false) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     fun openPublicProfile(uid: String) {
@@ -201,6 +203,7 @@ fun AppNavHost(
     // must unwind those states explicitly instead of finishing the Activity.
     BackHandler {
         when {
+            showCreateBook -> showCreateBook = false
             readerBook != null -> readerBook = null
             selectedBook != null -> selectedBook = null
             createContentMode != null -> createContentMode = null
@@ -231,6 +234,19 @@ fun AppNavHost(
             hasAdminAccess = role != null
             adminPermissions = role?.permissions ?: AdminPermissionSet()
         }
+    }
+
+    if (showCreateBook) {
+        CreateBookScreen(
+            onBack = { showCreateBook = false },
+            onBookCreated = { newBook ->
+                showCreateBook = false
+                selectedWritingBook = newBook
+                writeVm.loadMyBooks()
+            },
+            modifier = modifier.fillMaxSize()
+        )
+        return
     }
 
     createContentMode?.let { mode ->
@@ -466,7 +482,12 @@ fun AppNavHost(
                 )
                 BottomNavTab.WRITE -> {
                     val state by writeVm.uiState.collectAsState()
-                    WriteScreen(state, writeVm::createNewBook, { selectedWritingBook = it }, writeVm::loadMyBooks)
+                    WriteScreen(
+                        uiState = state,
+                        onCreateBookClick = { showCreateBook = true },
+                        onBookClick = { selectedWritingBook = it },
+                        onRetry = writeVm::loadMyBooks
+                    )
                 }
                 BottomNavTab.DM -> DirectMessagesScreen(
                     onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
