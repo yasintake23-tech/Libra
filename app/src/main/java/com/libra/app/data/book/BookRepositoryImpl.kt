@@ -246,29 +246,31 @@ class BookRepositoryImpl : BookRepository {
 
     override suspend fun addBookToShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit> {
         val db = database ?: return databaseError()
-        val books = booksRef ?: return databaseError()
-        val libraries = librariesRef ?: return databaseError()
         if (userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (bookId.isBlank()) return AppResult.Error(AppError.Validation("Kitap kimliği boş olamaz."))
         return try {
             val now = System.currentTimeMillis()
-            val updates = mutableMapOf<String, Any?>()
-            ShelfType.values().forEach { shelf ->
-                updates["/libraries/$userId/${shelf.name}/$bookId"] = if (shelf == shelfType) {
-                    if (shelf == ShelfType.READING) {
-                        mapOf(
-                            "progressPercent" to 0,
-                            "chapterId" to "",
-                            "chapterNumber" to 0,
-                            "position" to 0,
-                            "updatedAt" to now,
-                            "addedAt" to now
-                        )
-                    } else {
-                        mapOf("progressPercent" to 0, "addedAt" to now)
-                    }
-                } else null
+            val shelfRef = db.reference.child("libraries").child(userId).child(shelfType.name).child(bookId)
+            val data = if (shelfType == ShelfType.READING) {
+                val existing = shelfRef.get().await()
+                val existingProgress = existing.child("progressPercent").getValue(Int::class.java) ?: 0
+                val existingChapterId = existing.child("chapterId").getValue(String::class.java) ?: ""
+                val existingChapterNumber = existing.child("chapterNumber").getValue(Int::class.java) ?: 0
+                val existingPosition = existing.child("position").getValue(Int::class.java) ?: 0
+                val existingAddedAt = existing.child("addedAt").getValue(Long::class.java) ?: now
+                mapOf(
+                    "progressPercent" to existingProgress,
+                    "chapterId" to existingChapterId,
+                    "chapterNumber" to existingChapterNumber,
+                    "position" to existingPosition,
+                    "updatedAt" to now,
+                    "addedAt" to existingAddedAt
+                )
+            } else {
+                val existingAddedAt = shelfRef.child("addedAt").get().await().getValue(Long::class.java) ?: now
+                mapOf("progressPercent" to 0, "addedAt" to existingAddedAt)
             }
-            db.reference.updateChildren(updates).await()
+            shelfRef.setValue(data).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap kütüphaneye eklenemedi: ${e.localizedMessage}", e)) }
     }

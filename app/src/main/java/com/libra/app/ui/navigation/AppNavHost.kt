@@ -268,7 +268,10 @@ fun AppNavHost(
             book = book,
             userId = profile.uid,
             initialChapterId = readerChapterId,
-            onBack = { readerBook = null },
+            onBack = {
+                readerBook = null
+                readerChapterId = null
+            },
             modifier = modifier.fillMaxSize()
         )
         return
@@ -280,12 +283,10 @@ fun AppNavHost(
             userId = profile.uid,
             onBack = { selectedBook = null },
             onRead = { selected, chapter ->
-                selectedBook = null
                 readerBook = selected
                 readerChapterId = chapter?.id
             },
             onOpenChapter = { selected, chapter ->
-                selectedBook = null
                 readerBook = selected
                 readerChapterId = chapter.id
             },

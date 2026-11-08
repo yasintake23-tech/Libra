@@ -20,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -141,8 +144,36 @@ fun LibraryScreen(
                     ) {
                         items(filtered, key = { it.id }) { item ->
                             HorizontalBookCard(
-                                item.book,
-                                { onBookClick(item.book, selectedShelf) }
+                                book = item.book,
+                                onClick = { onBookClick(item.book, selectedShelf) },
+                                extraContent = if (selectedShelf == ShelfType.READING) {
+                                    {
+                                        Column(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    "İlerleme",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    "%${item.progressPercent.coerceIn(0, 100)}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            Spacer(Modifier.height(4.dp))
+                                            LinearProgressIndicator(
+                                                progress = { item.progressPercent.coerceIn(0, 100) / 100f },
+                                                modifier = Modifier.fillMaxWidth().height(4.dp)
+                                            )
+                                        }
+                                    }
+                                } else null
                             )
                         }
                     }

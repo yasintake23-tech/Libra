@@ -1,5 +1,6 @@
 package com.libra.app.feature.book
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,7 +10,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
@@ -17,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,6 +44,8 @@ fun BookDetailScreen(
     val state by vm.state.collectAsState()
     LaunchedEffect(book.id, userId) { vm.load(book, userId) }
 
+    BackHandler { onBack() }
+
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         when {
             state.loading && state.chapters.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -58,6 +65,11 @@ fun BookDetailScreen(
                 chapters = state.chapters,
                 progress = state.progress,
                 author = state.author,
+                isLiked = state.isLiked,
+                isSaved = state.isSaved,
+                likesCount = state.likesCount,
+                onToggleLike = { vm.toggleLike(userId) },
+                onToggleSave = { vm.toggleSave(userId) },
                 onBack = onBack,
                 onRead = onRead,
                 onOpenChapter = onOpenChapter,
@@ -73,6 +85,11 @@ private fun BookDetailContent(
     chapters: List<Chapter>,
     progress: ReadingProgress?,
     author: UserProfile?,
+    isLiked: Boolean,
+    isSaved: Boolean,
+    likesCount: Int,
+    onToggleLike: () -> Unit,
+    onToggleSave: () -> Unit,
     onBack: () -> Unit,
     onRead: (Book, Chapter?) -> Unit,
     onOpenChapter: (Book, Chapter) -> Unit,
@@ -91,7 +108,21 @@ private fun BookDetailContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") }
-            Text("Kitap", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Kitap", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onToggleLike) {
+                Icon(
+                    if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Beğen",
+                    tint = if (isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = onToggleSave) {
+                Icon(
+                    if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = "Kaydet",
+                    tint = if (isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
 
         LazyColumn(
@@ -137,7 +168,7 @@ private fun BookDetailContent(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatChip("Bölüm", chapters.size.toString(), Modifier.weight(1f))
                     StatChip("Okunma", book.readCount.toString(), Modifier.weight(1f))
-                    StatChip("Beğeni", book.likesCount.toString(), Modifier.weight(1f))
+                    StatChip("Beğeni", likesCount.toString(), Modifier.weight(1f))
                 }
             }
             item {

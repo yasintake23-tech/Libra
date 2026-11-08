@@ -262,7 +262,62 @@ fun HomeScreen(
                         }
 
                         HomeSection.BOOKS -> {
-                            if (data.recentBooks.isEmpty()) {
+                            data.currentlyReading?.let { readingItem ->
+                                item {
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                                            .clickable { onBookClick(readingItem.book) },
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                        tonalElevation = 2.dp
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            BookCover(readingItem.book, Modifier.width(52.dp).aspectRatio(0.68f))
+                                            Spacer(Modifier.width(12.dp))
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    "Okumaya Devam Et",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    readingItem.book.title,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1
+                                                )
+                                                Text(
+                                                    readingItem.book.authorName,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1
+                                                )
+                                                Spacer(Modifier.height(6.dp))
+                                                LinearProgressIndicator(
+                                                    progress = { (readingItem.progressPercent.coerceIn(0, 100) / 100f) },
+                                                    modifier = Modifier.fillMaxWidth().height(4.dp)
+                                                )
+                                            }
+                                            Spacer(Modifier.width(10.dp))
+                                            FilledTonalButton(
+                                                onClick = { onBookClick(readingItem.book) },
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Oku", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (data.recentBooks.isEmpty() && data.currentlyReading == null) {
                                 item { EmptySection("Henüz yayınlanmış kitap yok.") }
                             } else {
                                 items(data.recentBooks.take(20), key = { it.id }) { book ->
