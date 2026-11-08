@@ -235,7 +235,7 @@ class GlobalInteractionRoutingTest {
 
         // Click in reading tab
         selectedWritingBook = null
-        onBookClick(sampleBook, ShelfType.CURRENTLY_READING)
+        onBookClick(sampleBook, ShelfType.READING)
         assertNull(selectedWritingBook)
         assertEquals("book_1", selectedReadingBook?.id)
     }
