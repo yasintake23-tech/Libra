@@ -21,7 +21,7 @@ import com.libra.app.ui.components.UserAvatar
 import kotlinx.coroutines.launch
 
 @Composable
-fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}, onOpenNotification: (AppNotification) -> Unit = {}, modifier: Modifier = Modifier) {
     val repo = ServiceLocator.notificationRepository
     val uid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
     val scope = rememberCoroutineScope()
@@ -68,7 +68,10 @@ fun NotificationsScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 items(notifications, key = { it.id }) { notification ->
                     NotificationRow(notification, onOpenProfile) {
-                        if (!notification.read) scope.launch { repo.markRead(notification.id) }
+                        if (!notification.read) {
+                            scope.launch { repo.markRead(notification.id) }
+                        }
+                        onOpenNotification(notification)
                     }
                 }
             }

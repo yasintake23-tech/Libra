@@ -1,9 +1,12 @@
 package com.libra.app.feature.profile
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,8 +44,11 @@ import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.model.Post
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.ui.components.CosmeticRoleReveal
 import com.libra.app.core.di.ServiceLocator
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun ProfileScreen(
@@ -49,6 +57,8 @@ fun ProfileScreen(
     onRetry: () -> Unit,
     onSettingsClick: () -> Unit = {},
     onAdminClick: (() -> Unit)? = null,
+    onMyBooksClick: () -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
@@ -68,11 +78,13 @@ fun ProfileScreen(
             modifier = Modifier.padding(20.dp)
         )
         is UiState.Success -> ProfileContent(
-            uiState.data,
-            onSignOutClick,
-            onSettingsClick,
-            onAdminClick,
-            modifier
+            profile = uiState.data,
+            onSignOut = onSignOutClick,
+            onSettingsClick = onSettingsClick,
+            onAdminClick = onAdminClick,
+            onMyBooksClick = onMyBooksClick,
+            onOpenProfile = onOpenProfile,
+            modifier = modifier
         )
     }
 }
@@ -83,18 +95,31 @@ private fun ProfileContent(
     onSignOut: () -> Unit,
     onSettingsClick: () -> Unit,
     onAdminClick: (() -> Unit)?,
+    onMyBooksClick: () -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
     modifier: Modifier
 ) {
     var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
     var showSavedPosts by remember { mutableStateOf(false) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
+    var adminRole by remember { mutableStateOf<com.libra.app.domain.model.AdminRole?>(null) }
 
     LaunchedEffect(profile.uid) {
         launch {
             ServiceLocator.userRepository.getFollowers(profile.uid).let {
                 if (it is com.libra.app.core.result.AppResult.Success) followers = it.data
             }
+        }
+        launch {
+            ServiceLocator.adminRepository.observeCosmeticRoles().first().let { result ->
+                if (result is com.libra.app.core.result.AppResult.Success) cosmeticRoles = result.data
+            }
+        }
+        launch {
+            adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
         }
         launch {
             ServiceLocator.userRepository.getFollowing(profile.uid).let {
@@ -167,12 +192,17 @@ private fun ProfileContent(
 
             Spacer(Modifier.height(10.dp))
 
-            Text(
-                profile.displayName,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold
-                )
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(profile.displayName, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                adminRole?.let { role ->
+                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                    CosmeticRoleBadge(role) { selectedCosmetic = role }
+                }
+            }
 
             Text(
                 profile.handle,
@@ -216,15 +246,19 @@ private fun ProfileContent(
             )
         ) {
             Column(modifier = Modifier.padding(4.dp)) {
-                ProfileAction(Icons.Default.Book, "Kitaplarım")
                 ProfileAction(
-                    Icons.Default.BookmarkBorder,
-                    "Kaydedilen gönderiler",
+                    icon = Icons.Default.Book,
+                    label = "Kitaplarım",
+                    onClick = onMyBooksClick
+                )
+                ProfileAction(
+                    icon = Icons.Default.BookmarkBorder,
+                    label = "Kaydedilen gönderiler",
                     onClick = { showSavedPosts = true }
                 )
                 ProfileAction(
-                    Icons.Default.People,
-                    "Takip ettiklerim",
+                    icon = Icons.Default.People,
+                    label = "Takip ettiklerim",
                     onClick = { socialDialog = OwnSocialListType.FOLLOWING }
                 )
                 ProfileAction(Icons.Default.Settings, "Ayarlar", onSettingsClick)
@@ -237,14 +271,23 @@ private fun ProfileContent(
             SocialListDialog(
                 type = socialDialog!!,
                 users = if (socialDialog == OwnSocialListType.FOLLOWERS) followers else following,
-                onDismiss = { socialDialog = null }
+                onDismiss = { socialDialog = null },
+                onOpenProfile = onOpenProfile
             )
         }
 
         if (showSavedPosts) {
             SavedPostsDialog(
                 userId = profile.uid,
-                onDismiss = { showSavedPosts = false }
+                onDismiss = { showSavedPosts = false },
+                onOpenProfile = onOpenProfile
+            )
+        }
+
+        selectedCosmetic?.let { role ->
+            CosmeticRoleReveal(
+                role = role,
+                onDismiss = { selectedCosmetic = null }
             )
         }
 
@@ -257,6 +300,7 @@ private fun ProfileContent(
         }
     }
 }
+
 
 @Composable
 private fun ProfileAction(
@@ -282,7 +326,8 @@ private enum class OwnSocialListType { FOLLOWERS, FOLLOWING }
 @Composable
 private fun SavedPostsDialog(
     userId: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenProfile: (String) -> Unit = {}
 ) {
     var posts by remember(userId) { mutableStateOf<List<Post>>(emptyList()) }
     var error by remember(userId) { mutableStateOf<String?>(null) }
@@ -305,11 +350,19 @@ private fun SavedPostsDialog(
                 posts.isEmpty() -> Text("Henüz kaydettiğin bir gönderi yok.")
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(posts, key = { it.id }) { post ->
-                        Card(Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onDismiss()
+                                    onOpenProfile(post.authorId)
+                                }
+                        ) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(
                                     post.authorName.ifBlank { post.authorUsername },
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 if (post.authorUsername.isNotBlank()) {
                                     Text(
@@ -358,7 +411,8 @@ private fun Stat(
 private fun SocialListDialog(
     type: OwnSocialListType,
     users: List<UserProfile>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenProfile: (String) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -379,10 +433,22 @@ private fun SocialListDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable {
+                                    onDismiss()
+                                    onOpenProfile(user.uid)
+                                }
                                 .padding(vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
+                            UserAvatar(
+                                photoUrl = user.profileImageUrl,
+                                initials = user.initials,
+                                size = 42.dp,
+                                onClick = {
+                                    onDismiss()
+                                    onOpenProfile(user.uid)
+                                }
+                            )
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
