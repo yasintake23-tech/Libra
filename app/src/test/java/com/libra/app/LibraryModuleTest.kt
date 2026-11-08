@@ -233,20 +233,27 @@ class LibraryModuleTest {
             _isAuthenticated.value = profile != null
         }
 
-        override suspend fun signInWithEmail(email: String, pass: String): AppResult<UserProfile> =
-            AppResult.Error(AppError.Auth("Not implemented"))
-        override suspend fun registerWithEmail(email: String, pass: String, user: String, name: String): AppResult<UserProfile> =
-            AppResult.Error(AppError.Auth("Not implemented"))
-        override suspend fun signInWithGoogle(idToken: String): AppResult<UserProfile> =
-            AppResult.Error(AppError.Auth("Not implemented"))
+        override suspend fun checkCurrentSession(): AppResult<UserProfile?> =
+            AppResult.Success(_currentUser.value)
+
+        override fun signInWithGoogleIdToken(
+            idToken: String,
+            displayName: String?,
+            email: String?,
+            photoUrl: String?
+        ): Flow<AppResult<UserProfile>> =
+            flowOf(AppResult.Error(AppError.Auth("Not implemented in test")))
+
+        override suspend fun signInWithEmailPassword(email: String, password: String): AppResult<UserProfile> =
+            AppResult.Error(AppError.Auth("Not implemented in test"))
+
+        override suspend fun createAccountWithEmailPassword(email: String, password: String): AppResult<UserProfile> =
+            AppResult.Error(AppError.Auth("Not implemented in test"))
+
         override suspend fun signOut(): AppResult<Unit> {
             setUser(null)
             return AppResult.Success(Unit)
         }
-        override suspend fun sendPasswordResetEmail(email: String): AppResult<Unit> =
-            AppResult.Success(Unit)
-        override suspend fun deleteAccount(): AppResult<Unit> =
-            AppResult.Success(Unit)
     }
 
     private class FakeLibraryRepository : LibraryRepository {
