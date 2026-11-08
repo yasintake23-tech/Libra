@@ -16,7 +16,9 @@ import com.libra.app.data.update.FirebaseUpdateRepositoryImpl
 import com.libra.app.domain.repository.AdminRepository
 import com.libra.app.domain.repository.AiAssistantRepository
 import com.libra.app.domain.repository.AuthRepository
+import com.libra.app.data.library.LibraryRepositoryImpl
 import com.libra.app.domain.repository.BookRepository
+import com.libra.app.domain.repository.LibraryRepository
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.PostRepository
@@ -32,6 +34,7 @@ object ServiceLocator {
     val authRepository: AuthRepository by lazy { FirebaseAuthRepositoryImpl(userRepository) }
     val adminRepository: AdminRepository by lazy { FirebaseAdminRepositoryImpl() }
     val bookRepository: BookRepository by lazy { BookRepositoryImpl() }
+    val libraryRepository: LibraryRepository by lazy { LibraryRepositoryImpl(bookRepository) }
     val communityRepository: CommunityRepository by lazy {
         FirebaseCommunityRepositoryImpl(userRepository, storageRepository)
     }

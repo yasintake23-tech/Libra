@@ -124,6 +124,8 @@ class BookDetailViewModel : ViewModel() {
                     _state.value = _state.value.copy(isSaved = result.data)
                     if (result.data) {
                         ServiceLocator.bookRepository.addBookToShelf(userId, currentBook.id, ShelfType.SAVED)
+                    } else {
+                        ServiceLocator.bookRepository.removeBookFromShelf(userId, currentBook.id, ShelfType.SAVED)
                     }
                 }
                 is AppResult.Error -> _state.value = _state.value.copy(isSaved = currentlySaved)

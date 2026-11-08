@@ -479,18 +479,25 @@ fun AppNavHost(
                     val vm: LibraryViewModel = viewModel()
                     val state by vm.uiState.collectAsState()
                     LibraryScreen(
-                        state,
-                        vm::loadShelf,
-                        vm::updateSearchQuery,
-                        { book, shelf ->
+                        uiState = state,
+                        onTabSelected = vm::selectShelf,
+                        onSearchChanged = vm::updateSearchQuery,
+                        onBookClick = { book, shelf ->
                             if (shelf == ShelfType.MY_WRITINGS) {
                                 selectedWritingBook = book
                             } else {
                                 selectedBook = book
                             }
                         },
-                        { selectedTab = BottomNavTab.WRITE },
-                        { vm.loadShelf(ShelfType.READING) }
+                        onNavigateToWrite = { selectedTab = BottomNavTab.WRITE },
+                        onRetry = vm::retryCurrentShelf,
+                        onStartReading = { book ->
+                            selectedBook = book
+                            readerBook = book
+                        },
+                        onRemoveFromShelf = vm::removeFromShelf,
+                        onAddToSaved = { book -> vm.addToShelf(book, ShelfType.SAVED) },
+                        onNavigateToDiscover = { selectedTab = BottomNavTab.HOME }
                     )
                 }
                 BottomNavTab.PROFILE -> {

@@ -20,12 +20,16 @@ import com.libra.app.domain.model.ReadingProgress
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.repository.BookRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -36,7 +40,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * Schema:
  * /books/{bookId}
  * /chapters/{bookId}/{chapterId}
- * /libraries/{uid}/{shelfType}/{bookId} -> { progressPercent, addedAt }
+ * /libraries/{uid}/{shelfType}/{bookId} -> { progressPercent, addedAt, updatedAt }
  */
 class BookRepositoryImpl : BookRepository {
 
@@ -47,7 +51,7 @@ class BookRepositoryImpl : BookRepository {
         runCatching {
             val databaseUrl = FirebaseApp.getInstance().options.databaseUrl
             if (databaseUrl.isNullOrBlank()) {
-                FirebaseDatabase.getInstance()
+                FirebaseDatabase.getInstance("https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app")
             } else {
                 FirebaseDatabase.getInstance(databaseUrl)
             }
@@ -116,45 +120,65 @@ class BookRepositoryImpl : BookRepository {
     }
 
     override fun getUserLibrary(userId: String, shelfType: ShelfType): Flow<AppResult<List<UserShelfItem>>> = callbackFlow {
+        if (userId.isBlank()) {
+            trySend(AppResult.Error(AppError.Auth("Kullanıcı kimliği boş olamaz.")))
+            close()
+            return@callbackFlow
+        }
+
         val libraries = librariesRef?.child(userId)?.child(shelfType.name)
             ?: run { trySend(databaseError()); close(); return@callbackFlow }
 
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                launch {
+                launch(Dispatchers.IO) {
                     try {
-                        withTimeout(8_000L) {
-                            val shelfSnapshots = snapshot.children.toList()
-                            if (shelfSnapshots.isEmpty()) {
-                                trySend(AppResult.Success(emptyList()))
-                                return@withTimeout
-                            }
-
-                            // Read each referenced book directly. The /books/$bookId
-                            // rule already authorizes published books, so this path is
-                            // compatible with the deployed rules even when the root
-                            // /books query rule has not yet been deployed.
-                            val shelfItems = shelfSnapshots.mapNotNull { shelfSnapshot ->
-                                val bookId = shelfSnapshot.key ?: return@mapNotNull null
-                                val bookSnapshot = booksRef?.child(bookId)?.get()?.await()
-                                    ?: return@mapNotNull null
-                                val book = parseBook(bookSnapshot) ?: return@mapNotNull null
-
-                                // Library shelves are only valid for published books.
-                                if (book.status != BookStatus.PUBLISHED) return@mapNotNull null
-
-                                UserShelfItem(
-                                    id = userId + "_" + shelfType.name + "_" + bookId,
-                                    userId = userId,
-                                    book = book,
-                                    shelfType = shelfType,
-                                    progressPercent = shelfSnapshot.child("progressPercent").getValue(Int::class.java) ?: 0,
-                                    addedAt = shelfSnapshot.child("addedAt").getValue(Long::class.java) ?: 0L
-                                )
-                            }.sortedByDescending { it.addedAt }
-
-                            trySend(AppResult.Success(shelfItems))
+                        val shelfSnapshots = snapshot.children.toList()
+                        if (shelfSnapshots.isEmpty()) {
+                            trySend(AppResult.Success(emptyList()))
+                            return@launch
                         }
+
+                        // Concurrently fetch each referenced book with per-book error isolation.
+                        // Missing, deleted, or unpublished books will not crash the shelf.
+                        val deferredItems = shelfSnapshots.map { shelfSnapshot ->
+                            async {
+                                val bookId = shelfSnapshot.key?.trim() ?: return@async null
+                                if (bookId.isBlank()) return@async null
+
+                                val progressPercent = shelfSnapshot.child("progressPercent").getValue(Int::class.java) ?: 0
+                                val addedAt = shelfSnapshot.child("addedAt").getValue(Long::class.java) ?: 0L
+                                val updatedAt = shelfSnapshot.child("updatedAt").getValue(Long::class.java) ?: addedAt
+
+                                val book = runCatching {
+                                    val snap = withTimeoutOrNull(4_000L) {
+                                        booksRef?.child(bookId)?.get()?.await()
+                                    }
+                                    snap?.let(::parseBook)
+                                }.getOrNull()
+
+                                if (book == null || (book.status != BookStatus.PUBLISHED && book.ownerId != userId)) {
+                                    null
+                                } else {
+                                    UserShelfItem(
+                                        id = "${userId}_${shelfType.name}_${bookId}",
+                                        userId = userId,
+                                        book = book,
+                                        shelfType = shelfType,
+                                        progressPercent = progressPercent.coerceIn(0, 100),
+                                        addedAt = addedAt,
+                                        updatedAt = updatedAt
+                                    )
+                                }
+                            }
+                        }
+
+                        val shelfItems = deferredItems.awaitAll()
+                            .filterNotNull()
+                            .distinctBy { it.book.id }
+                            .sortedByDescending { if (it.updatedAt > 0) it.updatedAt else it.addedAt }
+
+                        trySend(AppResult.Success(shelfItems))
                     } catch (e: Exception) {
                         trySend(
                             AppResult.Error(
@@ -273,6 +297,18 @@ class BookRepositoryImpl : BookRepository {
             shelfRef.setValue(data).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Kitap kütüphaneye eklenemedi: ${e.localizedMessage}", e)) }
+    }
+
+    override suspend fun removeBookFromShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit> {
+        val db = database ?: return databaseError()
+        if (userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (bookId.isBlank()) return AppResult.Error(AppError.Validation("Kitap kimliği boş olamaz."))
+        return try {
+            db.reference.child("libraries").child(userId).child(shelfType.name).child(bookId).removeValue().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap kütüphaneden kaldırılamadı: ${e.localizedMessage}", e))
+        }
     }
 
     override fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>> = callbackFlow {

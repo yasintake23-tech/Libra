@@ -27,6 +27,7 @@ interface BookRepository {
     suspend fun updateBook(book: Book): AppResult<Book>
     suspend fun deleteBook(bookId: String): AppResult<Unit>
     suspend fun addBookToShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit>
+    suspend fun removeBookFromShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit>
 
     // Chapters
     fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>>
