@@ -9,14 +9,21 @@ data class DirectConversation(
     val otherUserPhotoUrl: String = "",
     val lastMessage: String = "",
     val updatedAt: Long = 0L,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val isGroup: Boolean = false,
+    val groupName: String = "",
+    val groupPhotoUrl: String = "",
+    val participantIds: List<String> = emptyList()
 )
 
 data class DirectMessage(
     val id: String = "",
     val senderId: String = "",
     val senderPhotoUrl: String = "",
+    val senderName: String = "",
+    val senderUsername: String = "",
     val recipientId: String = "",
+    val conversationId: String = "",
     val text: String = "",
     val mediaUrl: String = "",
     val mediaType: String = "",

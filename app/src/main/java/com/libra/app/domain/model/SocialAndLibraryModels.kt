@@ -12,7 +12,8 @@ data class UserShelfItem(
     val book: Book = Book(),
     val shelfType: ShelfType = ShelfType.SAVED,
     val progressPercent: Int = 0,
-    val addedAt: Long = 0L
+    val addedAt: Long = 0L,
+    val updatedAt: Long = 0L
 )
 
 data class FriendConnection(
