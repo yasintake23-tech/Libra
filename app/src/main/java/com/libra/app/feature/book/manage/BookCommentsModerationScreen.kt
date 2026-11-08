@@ -130,9 +130,10 @@ fun BookCommentsModerationScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(comments, key = { it.id }) { comment ->
-                    val userPhoto = if (comment.userPhotoUrl.isNotBlank()) {
-                        ServiceLocator.storageRepository.getPublicCdnUrl(comment.userPhotoUrl)
+                    val userPhoto = if (comment.authorPhotoUrl.isNotBlank()) {
+                        ServiceLocator.storageRepository.getPublicCdnUrl(comment.authorPhotoUrl)
                     } else ""
+                    val authorDisplayName = comment.authorName.ifBlank { comment.authorUsername.ifBlank { "Okur" } }
                     val formattedDate = if (comment.createdAt > 0) dateFormat.format(Date(comment.createdAt)) else ""
 
                     Card(
@@ -155,7 +156,7 @@ fun BookCommentsModerationScreen(
                                     if (userPhoto.isNotBlank()) {
                                         AsyncImage(
                                             model = userPhoto,
-                                            contentDescription = comment.userName,
+                                            contentDescription = authorDisplayName,
                                             modifier = Modifier.size(36.dp).clip(CircleShape),
                                             contentScale = ContentScale.Crop
                                         )
@@ -171,7 +172,7 @@ fun BookCommentsModerationScreen(
 
                                     Column {
                                         Text(
-                                            text = comment.userName.ifBlank { "Okur" },
+                                            text = authorDisplayName,
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
                                         )
                                         if (formattedDate.isNotBlank()) {
