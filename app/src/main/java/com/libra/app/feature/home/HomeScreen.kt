@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -333,7 +334,7 @@ fun HomeScreen(
                                             }
                                         }
                                         Icon(
-                                            Icons.AutoMirrored.Filled.ArrowForward,
+                                            Icons.Default.ArrowForward,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(18.dp)
@@ -724,7 +725,7 @@ private fun CreateChoiceMenu(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.MenuBook,
+                    Icons.Default.MenuBook,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
