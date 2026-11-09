@@ -71,16 +71,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.feature.friends.FriendsScreen
-import com.libra.app.feature.friends.FriendsUiState
+import com.libra.app.feature.friends.FriendsState
 import com.libra.app.ui.components.UserAvatar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookReelsDiscoverScreen(
-    friendsUiState: FriendsUiState,
+    friendsUiState: UiState<FriendsState>,
     onSearchFriends: (String) -> Unit,
     onFollowUser: (UserProfile) -> Unit,
     onUserClick: (UserProfile) -> Unit,
@@ -418,9 +419,9 @@ private fun BookReelItem(
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         // Background Cover with Dark Gradient
-        if (book.coverUrl.isNotBlank()) {
+        if (book.coverImageUrl.isNotBlank()) {
             AsyncImage(
-                model = book.coverUrl,
+                model = book.coverImageUrl,
                 contentDescription = book.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
