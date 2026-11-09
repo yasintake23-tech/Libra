@@ -250,6 +250,39 @@ class BookDiscoveryAndMediaUpgradeTest {
         assertTrue(fakeBookRepo.shelfItems.any { it.bookId == book.id && it.shelfType == ShelfType.READING })
     }
 
+    // 5. Book Cover URL Bidirectional Resolution & Upload
+    @Test
+    fun bookCover_bidirectionalResolution_worksForBothLegacyAndNewFields() {
+        val legacyBook = sampleBook.copy(coverImageUrl = "", coverUrl = "users/123/covers/legacy.jpg")
+        assertEquals("users/123/covers/legacy.jpg", legacyBook.displayCoverUrl)
+
+        val newBook = sampleBook.copy(coverImageUrl = "users/123/covers/new.jpg", coverUrl = "")
+        assertEquals("users/123/covers/new.jpg", newBook.displayCoverUrl)
+
+        val bothBook = sampleBook.copy(coverImageUrl = "users/123/covers/primary.jpg", coverUrl = "users/123/covers/secondary.jpg")
+        assertEquals("users/123/covers/primary.jpg", bothBook.displayCoverUrl)
+    }
+
+    @Test
+    fun bookManagementViewModel_uploadBookCover_persistsBothCoverFields() = runTest {
+        manageVm.initialize(sampleBook)
+        advanceUntilIdle()
+
+        manageVm.uploadBookCover(
+            bytes = "sample_image_bytes".toByteArray(),
+            fileName = "cover.jpg",
+            contentType = "image/jpeg"
+        )
+        advanceUntilIdle()
+
+        val updatedBook = manageVm.state.value.book
+        assertNotNull(updatedBook)
+        assertEquals(100, manageVm.state.value.coverUploadProgress)
+        assertFalse(manageVm.state.value.isUploadingCover)
+        assertTrue(updatedBook?.coverImageUrl?.contains("cover.jpg") == true)
+        assertTrue(updatedBook?.coverUrl?.contains("cover.jpg") == true)
+    }
+
     // Fakes
     private class FakeAuthRepo : AuthRepository {
         private val _currentUser = MutableStateFlow<UserProfile?>(null)

@@ -229,7 +229,15 @@ class BookRepositoryImpl : BookRepository {
         if (book.title.isBlank()) return AppResult.Error(AppError.Validation("Kitap başlığı boş olamaz."))
         val now = System.currentTimeMillis()
         val id = book.id.ifBlank { books.push().key ?: return AppResult.Error(AppError.Database("Kitap kimliği oluşturulamadı.")) }
-        val newBook = book.copy(id = id, createdAt = now, updatedAt = now, status = BookStatus.DRAFT)
+        val finalCover = book.coverImageUrl.ifBlank { book.coverUrl }
+        val newBook = book.copy(
+            id = id,
+            coverImageUrl = finalCover,
+            coverUrl = finalCover,
+            createdAt = now,
+            updatedAt = now,
+            status = BookStatus.DRAFT
+        )
         return try { books.child(id).setValue(newBook).await(); AppResult.Success(newBook) }
         catch (e: Exception) { AppResult.Error(AppError.Database("Kitap oluşturulamadı: ${e.localizedMessage}", e)) }
     }
@@ -245,8 +253,11 @@ class BookRepositoryImpl : BookRepository {
         }
 
         return try {
+            val finalCover = book.coverImageUrl.ifBlank { book.coverUrl }
             val updated = book.copy(
                 ownerId = authUid,
+                coverImageUrl = finalCover,
+                coverUrl = finalCover,
                 updatedAt = System.currentTimeMillis()
             )
             books.child(book.id).setValue(updated).await()
@@ -754,9 +765,22 @@ class BookRepositoryImpl : BookRepository {
 
     private fun parseBook(snapshot: DataSnapshot): Book? {
         if (!snapshot.exists()) return null
+        val rawCover = snapshot.child("coverImageUrl").getValue(String::class.java)?.ifBlank { null }
+            ?: snapshot.child("coverUrl").getValue(String::class.java)?.ifBlank { null }
+            ?: snapshot.child("cover").getValue(String::class.java)?.ifBlank { null }
+            ?: snapshot.child("coverPath").getValue(String::class.java).orEmpty()
+
+        val parsed = runCatching {
+            snapshot.getValue(Book::class.java)?.let { book ->
+                val id = snapshot.key ?: book.id
+                val finalCover = book.coverImageUrl.ifBlank { book.coverUrl.ifBlank { rawCover } }
+                book.copy(id = id, coverImageUrl = finalCover, coverUrl = finalCover)
+            }
+        }.getOrNull()
+
+        if (parsed != null) return parsed
+
         return runCatching {
-            snapshot.getValue(Book::class.java)?.let { it.copy(id = snapshot.key ?: it.id) }
-        }.getOrNull() ?: runCatching {
             val key = snapshot.key.orEmpty()
             val id = snapshot.child("id").getValue(String::class.java)?.ifBlank { key } ?: key
             val ownerId = snapshot.child("ownerId").getValue(String::class.java).orEmpty()
@@ -764,7 +788,7 @@ class BookRepositoryImpl : BookRepository {
             val title = snapshot.child("title").getValue(String::class.java).orEmpty()
             val description = snapshot.child("description").getValue(String::class.java).orEmpty()
             val discoverySummary = snapshot.child("discoverySummary").getValue(String::class.java).orEmpty()
-            val coverImageUrl = snapshot.child("coverImageUrl").getValue(String::class.java).orEmpty()
+            val coverImageUrl = rawCover
 
             val catName = snapshot.child("category").getValue(String::class.java).orEmpty()
             val category = BookCategory.entries.firstOrNull { it.name.equals(catName, ignoreCase = true) }
@@ -804,6 +828,7 @@ class BookRepositoryImpl : BookRepository {
                 description = description,
                 discoverySummary = discoverySummary,
                 coverImageUrl = coverImageUrl,
+                coverUrl = coverImageUrl,
                 category = category,
                 status = status,
                 rating = rating,

@@ -124,6 +124,7 @@ fun AppNavHost(
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
+    val homeVm: HomeViewModel = viewModel()
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
 
@@ -245,6 +246,7 @@ fun AppNavHost(
                 showCreateBook = false
                 selectedWritingBook = newBook
                 writeVm.loadMyBooks()
+                homeVm.loadHomeData()
             },
             modifier = modifier.fillMaxSize()
         )
@@ -425,8 +427,7 @@ fun AppNavHost(
         Box(Modifier.fillMaxSize().padding(paddingValues)) {
             when (selectedTab) {
                 BottomNavTab.HOME -> {
-                    val vm: HomeViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
+                    val state by homeVm.uiState.collectAsState()
                     HomeScreen(
                         state,
                         { selectedBook = it },
@@ -437,19 +438,20 @@ fun AppNavHost(
                         { showCommunityServers = true },
                         { showNotifications = true },
                         unreadNotificationCount,
-                        vm::loadHomeData,
-                        onCreatePost = vm::createPost,
+                        homeVm::loadHomeData,
+                        onCreatePost = homeVm::createPost,
                         onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
                         onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
                         canComment = profile.moderation.canComment,
-                        onToggleLike = vm::toggleLike, onToggleSave = vm::toggleSave,
-                        onDeletePost = vm::deletePost, onOpenComments = vm::openComments,
-                        comments = vm.comments.collectAsState().value, onAddComment = vm::addComment,
-                        onDeleteComment = vm::deleteComment, isCommenting = vm.isCommenting.collectAsState().value,
-                        commentError = vm.commentError.collectAsState().value, onClearCommentError = vm::clearCommentError,
-                        onCloseComments = vm::closeComments, isPosting = vm.isPosting.collectAsState().value,
-                        postError = vm.postError.collectAsState().value, onClearPostError = vm::clearPostError,
+                        onToggleLike = homeVm::toggleLike, onToggleSave = homeVm::toggleSave,
+                        onDeletePost = homeVm::deletePost, onOpenComments = homeVm::openComments,
+                        comments = homeVm.comments.collectAsState().value, onAddComment = homeVm::addComment,
+                        onDeleteComment = homeVm::deleteComment, isCommenting = homeVm.isCommenting.collectAsState().value,
+                        commentError = homeVm.commentError.collectAsState().value, onClearCommentError = homeVm::clearCommentError,
+                        onCloseComments = homeVm::closeComments, isPosting = homeVm.isPosting.collectAsState().value,
+                        postError = homeVm.postError.collectAsState().value, onClearPostError = homeVm::clearPostError,
                         onOpenProfile = ::openPublicProfile,
+                        onCreateBookClick = { showCreateBook = true },
                         initialCommentPostId = notificationPostTargetId,
                         onInitialCommentPostConsumed = { notificationPostTargetId = null },
                         onStoryReply = { story ->
@@ -473,7 +475,7 @@ fun AppNavHost(
                                 }
                             }
                         },
-                        onStoryLike = vm::toggleStoryLike, onStoriesRefresh = vm::refreshStories
+                        onStoryLike = homeVm::toggleStoryLike, onStoriesRefresh = homeVm::refreshStories
                     )
                 }
                 BottomNavTab.DISCOVER -> BookReelsDiscoverScreen(

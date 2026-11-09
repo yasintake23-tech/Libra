@@ -36,6 +36,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,16 +65,58 @@ import com.libra.app.domain.model.BookStatus
  * If cover image exists, loads from CDN; otherwise displays a beautifully styled
  * minimalist typographic book cover with subtle leather/paper gradient and category badge.
  */
+/**
+ * Shared Premium Book Cover Component.
+ * Supports Cloudflare R2 signed URL resolution (identical to posts/DMs),
+ * smooth image loading with Coil, error handling, and elegant fallback cover.
+ */
 @Composable
 fun BookCover(
     book: Book,
     modifier: Modifier = Modifier,
-    cornerRadius: Int = 12
+    cornerRadius: Int = 12,
+    contentScale: ContentScale = ContentScale.Crop
 ) {
+    BookCover(
+        coverUrlOrKey = book.displayCoverUrl,
+        title = book.title,
+        authorName = book.authorName,
+        categoryName = book.category.displayName,
+        modifier = modifier,
+        cornerRadius = cornerRadius,
+        contentScale = contentScale
+    )
+}
+
+@Composable
+fun BookCover(
+    coverUrlOrKey: String,
+    title: String = "",
+    authorName: String = "",
+    categoryName: String = "",
+    modifier: Modifier = Modifier,
+    cornerRadius: Int = 12,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val rawCover = coverUrlOrKey.trim()
     val shape = RoundedCornerShape(cornerRadius.dp)
-    val coverUrl = if (book.coverImageUrl.isNotBlank()) {
-        ServiceLocator.storageRepository.getPublicCdnUrl(book.coverImageUrl)
-    } else ""
+
+    var signedUrl by remember(rawCover) {
+        mutableStateOf<String?>(
+            if (rawCover.startsWith("https://") && !rawCover.contains(".r2.dev/")) rawCover else null
+        )
+    }
+    var loadFailed by remember(rawCover) { mutableStateOf(false) }
+
+    LaunchedEffect(rawCover) {
+        if (rawCover.isNotBlank()) {
+            signedUrl = runCatching {
+                ServiceLocator.storageRepository.getSignedMediaUrl(rawCover)
+            }.getOrDefault(rawCover)
+        } else {
+            signedUrl = null
+        }
+    }
 
     Box(
         modifier = modifier
@@ -85,26 +132,33 @@ fun BookCover(
             ),
         contentAlignment = Alignment.Center
     ) {
-        if (coverUrl.isNotBlank()) {
+        if (!signedUrl.isNullOrBlank() && !loadFailed) {
             AsyncImage(
-                model = coverUrl,
-                contentDescription = "${book.title} kapak",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                model = signedUrl,
+                contentDescription = if (title.isNotBlank()) "$title kapak" else "Kitap kapağı",
+                contentScale = contentScale,
+                modifier = Modifier.fillMaxSize(),
+                onError = {
+                    loadFailed = true
+                }
             )
         } else {
-            // Elegant fallback cover
+            // Elegant fallback cover (Libra signature typography & soft leather/paper aesthetic)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(8.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f), RoundedCornerShape((cornerRadius - 2).dp))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                        RoundedCornerShape((cornerRadius - 2).coerceAtLeast(4).dp)
+                    )
                     .padding(8.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = book.category.displayName,
+                    text = categoryName.ifBlank { "Libra" },
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
@@ -120,7 +174,7 @@ fun BookCover(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = book.title.ifBlank { "İsimsiz Kitap" },
+                        text = title.ifBlank { "İsimsiz Kitap" },
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center,
@@ -130,7 +184,7 @@ fun BookCover(
                 }
 
                 Text(
-                    text = book.authorName.ifBlank { "Libra Yazarı" },
+                    text = authorName.ifBlank { "Libra Yazarı" },
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

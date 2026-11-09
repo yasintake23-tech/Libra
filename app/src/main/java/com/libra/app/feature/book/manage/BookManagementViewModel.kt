@@ -238,9 +238,10 @@ class BookManagementViewModel(
                     }
                 ).first()) {
                     is AppResult.Success -> {
-                        val cdnUrl = storageRepository.getPublicCdnUrl(upload.data)
+                        val objectKey = upload.data
                         val updatedBook = current.copy(
-                            coverImageUrl = cdnUrl,
+                            coverImageUrl = objectKey,
+                            coverUrl = objectKey,
                             updatedAt = System.currentTimeMillis()
                         )
                         when (val updateResult = bookRepository.updateBook(updatedBook)) {

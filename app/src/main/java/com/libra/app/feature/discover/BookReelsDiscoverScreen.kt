@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.UserProfile
@@ -417,14 +418,33 @@ private fun BookReelItem(
     onShareBook: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val rawCover = book.displayCoverUrl.trim()
+    var resolvedCoverUrl by remember(rawCover) {
+        mutableStateOf<String?>(
+            if (rawCover.startsWith("https://") && !rawCover.contains(".r2.dev/")) rawCover else null
+        )
+    }
+    var coverLoadFailed by remember(rawCover) { mutableStateOf(false) }
+
+    LaunchedEffect(rawCover) {
+        if (rawCover.isNotBlank()) {
+            resolvedCoverUrl = runCatching {
+                ServiceLocator.storageRepository.getSignedMediaUrl(rawCover)
+            }.getOrDefault(rawCover)
+        } else {
+            resolvedCoverUrl = null
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Background Cover with Dark Gradient
-        if (book.coverImageUrl.isNotBlank()) {
+        if (!resolvedCoverUrl.isNullOrBlank() && !coverLoadFailed) {
             AsyncImage(
-                model = book.coverImageUrl,
+                model = resolvedCoverUrl,
                 contentDescription = book.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                onError = { coverLoadFailed = true }
             )
         } else {
             Box(

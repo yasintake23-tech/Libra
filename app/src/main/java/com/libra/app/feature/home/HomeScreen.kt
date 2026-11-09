@@ -149,6 +149,7 @@ fun HomeScreen(
     onStoryLike: (Story) -> Unit = {},
     onStoriesRefresh: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
+    onCreateBookClick: () -> Unit = {},
     initialCommentPostId: String? = null,
     onInitialCommentPostConsumed: () -> Unit = {}
 ) {
@@ -276,6 +277,71 @@ fun HomeScreen(
                         }
 
                         HomeSection.BOOKS -> {
+                            // Prominent Create Book Banner / Action Card
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                                        .clickable { onCreateBookClick() },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                modifier = Modifier.size(44.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        Icons.Default.Add,
+                                                        contentDescription = "Kitap Oluştur",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Yeni Kitap Yazmaya Başla",
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "Kendi hikâyeni 4 adımda okurlarla buluştur.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+
                             data.currentlyReading?.let { readingItem ->
                                 item {
                                     Surface(
@@ -389,6 +455,10 @@ fun HomeScreen(
                         onPost = {
                             showCreateMenu = false
                             onOpenCreatePost()
+                        },
+                        onBook = {
+                            showCreateMenu = false
+                            onCreateBookClick()
                         }
                     )
                 }
@@ -606,7 +676,8 @@ private fun CreateChoiceMenu(
     canStory: Boolean = true,
     canPost: Boolean = true,
     onStory: () -> Unit,
-    onPost: () -> Unit
+    onPost: () -> Unit,
+    onBook: () -> Unit
 ) {
     Card(
         modifier = Modifier.width(190.dp),
@@ -621,10 +692,10 @@ private fun CreateChoiceMenu(
                 modifier = Modifier
                     .fillMaxWidth()
                      .clickable(enabled = canStory, onClick = onStory).alpha(if (canStory) 1f else 0.45f)
-                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.AutoStories, null, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.AutoStories, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Text("Hikâye", fontWeight = FontWeight.SemiBold)
             }
@@ -633,12 +704,37 @@ private fun CreateChoiceMenu(
                 modifier = Modifier
                     .fillMaxWidth()
                      .clickable(enabled = canPost, onClick = onPost).alpha(if (canPost) 1f else 0.45f)
-                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Edit, null, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.Edit, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Text("Gönderi", fontWeight = FontWeight.SemiBold)
+            }
+
+            androidx.compose.material3.HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onBook)
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.MenuBook,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "Kitap Yaz",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

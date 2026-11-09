@@ -22,6 +22,7 @@ data class Book(
     val description: String = "",
     val discoverySummary: String = "",
     val coverImageUrl: String = "",
+    val coverUrl: String = "",
     val category: BookCategory = BookCategory.FICTION,
     val status: BookStatus = BookStatus.DRAFT,
     val rating: Float = 0f,
@@ -45,4 +46,7 @@ data class Book(
     val seriesName: String = "",
     val seriesOrder: Int = 0,
     val visibility: String = "PUBLIC" // PUBLIC, UNLISTED, PRIVATE
-)
+) {
+    val displayCoverUrl: String
+        get() = coverImageUrl.ifBlank { coverUrl }
+}
