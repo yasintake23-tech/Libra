@@ -370,7 +370,7 @@ class BookDiscoveryAndMediaUpgradeTest {
                 bookId = sampleBook.id,
                 chapterNumber = 1,
                 title = "Giriş",
-                content = "Yıllar sonra memlekete döndüğümde her şey çok değişmişti. " + "D".repeat(1300) + ". Devamı vardı.",
+                content = "Yıllar sonra memlekete döndüğümde her şey çok değişmişti. " + "D".repeat(2200) + ". Devamı vardı.",
                 isPublished = true,
                 isArchived = false
             )
