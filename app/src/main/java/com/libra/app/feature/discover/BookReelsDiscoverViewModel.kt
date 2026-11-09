@@ -95,11 +95,11 @@ class BookReelsDiscoverViewModel(
             is AppResult.Success -> {
                 val data = result.data
                 val updated = _state.value.engagements.toMutableMap()
-                updated[bookId] = BookEngagementUi(
-                    isLiked = data.isLiked,
-                    likesCount = if (data.likesCount > 0) data.likesCount else fallbackLikes,
-                    isSaved = data.isSaved,
-                    commentsCount = data.commentsCount
+                val current = updated[bookId] ?: BookEngagementUi(likesCount = fallbackLikes)
+                updated[bookId] = current.copy(
+                    isLiked = data.liked,
+                    likesCount = fallbackLikes,
+                    isSaved = data.saved
                 )
                 _state.value = _state.value.copy(engagements = updated)
             }
@@ -233,9 +233,10 @@ class BookReelsDiscoverViewModel(
             id = "c-${System.currentTimeMillis()}",
             bookId = bookId,
             userId = user.uid,
-            userName = user.displayName?.ifBlank { "Libra Okuru" } ?: "Libra Okuru",
-            userAvatarUrl = user.photoUrl.orEmpty(),
-            content = text.trim(),
+            authorName = user.displayName.ifBlank { "Libra Okuru" },
+            authorUsername = user.username,
+            authorPhotoUrl = user.profileImageUrl,
+            text = text.trim(),
             createdAt = System.currentTimeMillis()
         )
 

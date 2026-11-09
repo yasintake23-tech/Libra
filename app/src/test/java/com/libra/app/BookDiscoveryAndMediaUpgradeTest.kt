@@ -352,15 +352,11 @@ class BookDiscoveryAndMediaUpgradeTest {
         }
 
         override suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> {
-            val book = books.find { it.id == bookId } ?: Book()
             return AppResult.Success(
                 BookEngagement(
                     bookId = bookId,
-                    userId = userId,
-                    isLiked = false,
-                    isSaved = false,
-                    likesCount = book.likesCount,
-                    commentsCount = comments.count { it.bookId == bookId }
+                    liked = false,
+                    saved = false
                 )
             )
         }

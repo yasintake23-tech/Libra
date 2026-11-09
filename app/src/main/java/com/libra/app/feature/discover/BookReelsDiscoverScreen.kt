@@ -189,18 +189,19 @@ fun BookReelsDiscoverScreen(
                                     verticalAlignment = Alignment.Top
                                 ) {
                                     UserAvatar(
-                                        avatarUrl = comment.userAvatarUrl,
+                                        photoUrl = comment.authorPhotoUrl,
+                                        initials = comment.authorName.take(1).uppercase().ifBlank { "L" },
                                         size = 32.dp
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = comment.userName.ifBlank { "Libra Okuru" },
+                                            text = comment.authorName.ifBlank { "Libra Okuru" },
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                                         )
                                         Spacer(Modifier.height(2.dp))
                                         Text(
-                                            text = comment.content,
+                                            text = comment.text,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
@@ -519,7 +520,8 @@ private fun BookReelItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 UserAvatar(
-                    avatarUrl = null,
+                    photoUrl = null,
+                    initials = book.authorName.take(1).uppercase().ifBlank { "L" },
                     size = 24.dp
                 )
                 Spacer(Modifier.width(8.dp))
@@ -619,7 +621,11 @@ private fun BookReelItem(
                     .clickable(onClick = onOpenProfile)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    UserAvatar(avatarUrl = null, size = 40.dp)
+                    UserAvatar(
+                        photoUrl = null,
+                        initials = book.authorName.take(1).uppercase().ifBlank { "L" },
+                        size = 40.dp
+                    )
                 }
             }
 
