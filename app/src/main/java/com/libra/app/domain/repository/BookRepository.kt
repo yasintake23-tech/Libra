@@ -37,6 +37,10 @@ interface BookRepository {
         AppResult.Success(Unit)
     suspend fun duplicateChapter(bookId: String, chapterId: String): AppResult<Chapter> =
         AppResult.Error(AppError.Database("Bölüm çoğaltma işlemi desteklenmiyor."))
+    suspend fun archiveChapter(bookId: String, chapterId: String): AppResult<Unit> =
+        AppResult.Error(AppError.Database("Bölüm arşivleme işlemi desteklenmiyor."))
+    suspend fun unarchiveChapter(bookId: String, chapterId: String): AppResult<Unit> =
+        AppResult.Error(AppError.Database("Arşivden çıkarma işlemi desteklenmiyor."))
     suspend fun publishBook(bookId: String): AppResult<Book> =
         AppResult.Error(AppError.Database("Yayınlama işlemi desteklenmiyor."))
     suspend fun unpublishBook(bookId: String): AppResult<Book> =

@@ -24,8 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -35,7 +38,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Publish
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +52,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -54,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -89,6 +98,10 @@ fun BookManagementHubScreen(
     val currentBook = state.book ?: book
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showActionBottomSheet by remember { mutableStateOf(false) }
+    var showValidationDialog by remember { mutableStateOf<List<String>?>(null) }
+    var showArchivePicker by remember { mutableStateOf(false) }
+    var showUnarchivePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(book.id) {
         viewModel.initialize(book)
@@ -138,6 +151,34 @@ fun BookManagementHubScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
+        },
+        bottomBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Button(
+                        onClick = { showActionBottomSheet = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Kitap İşlemleri / Hızlı Eylemler",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
@@ -295,8 +336,8 @@ fun BookManagementHubScreen(
             item {
                 MenuActionCard(
                     title = "2. Bölüm Yönetimi",
-                    description = "${state.chapters.size} bölüm • Bölüm ekle, sırala, yayınla veya çoğalt.",
-                    badge = "${state.chapters.size}",
+                    description = "${state.activeChapters.size} aktif bölüm • ${state.archivedChapters.size} arşiv • Bölüm sırala ve yönet.",
+                    badge = "${state.activeChapters.size}",
                     icon = Icons.Default.FormatListNumbered,
                     iconBgColor = Color(0xFFE8F5E9),
                     iconTint = Color(0xFF2E7D32),
@@ -304,11 +345,11 @@ fun BookManagementHubScreen(
                 )
             }
 
-            // 3. Yazma Stüdyosu
+            // 3. Kitap Yazma Araçları
             item {
                 MenuActionCard(
-                    title = "3. Yazma Stüdyosu",
-                    description = "Geniş yazma tuvali, canlı kelime sayacı ve otomatik taslak kaydı.",
+                    title = "3. Kitap Yazma Araçları",
+                    description = "Yazma Stüdyosu tuvali, taslak geçmişi, canlı kelime sayacı ve bölüm yazımı.",
                     icon = Icons.Default.Edit,
                     iconBgColor = Color(0xFFEDE7F6),
                     iconTint = Color(0xFF512DA8),
@@ -316,11 +357,12 @@ fun BookManagementHubScreen(
                 )
             }
 
-            // 4. Yayınlama Ayarları
+            // 4. Yayınlama ve Gizlilik
             item {
                 MenuActionCard(
-                    title = "4. Yayınlama Ayarları",
-                    description = if (currentBook.status == BookStatus.PUBLISHED) "Kitap yayında • Güncellemeleri yayınla" else "Kitap taslak • Yayınlama kontrol listesi",
+                    title = "4. Yayınlama ve Gizlilik",
+                    description = if (currentBook.status == BookStatus.PUBLISHED) "Kitap yayında • Ön kontrol listesi ve gizlilik" else "Kitap taslak • Ön kontrol listesi ve gizlilik",
+                    badge = if (currentBook.status == BookStatus.PUBLISHED) "Yayında" else "Taslak",
                     icon = Icons.Default.Publish,
                     iconBgColor = Color(0xFFFFF3E0),
                     iconTint = Color(0xFFE65100),
@@ -328,52 +370,15 @@ fun BookManagementHubScreen(
                 )
             }
 
-            // 5. Gizlilik ve Görünürlük
+            // 5. Kitap İstatistikleri
             item {
                 MenuActionCard(
-                    title = "5. Gizlilik ve Görünürlük",
-                    description = "Herkese Açık, Liste Dışı veya Gizli erişim ve içerik uyarıları.",
-                    icon = Icons.Default.Lock,
-                    iconBgColor = Color(0xFFE1F5FE),
-                    iconTint = Color(0xFF0277BD),
-                    onClick = { viewModel.navigateToSubPage(ManagementSubPage.PRIVACY) }
-                )
-            }
-
-            // 6. İstatistikler
-            item {
-                MenuActionCard(
-                    title = "6. İstatistikler",
-                    description = "Okuma analitiği, okur etkileşimleri ve toplam okuma süresi.",
+                    title = "5. Kitap İstatistikleri",
+                    description = "Okuma analitiği, okur yorumları (${state.comments.size}), etkileşimler ve süreler.",
                     icon = Icons.Default.Analytics,
                     iconBgColor = Color(0xFFFCE4EC),
                     iconTint = Color(0xFFC2185B),
                     onClick = { viewModel.navigateToSubPage(ManagementSubPage.ANALYTICS) }
-                )
-            }
-
-            // 7. Kitap Yorumları
-            item {
-                MenuActionCard(
-                    title = "7. Kitap Yorumları",
-                    description = "${state.comments.size} okur yorumu • İncele ve yönet.",
-                    badge = if (state.comments.isNotEmpty()) "${state.comments.size}" else null,
-                    icon = Icons.Default.Message,
-                    iconBgColor = Color(0xFFE0F2F1),
-                    iconTint = Color(0xFF00796B),
-                    onClick = { viewModel.navigateToSubPage(ManagementSubPage.COMMENTS) }
-                )
-            }
-
-            // 8. Taslaklar ve Sürüm Geçmişi
-            item {
-                MenuActionCard(
-                    title = "8. Taslaklar ve Sürüm Geçmişi",
-                    description = "Bulut senkronizasyon durumu ve son kayıt zamanları.",
-                    icon = Icons.Default.History,
-                    iconBgColor = MaterialTheme.colorScheme.surfaceVariant,
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = { viewModel.navigateToSubPage(ManagementSubPage.DRAFTS) }
                 )
             }
 
@@ -423,7 +428,252 @@ fun BookManagementHubScreen(
                     }
                 }
             }
+
+            item {
+                Spacer(Modifier.height(40.dp))
+            }
         }
+    }
+
+    if (showActionBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showActionBottomSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    text = "Kitap İşlemleri",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "Kitabın genel durumunu yönetmek için bir işlem seçin.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(14.dp))
+
+                ActionSheetItem(
+                    title = "1. Tüm Kitabı Kaydet",
+                    subtitle = "Tüm bölümleri ve kitap ayarlarını buluta kaydeder.",
+                    icon = Icons.Default.Save,
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        showActionBottomSheet = false
+                        viewModel.saveAllBook()
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "2. Kitabı Taslak Olarak Kaydet",
+                    subtitle = "Kitabın durumunu taslak (DRAFT) olarak günceller.",
+                    icon = Icons.Default.Edit,
+                    tint = Color(0xFFF57C00),
+                    onClick = {
+                        showActionBottomSheet = false
+                        viewModel.unpublishBook()
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "3. Kitabı Yayınla",
+                    subtitle = "Ön kontrol listesini doğrular ve okurların erişimine açar.",
+                    icon = Icons.Default.Publish,
+                    tint = Color(0xFF2E7D32),
+                    onClick = {
+                        showActionBottomSheet = false
+                        val missing = viewModel.validatePrePublish()
+                        if (missing.isNotEmpty()) {
+                            showValidationDialog = missing
+                        } else {
+                            viewModel.publishBook()
+                        }
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "4. Yayından Kaldır",
+                    subtitle = "Kitabı yayından çeker, okurlar artık erişemez.",
+                    icon = Icons.Default.VisibilityOff,
+                    tint = Color(0xFFE65100),
+                    onClick = {
+                        showActionBottomSheet = false
+                        viewModel.unpublishBook()
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "5. Bölümü Arşivle",
+                    subtitle = "Aktif bir bölümü yayından kaldırıp arşiv klasörüne alır.",
+                    icon = Icons.Default.Archive,
+                    tint = Color(0xFF7E57C2),
+                    onClick = {
+                        showActionBottomSheet = false
+                        showArchivePicker = true
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "6. Arşivden Bölümü Geri Yükle",
+                    subtitle = "Arşivlenmiş bir bölümü tekrar aktif bölümlere kazandırır.",
+                    icon = Icons.Default.Unarchive,
+                    tint = Color(0xFF0277BD),
+                    onClick = {
+                        showActionBottomSheet = false
+                        showUnarchivePicker = true
+                    }
+                )
+
+                ActionSheetItem(
+                    title = "7. Kitap Yönetimine Dön",
+                    subtitle = "İşlem yapmadan yönetim merkezine geri döner.",
+                    icon = Icons.Default.Close,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = {
+                        showActionBottomSheet = false
+                    }
+                )
+
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    showValidationDialog?.let { missingList ->
+        AlertDialog(
+            onDismissRequest = { showValidationDialog = null },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Yayınlama Öncesi Kontrol Listesi") },
+            text = {
+                Column {
+                    Text(
+                        text = "Kitabınızı yayınlamak için lütfen eksik maddeleri tamamlayın:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    missingList.forEach { item ->
+                        Text(
+                            text = "• $item",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showValidationDialog = null }) {
+                    Text("Anladım")
+                }
+            }
+        )
+    }
+
+    if (showArchivePicker) {
+        val activeChapters = state.activeChapters
+        AlertDialog(
+            onDismissRequest = { showArchivePicker = false },
+            icon = { Icon(Icons.Default.Archive, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Bölümü Arşivle") },
+            text = {
+                if (activeChapters.isEmpty()) {
+                    Text("Arşivlenebilecek aktif bölüm bulunmuyor.")
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().height(220.dp)) {
+                        items(activeChapters.size) { i ->
+                            val ch = activeChapters[i]
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showArchivePicker = false
+                                        viewModel.archiveChapter(ch)
+                                    }
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${ch.chapterNumber}. ${ch.title.ifBlank { "Bölüm" }}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "Arşivle",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showArchivePicker = false }) {
+                    Text("Kapat")
+                }
+            }
+        )
+    }
+
+    if (showUnarchivePicker) {
+        val archivedChapters = state.archivedChapters
+        AlertDialog(
+            onDismissRequest = { showUnarchivePicker = false },
+            icon = { Icon(Icons.Default.Unarchive, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Arşivden Geri Yükle") },
+            text = {
+                if (archivedChapters.isEmpty()) {
+                    Text("Arşivde bölüm bulunmuyor.")
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().height(220.dp)) {
+                        items(archivedChapters.size) { i ->
+                            val ch = archivedChapters[i]
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showUnarchivePicker = false
+                                        viewModel.unarchiveChapter(ch)
+                                    }
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${ch.chapterNumber}. ${ch.title.ifBlank { "Bölüm" }}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "Geri Yükle",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showUnarchivePicker = false }) {
+                    Text("Kapat")
+                }
+            }
+        )
     }
 
     if (showDeleteConfirmDialog) {
@@ -555,6 +805,54 @@ private fun MenuActionCard(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
+        }
+    }
+}
+
+@Composable
+private fun ActionSheetItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = tint.copy(alpha = 0.12f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.libra.app.feature.messages
 
 import androidx.compose.foundation.background
 import coil.compose.AsyncImage
+import com.libra.app.ui.components.FullScreenImageViewerDialog
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -994,6 +995,7 @@ private fun DirectConversationScreen(
                                 if (message.mediaUrl.isNotBlank()) {
                                     var resolvedMediaUrl by remember(message.mediaUrl) { mutableStateOf<String?>(null) }
                                     var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
+                                    var showDmImageFullscreen by remember(message.mediaUrl) { mutableStateOf(false) }
 
                                     LaunchedEffect(message.mediaUrl) {
                                         while (true) {
@@ -1014,13 +1016,25 @@ private fun DirectConversationScreen(
                                             }
                                         }
                                     } else {
+                                        val dmImgUrl = resolvedMediaUrl
                                         AsyncImage(
-                                            model = resolvedMediaUrl,
+                                            model = dmImgUrl,
                                             contentDescription = "Gönderilen fotoğraf",
-                                            modifier = Modifier.width(220.dp).heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)),
+                                            modifier = Modifier
+                                                .width(220.dp)
+                                                .heightIn(max = 280.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable { showDmImageFullscreen = true },
                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                             onError = { mediaFailed = true }
                                         )
+
+                                        if (showDmImageFullscreen && dmImgUrl != null) {
+                                            FullScreenImageViewerDialog(
+                                                mediaUrl = dmImgUrl,
+                                                onDismiss = { showDmImageFullscreen = false }
+                                            )
+                                        }
                                     }
                                 }
 

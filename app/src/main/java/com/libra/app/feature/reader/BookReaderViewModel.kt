@@ -57,12 +57,13 @@ class BookReaderViewModel : ViewModel() {
                 when (result) {
                     is AppResult.Success -> {
                         val allChapters = result.data.sortedBy { it.chapterNumber }
+                        val nonArchivedChapters = allChapters.filter { !it.isArchived }
                         val isAuthor = userId.isNotBlank() && book.ownerId == userId
-                        val publishedChapters = allChapters.filter { it.isPublished }
+                        val publishedChapters = nonArchivedChapters.filter { it.isPublished }
                         val visibleChapters = when {
                             isAuthor -> allChapters
                             publishedChapters.isNotEmpty() -> publishedChapters
-                            book.status == com.libra.app.domain.model.BookStatus.PUBLISHED -> allChapters
+                            book.status == com.libra.app.domain.model.BookStatus.PUBLISHED -> nonArchivedChapters
                             else -> emptyList()
                         }
                         _state.value = _state.value.copy(

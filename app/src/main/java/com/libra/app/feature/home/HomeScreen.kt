@@ -104,6 +104,7 @@ import com.libra.app.domain.model.SharedContent
 import com.libra.app.feature.share.ShareSheet
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.ui.components.BookCover
+import com.libra.app.ui.components.FullScreenImageViewerDialog
 import com.libra.app.ui.components.HorizontalBookCard
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.ui.components.SectionHeader
@@ -782,10 +783,11 @@ private fun PostCard(
                 Text(post.text, style = MaterialTheme.typography.bodyLarge)
             }
 
-            // Post Media Image (Gönderi görseli -> Gönderi detayları)
+            // Post Media Image (Gönderi görseli -> Tam Ekran Görüntüleyici)
             if (post.mediaUrl.isNotBlank() && (post.mediaType == "image" || post.mediaType.startsWith("image/"))) {
                 Spacer(Modifier.height(12.dp))
                 var mediaFailed by remember(post.mediaUrl) { mutableStateOf(false) }
+                var showFullScreenImage by remember(post.mediaUrl) { mutableStateOf(false) }
                 if (mediaFailed) {
                     Surface(
                         modifier = Modifier
@@ -822,17 +824,25 @@ private fun PostCard(
                             )
                         }
                     } else {
+                        val currentUrl = mediaUrl
                         AsyncImage(
-                            model = mediaUrl,
+                            model = currentUrl,
                             contentDescription = "Gönderi fotoğrafı",
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(220.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .clickable(onClick = onDetailClick),
+                                .clickable { showFullScreenImage = true },
                             contentScale = ContentScale.Crop,
                             onError = { mediaFailed = true }
                         )
+
+                        if (showFullScreenImage && currentUrl != null) {
+                            FullScreenImageViewerDialog(
+                                mediaUrl = currentUrl,
+                                onDismiss = { showFullScreenImage = false }
+                            )
+                        }
                     }
                 }
             }

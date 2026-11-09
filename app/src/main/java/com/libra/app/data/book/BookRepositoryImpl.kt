@@ -467,10 +467,43 @@ class BookRepositoryImpl : BookRepository {
         }
     }
 
+    override suspend fun archiveChapter(bookId: String, chapterId: String): AppResult<Unit> {
+        val ref = chaptersRef?.child(bookId)?.child(chapterId) ?: return databaseError()
+        return try {
+            ref.updateChildren(mapOf(
+                "isArchived" to true,
+                "isPublished" to false,
+                "updatedAt" to System.currentTimeMillis()
+            )).await()
+            syncBookChapterCount(bookId)
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bölüm arşivlenemedi: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun unarchiveChapter(bookId: String, chapterId: String): AppResult<Unit> {
+        val ref = chaptersRef?.child(bookId)?.child(chapterId) ?: return databaseError()
+        return try {
+            ref.updateChildren(mapOf(
+                "isArchived" to false,
+                "updatedAt" to System.currentTimeMillis()
+            )).await()
+            syncBookChapterCount(bookId)
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bölüm arşivden çıkarılamadı: ${e.localizedMessage}", e))
+        }
+    }
+
     private suspend fun syncBookChapterCount(bookId: String) {
         runCatching {
-            val count = chaptersRef?.child(bookId)?.get()?.await()?.childrenCount?.toInt() ?: 0
-            booksRef?.child(bookId)?.child("chapterCount")?.setValue(count)?.await()
+            val snap = chaptersRef?.child(bookId)?.get()?.await()
+            val activeCount = snap?.children?.count { child ->
+                val isArchived = child.child("isArchived").getValue(Boolean::class.java) ?: false
+                !isArchived
+            } ?: 0
+            booksRef?.child(bookId)?.child("chapterCount")?.setValue(activeCount)?.await()
         }
     }
 
@@ -503,6 +536,14 @@ class BookRepositoryImpl : BookRepository {
             else -> false
         }
 
+        val rawArchived = child.child("isArchived").value
+        val isArchived = when (rawArchived) {
+            is Boolean -> rawArchived
+            is String -> rawArchived.equals("true", ignoreCase = true)
+            is Number -> rawArchived.toInt() != 0
+            else -> false
+        }
+
         val publishedAt = (child.child("publishedAt").value as? Number)?.toLong() ?: 0L
         val createdAt = (child.child("createdAt").value as? Number)?.toLong() ?: 0L
         val updatedAt = (child.child("updatedAt").value as? Number)?.toLong() ?: createdAt
@@ -515,6 +556,7 @@ class BookRepositoryImpl : BookRepository {
             content = content,
             wordCount = wordCount,
             isPublished = isPublished,
+            isArchived = isArchived,
             publishedAt = publishedAt,
             createdAt = createdAt,
             updatedAt = updatedAt

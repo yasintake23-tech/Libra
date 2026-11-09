@@ -47,11 +47,17 @@ data class BookManagementState(
     val isSaving: Boolean = false,
     val isAutoSaving: Boolean = false,
     val isPublishing: Boolean = false,
+    val isUploadingCover: Boolean = false,
+    val coverUploadProgress: Int = 0,
+    val coverUploadError: String? = null,
     val lastSavedTimestamp: Long = 0L,
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val hasUnsavedChanges: Boolean = false
-)
+) {
+    val activeChapters: List<Chapter> get() = chapters.filter { !it.isArchived }
+    val archivedChapters: List<Chapter> get() = chapters.filter { it.isArchived }
+}
 
 class BookManagementViewModel(
     private val bookRepository: BookRepository = ServiceLocator.bookRepository,
@@ -66,6 +72,9 @@ class BookManagementViewModel(
     private var bookJob: Job? = null
     private var commentsJob: Job? = null
     private var autosaveJob: Job? = null
+    private var lastCoverBytes: ByteArray? = null
+    private var lastCoverFileName: String? = null
+    private var lastCoverContentType: String? = null
 
     fun initialize(book: Book) {
         if (_state.value.book?.id == book.id && _state.value.chapters.isNotEmpty()) return
@@ -203,8 +212,18 @@ class BookManagementViewModel(
         val current = _state.value.book ?: return
         val user = authRepository.currentUser.value ?: return
 
+        lastCoverBytes = bytes
+        lastCoverFileName = fileName
+        lastCoverContentType = contentType
+
         viewModelScope.launch {
-            _state.value = _state.value.copy(isSaving = true, errorMessage = null)
+            _state.value = _state.value.copy(
+                isSaving = true,
+                isUploadingCover = true,
+                coverUploadProgress = 0,
+                coverUploadError = null,
+                errorMessage = null
+            )
             try {
                 val uploadReq = StorageUploadRequest(
                     fileName = fileName.ifBlank { "cover-${System.currentTimeMillis()}.jpg" },
@@ -212,10 +231,16 @@ class BookManagementViewModel(
                     contentType = contentType.ifBlank { "image/jpeg" },
                     targetDirectory = "users/${user.uid}/covers"
                 )
-                when (val upload = storageRepository.uploadMedia(uploadReq).first()) {
+                when (val upload = storageRepository.uploadMedia(
+                    uploadReq,
+                    onProgress = { progress ->
+                        _state.value = _state.value.copy(coverUploadProgress = progress)
+                    }
+                ).first()) {
                     is AppResult.Success -> {
+                        val cdnUrl = storageRepository.getPublicCdnUrl(upload.data)
                         val updatedBook = current.copy(
-                            coverImageUrl = upload.data,
+                            coverImageUrl = cdnUrl,
                             updatedAt = System.currentTimeMillis()
                         )
                         when (val updateResult = bookRepository.updateBook(updatedBook)) {
@@ -223,12 +248,17 @@ class BookManagementViewModel(
                                 _state.value = _state.value.copy(
                                     book = updateResult.data,
                                     isSaving = false,
+                                    isUploadingCover = false,
+                                    coverUploadProgress = 100,
+                                    coverUploadError = null,
                                     successMessage = "Kapak görseli başarıyla güncellendi."
                                 )
                             }
                             is AppResult.Error -> {
                                 _state.value = _state.value.copy(
                                     isSaving = false,
+                                    isUploadingCover = false,
+                                    coverUploadError = updateResult.error.message,
                                     errorMessage = updateResult.error.message
                                 )
                             }
@@ -237,6 +267,8 @@ class BookManagementViewModel(
                     is AppResult.Error -> {
                         _state.value = _state.value.copy(
                             isSaving = false,
+                            isUploadingCover = false,
+                            coverUploadError = upload.error.message,
                             errorMessage = "Kapak yüklenemedi: ${upload.error.message}"
                         )
                     }
@@ -244,10 +276,23 @@ class BookManagementViewModel(
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     isSaving = false,
+                    isUploadingCover = false,
+                    coverUploadError = e.localizedMessage,
                     errorMessage = e.localizedMessage ?: "Kapak yüklenirken hata oluştu."
                 )
             }
         }
+    }
+
+    fun retryCoverUpload() {
+        val bytes = lastCoverBytes ?: return
+        val name = lastCoverFileName.orEmpty()
+        val mime = lastCoverContentType.orEmpty()
+        uploadBookCover(bytes, name, mime)
+    }
+
+    fun clearCoverError() {
+        _state.value = _state.value.copy(coverUploadError = null)
     }
 
     fun createNewChapter(title: String = "") {
@@ -446,13 +491,102 @@ class BookManagementViewModel(
         }
     }
 
-    fun publishBook() {
+    fun archiveChapter(chapter: Chapter) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isSaving = true, errorMessage = null)
+            when (val result = bookRepository.archiveChapter(chapter.bookId, chapter.id)) {
+                is AppResult.Success -> {
+                    val updatedChapters = _state.value.chapters.map {
+                        if (it.id == chapter.id) it.copy(isArchived = true, isPublished = false) else it
+                    }
+                    _state.value = _state.value.copy(
+                        isSaving = false,
+                        chapters = updatedChapters,
+                        activeStudioChapter = updatedChapters.firstOrNull { !it.isArchived },
+                        successMessage = "Bölüm arşivlendi."
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(
+                        isSaving = false,
+                        errorMessage = result.error.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun unarchiveChapter(chapter: Chapter) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isSaving = true, errorMessage = null)
+            when (val result = bookRepository.unarchiveChapter(chapter.bookId, chapter.id)) {
+                is AppResult.Success -> {
+                    val updatedChapters = _state.value.chapters.map {
+                        if (it.id == chapter.id) it.copy(isArchived = false) else it
+                    }
+                    _state.value = _state.value.copy(
+                        isSaving = false,
+                        chapters = updatedChapters,
+                        successMessage = "Bölüm arşivden geri yüklendi."
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(
+                        isSaving = false,
+                        errorMessage = result.error.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun validatePrePublish(): List<String> {
+        val missing = mutableListOf<String>()
+        val book = _state.value.book
+        if (book == null) {
+            missing.add("Kitap verisi bulunamadı.")
+            return missing
+        }
+        if (book.title.trim().isBlank()) {
+            missing.add("Kitap başlığı boş olamaz.")
+        }
+        if (book.description.trim().isBlank()) {
+            missing.add("Kitap açıklaması girilmelidir.")
+        }
+        val active = _state.value.activeChapters
+        if (active.isEmpty()) {
+            missing.add("En az 1 adet aktif bölüm eklenmelidir.")
+        }
+        return missing
+    }
+
+    fun saveAllBook() {
+        saveChapterNow(isAutosave = false)
+        val book = _state.value.book ?: return
+        viewModelScope.launch {
+            bookRepository.updateBook(book)
+            _state.value = _state.value.copy(successMessage = "Tüm kitap başarıyla kaydedildi.")
+        }
+    }
+
+    fun publishBook(force: Boolean = false) {
         val current = _state.value.book ?: return
+        if (!force) {
+            val missing = validatePrePublish()
+            if (missing.isNotEmpty()) {
+                _state.value = _state.value.copy(
+                    errorMessage = "Yayınlama öncesi eksikler var:\n" + missing.joinToString("\n• ", prefix = "• ")
+                )
+                return
+            }
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isPublishing = true, errorMessage = null)
             when (val result = bookRepository.publishBook(current.id)) {
                 is AppResult.Success -> {
-                    val publishedChapters = _state.value.chapters.map { it.copy(isPublished = true) }
+                    val publishedChapters = _state.value.chapters.map {
+                        if (!it.isArchived) it.copy(isPublished = true) else it
+                    }
                     _state.value = _state.value.copy(
                         book = result.data,
                         chapters = publishedChapters,

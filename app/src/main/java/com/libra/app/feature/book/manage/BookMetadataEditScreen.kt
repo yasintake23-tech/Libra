@@ -39,6 +39,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -48,6 +49,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -183,42 +185,114 @@ fun BookMetadataEditScreen(
         ) {
             // Cover Image Selection
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    book?.let {
-                        BookCover(
-                            book = it,
-                            modifier = Modifier
-                                .width(96.dp)
-                                .aspectRatio(0.68f),
-                            cornerRadius = 12
-                        )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        book?.let {
+                            BookCover(
+                                book = it,
+                                modifier = Modifier
+                                    .width(96.dp)
+                                    .aspectRatio(0.68f),
+                                cornerRadius = 12
+                            )
+                        }
+
+                        Spacer(Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Kitap Kapağı",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Cloudflare R2 üzerinden yüksek kalitede saklanır.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick = { imagePicker.launch("image/*") },
+                                enabled = !state.isUploadingCover,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                if (state.isUploadingCover) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Yükleniyor...")
+                                } else {
+                                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Kapağı Değiştir")
+                                }
+                            }
+                        }
                     }
 
-                    Spacer(Modifier.width(16.dp))
+                    if (state.isUploadingCover) {
+                        Spacer(Modifier.height(12.dp))
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Kapak yükleniyor...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "%${state.coverUploadProgress}",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { state.coverUploadProgress / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Kitap Kapağı",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Cloudflare R2 üzerinden yüksek kalitede saklanır.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = { imagePicker.launch("image/*") },
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    state.coverUploadError?.let { err ->
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
                         ) {
-                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Kapağı Değiştir")
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Yükleme Hatası: $err",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(onClick = { viewModel.clearCoverError() }) {
+                                        Text("Kapat")
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { viewModel.retryCoverUpload() },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Tekrar Dene")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
