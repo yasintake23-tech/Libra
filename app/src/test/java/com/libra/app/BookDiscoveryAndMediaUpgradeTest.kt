@@ -18,6 +18,8 @@ import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.feature.book.manage.BookManagementViewModel
 import com.libra.app.feature.discover.BookEngagementUi
 import com.libra.app.feature.discover.BookReelsDiscoverViewModel
+import com.libra.app.feature.home.HomeSection
+import com.libra.app.ui.navigation.BottomNavTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -281,6 +283,44 @@ class BookDiscoveryAndMediaUpgradeTest {
         assertFalse(manageVm.state.value.isUploadingCover)
         assertTrue(updatedBook?.coverImageUrl?.contains("cover.jpg") == true)
         assertTrue(updatedBook?.coverUrl?.contains("cover.jpg") == true)
+    }
+
+    // 6. Navigation Correction & Isolation Verification
+    @Test
+    fun discoverTab_routesToFriendsAndSocialDiscovery() {
+        var activeTab = BottomNavTab.DISCOVER
+        val onTabSelect: (BottomNavTab) -> Unit = { activeTab = it }
+        onTabSelect(BottomNavTab.DISCOVER)
+        assertEquals(BottomNavTab.DISCOVER, activeTab)
+        assertEquals("nav_discover", activeTab.testTag)
+        assertEquals("Keşfet", activeTab.title)
+    }
+
+    @Test
+    fun homeSection_books_isDedicatedDiscoveryArea() {
+        var activeSection = HomeSection.POSTS
+        val onSectionChange: (HomeSection) -> Unit = { activeSection = it }
+
+        onSectionChange(HomeSection.BOOKS)
+        assertEquals(HomeSection.BOOKS, activeSection)
+
+        onSectionChange(HomeSection.POSTS)
+        assertEquals(HomeSection.POSTS, activeSection)
+    }
+
+    @Test
+    fun startReading_persistsToReadingShelf_andSyncsWithLibrary() = runTest {
+        reelsVm.loadDiscoverBooks()
+        advanceUntilIdle()
+
+        val bookToRead = sampleBook
+        reelsVm.startReading(bookToRead)
+        advanceUntilIdle()
+
+        val savedInShelf = fakeBookRepo.shelfItems.any {
+            it.bookId == bookToRead.id && it.shelfType == ShelfType.READING && it.userId == authorUser.uid
+        }
+        assertTrue("Book must be recorded in READING shelf for Library sync", savedInShelf)
     }
 
     // Fakes

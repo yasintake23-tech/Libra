@@ -41,7 +41,6 @@ import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
 import com.libra.app.feature.auth.GoogleAuthHelper
 import com.libra.app.feature.auth.LoginScreen
-import com.libra.app.feature.discover.BookReelsDiscoverScreen
 import com.libra.app.feature.friends.FriendsScreen
 import com.libra.app.feature.friends.FriendsState
 import com.libra.app.feature.friends.FriendsViewModel
@@ -452,6 +451,18 @@ fun AppNavHost(
                         postError = homeVm.postError.collectAsState().value, onClearPostError = homeVm::clearPostError,
                         onOpenProfile = ::openPublicProfile,
                         onCreateBookClick = { showCreateBook = true },
+                        onStartReading = { book ->
+                            selectedBook = book
+                            readerBook = book
+                        },
+                        onShareBook = { book ->
+                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, book.title)
+                                putExtra(android.content.Intent.EXTRA_TEXT, "${book.title} - ${book.authorName} Libra'da!\nhttps://libra.app/book/${book.id}")
+                            }
+                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Kitabı Paylaş"))
+                        },
                         initialCommentPostId = notificationPostTargetId,
                         onInitialCommentPostConsumed = { notificationPostTargetId = null },
                         onStoryReply = { story ->
@@ -478,28 +489,12 @@ fun AppNavHost(
                         onStoryLike = homeVm::toggleStoryLike, onStoriesRefresh = homeVm::refreshStories
                     )
                 }
-                BottomNavTab.DISCOVER -> BookReelsDiscoverScreen(
-                    friendsUiState = friendsState,
-                    onSearchFriends = friendsVm::updateSearchQuery,
+                BottomNavTab.DISCOVER -> FriendsScreen(
+                    uiState = friendsState,
+                    onSearchChanged = friendsVm::updateSearchQuery,
                     onFollowUser = { user -> friendsVm.toggleFollowUser(user) },
                     onUserClick = { user -> openPublicProfile(user.uid) },
-                    onRetryFriends = friendsVm::loadSocialData,
-                    onStartReading = { book ->
-                        selectedBook = book
-                        readerBook = book
-                    },
-                    onBookClick = { book ->
-                        selectedBook = book
-                    },
-                    onOpenProfile = ::openPublicProfile,
-                    onShareBook = { book ->
-                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, book.title)
-                            putExtra(android.content.Intent.EXTRA_TEXT, "${book.title} - ${book.authorName} Libra'da!\nhttps://libra.app/book/${book.id}")
-                        }
-                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Kitabı Paylaş"))
-                    }
+                    onRetry = friendsVm::loadSocialData
                 )
                 BottomNavTab.WRITE -> {
                     val state by writeVm.uiState.collectAsState()

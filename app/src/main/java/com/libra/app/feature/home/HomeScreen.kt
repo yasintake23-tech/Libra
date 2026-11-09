@@ -1,6 +1,8 @@
 package com.libra.app.feature.home
 
+import androidx.activity.compose.BackHandler
 import com.libra.app.core.di.ServiceLocator
+import com.libra.app.feature.discover.BookDiscoverySection
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -151,6 +153,9 @@ fun HomeScreen(
     onStoriesRefresh: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     onCreateBookClick: () -> Unit = {},
+    onStartReading: (Book) -> Unit = {},
+    onShareBook: (Book) -> Unit = {},
+    initialSection: HomeSection = HomeSection.POSTS,
     initialCommentPostId: String? = null,
     onInitialCommentPostConsumed: () -> Unit = {}
 ) {
@@ -165,7 +170,7 @@ fun HomeScreen(
             var commentText by remember { mutableStateOf("") }
             var replyTarget by remember { mutableStateOf<PostComment?>(null) }
             var showCreateMenu by remember { mutableStateOf(false) }
-            var selectedSection by remember { mutableStateOf(HomeSection.POSTS) }
+            var selectedSection by remember(initialSection) { mutableStateOf(initialSection) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
             var shareContent by remember { mutableStateOf<SharedContent?>(null) }
             var likeUsersPost by remember { mutableStateOf<Post?>(null) }
@@ -183,54 +188,54 @@ fun HomeScreen(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    modifier = modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 18.dp)
-                ) {
-                    item {
-                        HomeHeader(
-                            data.currentUser,
-                            onNavigateToProfile,
-                            onNotifications,
-                            unreadNotificationCount
-                        )
-                    }
-
-                    item {
-                        StoryStrip(
-                            stories = data.stories,
-                            currentUserId = data.currentUser?.uid.orEmpty(),
-                            onStoryClick = { story -> selectedStoryIndex = data.stories.indexOfFirst { it.id == story.id }.takeIf { it >= 0 } },
-                            onOpenProfile = onOpenProfile,
-                            onCreateStory = onOpenCreateStory,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                when (selectedSection) {
+                    HomeSection.POSTS -> {
+                        LazyColumn(
+                            modifier = modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 18.dp)
                         ) {
-                            HomeSectionButton(
-                                title = "Gönderiler",
-                                selected = selectedSection == HomeSection.POSTS,
-                                modifier = Modifier.weight(1f),
-                                onClick = { selectedSection = HomeSection.POSTS }
-                            )
-                            HomeSectionButton(
-                                title = "Kitaplar",
-                                selected = selectedSection == HomeSection.BOOKS,
-                                modifier = Modifier.weight(1f),
-                                onClick = { selectedSection = HomeSection.BOOKS }
-                            )
-                        }
-                    }
+                            item {
+                                HomeHeader(
+                                    data.currentUser,
+                                    onNavigateToProfile,
+                                    onNotifications,
+                                    unreadNotificationCount
+                                )
+                            }
 
-                    when (selectedSection) {
-                        HomeSection.POSTS -> {
+                            item {
+                                StoryStrip(
+                                    stories = data.stories,
+                                    currentUserId = data.currentUser?.uid.orEmpty(),
+                                    onStoryClick = { story -> selectedStoryIndex = data.stories.indexOfFirst { it.id == story.id }.takeIf { it >= 0 } },
+                                    onOpenProfile = onOpenProfile,
+                                    onCreateStory = onOpenCreateStory,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    HomeSectionButton(
+                                        title = "Gönderiler",
+                                        selected = true,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { selectedSection = HomeSection.POSTS }
+                                    )
+                                    HomeSectionButton(
+                                        title = "Kitaplar",
+                                        selected = false,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { selectedSection = HomeSection.BOOKS }
+                                    )
+                                }
+                            }
+
                             if (data.posts.isEmpty()) {
                                 item { EmptySection("Henüz gösterilecek gönderi yok.") }
                             } else {
@@ -276,155 +281,89 @@ fun HomeScreen(
                                 }
                             }
                         }
+                    }
 
-                        HomeSection.BOOKS -> {
-                            // Prominent Create Book Banner / Action Card
-                            item {
-                                Card(
+                    HomeSection.BOOKS -> {
+                        BackHandler(enabled = true) {
+                            selectedSection = HomeSection.POSTS
+                        }
+
+                        BookDiscoverySection(
+                            onStartReading = onStartReading,
+                            onBookClick = onBookClick,
+                            onOpenProfile = onOpenProfile,
+                            onShareBook = onShareBook,
+                            onCreateBookClick = onCreateBookClick,
+                            topBar = {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                                        .clickable { onCreateBookClick() },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                    )
+                                        .statusBarsPadding()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    Surface(
+                                        shape = RoundedCornerShape(24.dp),
+                                        color = Color.Black.copy(alpha = 0.55f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
+                                    ) {
+                                        Row(modifier = Modifier.padding(3.dp)) {
+                                            Surface(
+                                                shape = RoundedCornerShape(20.dp),
+                                                color = Color.Transparent,
+                                                modifier = Modifier.clickable { selectedSection = HomeSection.POSTS }
+                                            ) {
+                                                Text(
+                                                    text = "Gönderiler",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = Color.White.copy(alpha = 0.8f),
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(20.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.clickable { }
+                                            ) {
+                                                Text(
+                                                    text = "Kitaplar",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = Color.Black.copy(alpha = 0.55f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                                        modifier = Modifier.clickable { onCreateBookClick() }
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                         ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                                modifier = Modifier.size(44.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        Icons.Default.Add,
-                                                        contentDescription = "Kitap Oluştur",
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                            }
-                                            Spacer(Modifier.width(12.dp))
-                                            Column {
-                                                Text(
-                                                    text = "Yeni Kitap Yazmaya Başla",
-                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = "Kendi hikâyeni 4 adımda okurlarla buluştur.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        Icon(
-                                            Icons.Default.ArrowForward,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            data.currentlyReading?.let { readingItem ->
-                                item {
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                                            .clickable { onBookClick(readingItem.book) },
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                                        tonalElevation = 2.dp
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            BookCover(readingItem.book, Modifier.width(52.dp).aspectRatio(0.68f))
-                                            Spacer(Modifier.width(12.dp))
-                                            Column(Modifier.weight(1f)) {
-                                                Text(
-                                                    "Okumaya Devam Et",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Spacer(Modifier.height(2.dp))
-                                                Text(
-                                                    readingItem.book.title,
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1
-                                                )
-                                                Text(
-                                                    readingItem.book.authorName,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1
-                                                )
-                                                Spacer(Modifier.height(6.dp))
-                                                LinearProgressIndicator(
-                                                    progress = (readingItem.progressPercent.coerceIn(0, 100) / 100f),
-                                                    modifier = Modifier.fillMaxWidth().height(4.dp)
-                                                )
-                                            }
-                                            Spacer(Modifier.width(10.dp))
-                                            Button(
-                                                onClick = { onBookClick(readingItem.book) },
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                            ) {
-                                                Text("Oku", style = MaterialTheme.typography.labelMedium)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (data.recentBooks.isEmpty() && data.currentlyReading == null) {
-                                item { EmptySection("Henüz yayınlanmış kitap yok.") }
-                            } else {
-                                items(data.recentBooks.take(20), key = { it.id }) { book ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        HorizontalBookCard(book, { onBookClick(book) }, Modifier.weight(1f))
-                                        IconButton(onClick = {
-                                            shareContent = SharedContent(
-                                                type = "book",
-                                                id = book.id,
-                                                title = book.title,
-                                                text = book.description,
-                                                authorId = book.ownerId,
-                                                authorName = book.authorName,
-                                                mediaUrl = book.coverImageUrl,
-                                                url = sharedContentUrl("book", book.id)
+                                            Icon(
+                                                Icons.Default.Add,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
                                             )
-                                        }) {
-                                            Icon(Icons.Default.Share, "Paylaş")
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                text = "Kitap Yaz",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = Color.White
+                                            )
                                         }
                                     }
                                 }
-                            }
-                        }
+                            },
+                            modifier = modifier.fillMaxSize()
+                        )
                     }
                 }
 
@@ -615,7 +554,7 @@ fun HomeScreen(
     }
 }
 
-private enum class HomeSection { POSTS, BOOKS }
+enum class HomeSection { POSTS, BOOKS }
 
 @Composable
 private fun HomeSectionButton(

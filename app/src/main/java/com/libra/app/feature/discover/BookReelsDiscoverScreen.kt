@@ -1,8 +1,6 @@
 package com.libra.app.feature.discover
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,13 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,7 +24,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -35,7 +33,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
@@ -61,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -73,69 +72,60 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.libra.app.core.di.ServiceLocator
-import com.libra.app.core.state.UiState
 import com.libra.app.domain.model.Book
-import com.libra.app.domain.model.UserProfile
-import com.libra.app.feature.friends.FriendsScreen
-import com.libra.app.feature.friends.FriendsState
+import com.libra.app.ui.components.BookCover
 import com.libra.app.ui.components.UserAvatar
 
+/**
+ * Dedicated Full-Screen Vertical Reels Book Discovery Section.
+ * Designed specifically for Libra's "Kitaplar" section with:
+ * - Dynamic blurred book cover ambient background (no flat black screens)
+ * - Sharp elevated 3D book cover card
+ * - Category, chapter count, and like badges
+ * - Full vertical reels interaction column (Like, Comment, Save, Share, Detail)
+ * - Prominent "Okumaya Başla" action button
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookReelsDiscoverScreen(
-    friendsUiState: UiState<FriendsState>,
-    onSearchFriends: (String) -> Unit,
-    onFollowUser: (UserProfile) -> Unit,
-    onUserClick: (UserProfile) -> Unit,
-    onRetryFriends: () -> Unit,
+fun BookDiscoverySection(
     onStartReading: (Book) -> Unit,
     onBookClick: (Book) -> Unit,
     onOpenProfile: (String) -> Unit,
     onShareBook: (Book) -> Unit,
+    onCreateBookClick: () -> Unit = {},
+    topBar: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: BookReelsDiscoverViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val state by viewModel.state.collectAsState()
-    var selectedTopTab by remember { mutableStateOf(0) } // 0: Reels, 1: Friends
 
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-        if (selectedTopTab == 0) {
-            BookReelsFeed(
-                state = state,
-                onLike = viewModel::toggleLike,
-                onSave = viewModel::toggleSave,
-                onOpenComments = viewModel::openComments,
-                onStartReading = { book ->
-                    viewModel.startReading(book)
-                    onStartReading(book)
-                },
-                onBookClick = onBookClick,
-                onOpenProfile = onOpenProfile,
-                onShareBook = onShareBook,
-                onRetry = viewModel::loadDiscoverBooks
-            )
-        } else {
-            FriendsScreen(
-                uiState = friendsUiState,
-                onSearchChanged = onSearchFriends,
-                onFollowUser = onFollowUser,
-                onUserClick = onUserClick,
-                onRetry = onRetryFriends,
-                modifier = Modifier.padding(top = 64.dp)
-            )
-        }
-
-        // Top Floating Segmented Switch
-        DiscoverTopSegmentedBar(
-            selectedTab = selectedTopTab,
-            onTabSelected = { selectedTopTab = it },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 8.dp)
+    Box(modifier = modifier.fillMaxSize()) {
+        BookReelsFeed(
+            state = state,
+            onLike = viewModel::toggleLike,
+            onSave = viewModel::toggleSave,
+            onOpenComments = viewModel::openComments,
+            onStartReading = { book ->
+                viewModel.startReading(book)
+                onStartReading(book)
+            },
+            onBookClick = onBookClick,
+            onOpenProfile = onOpenProfile,
+            onShareBook = onShareBook,
+            onRetry = viewModel::loadDiscoverBooks,
+            onCreateBook = onCreateBookClick
         )
 
-        // Comments Bottom Sheet
+        // Overlay top bar (e.g. section selector)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+        ) {
+            topBar()
+        }
+
+        // Reader Comments Bottom Sheet
         if (state.activeCommentsBookId != null) {
             val bookId = state.activeCommentsBookId!!
             var commentInput by remember { mutableStateOf("") }
@@ -258,81 +248,6 @@ fun BookReelsDiscoverScreen(
 }
 
 @Composable
-private fun DiscoverTopSegmentedBar(
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = Color.Black.copy(alpha = 0.65f),
-        shadowElevation = 4.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Reels tab
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { onTabSelected(0) },
-                color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.8f)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Kitaplar",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.8f)
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(4.dp))
-
-            // Friends tab
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { onTabSelected(1) },
-                color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.People,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.8f)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Okurlar & Yazarlar",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.8f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun BookReelsFeed(
     state: BookReelsState,
     onLike: (Book) -> Unit,
@@ -343,37 +258,98 @@ private fun BookReelsFeed(
     onOpenProfile: (String) -> Unit,
     onShareBook: (Book) -> Unit,
     onRetry: () -> Unit,
+    onCreateBook: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (state.isLoading && state.books.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF483D8B).copy(alpha = 0.85f),
+                            Color(0xFF282347),
+                            Color(0xFF161426)
+                        ),
+                        radius = 1200f
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(36.dp))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Kitaplar Keşfediliyor…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
         }
         return
     }
 
     if (state.books.isEmpty()) {
         Box(
-            modifier = modifier.fillMaxSize().padding(24.dp),
+            modifier = modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF483D8B).copy(alpha = 0.85f),
+                            Color(0xFF282347),
+                            Color(0xFF161426)
+                        ),
+                        radius = 1200f
+                    )
+                )
+                .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.MenuBook,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = Color.White.copy(alpha = 0.8f)
+                )
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "Keşfedilecek kitap bulunamadı",
+                    text = "Henüz Yayınlanmış Kitap Yok",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = Color.White
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Yeni yayınlanan kitapları görmek için yenileyin.",
+                    text = "İlk kitabı sen yazarak okurlarla buluşturabilirsin.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = Color.White.copy(alpha = 0.75f)
                 )
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onRetry) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Yenile")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = onCreateBook,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("İlk Kitabını Yaz")
+                    }
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.2f),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Yenile")
+                    }
                 }
             }
         }
@@ -420,7 +396,7 @@ private fun BookReelItem(
     modifier: Modifier = Modifier
 ) {
     val rawCover = book.displayCoverUrl.trim()
-    var resolvedCoverUrl by remember(rawCover) {
+    var signedUrl by remember(rawCover) {
         mutableStateOf<String?>(
             if (rawCover.startsWith("https://") && !rawCover.contains(".r2.dev/")) rawCover else null
         )
@@ -429,211 +405,276 @@ private fun BookReelItem(
 
     LaunchedEffect(rawCover) {
         if (rawCover.isNotBlank()) {
-            resolvedCoverUrl = runCatching {
+            signedUrl = runCatching {
                 ServiceLocator.storageRepository.getSignedMediaUrl(rawCover)
             }.getOrDefault(rawCover)
         } else {
-            resolvedCoverUrl = null
+            signedUrl = null
         }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Background Cover with Dark Gradient
-        if (!resolvedCoverUrl.isNullOrBlank() && !coverLoadFailed) {
+        // 1. Ambient Warm Fallback Gradient (Never pitch black!)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF483D8B).copy(alpha = 0.85f),
+                            Color(0xFF282347),
+                            Color(0xFF161426)
+                        ),
+                        radius = 1400f
+                    )
+                )
+        )
+
+        // 2. Blurred Book Cover Image (full bleed)
+        if (!signedUrl.isNullOrBlank() && !coverLoadFailed) {
             AsyncImage(
-                model = resolvedCoverUrl,
-                contentDescription = book.title,
-                modifier = Modifier.fillMaxSize(),
+                model = signedUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(20.dp),
                 contentScale = ContentScale.Crop,
                 onError = { coverLoadFailed = true }
             )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xFF2C2A4A),
-                                Color(0xFF1E1E2E),
-                                Color(0xFF0F0F14)
-                            )
-                        )
-                    )
-            )
         }
 
-        // Ambient Dark Overlay
+        // 3. Gentle Scrim Gradient (gentle darkening so vibrant cover colors remain visible)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
+                            Color.Black.copy(alpha = 0.40f),
+                            Color.Black.copy(alpha = 0.15f),
                             Color.Black.copy(alpha = 0.45f),
-                            Color.Black.copy(alpha = 0.25f),
-                            Color.Black.copy(alpha = 0.88f),
-                            Color.Black.copy(alpha = 0.98f)
+                            Color.Black.copy(alpha = 0.85f)
                         )
                     )
                 )
         )
 
-        // Bottom Left Content Details
+        // 4. Foreground Content (Book Card + Details + Reading Button)
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomStart)
-                .navigationBarsPadding()
-                .padding(start = 18.dp, end = 72.dp, bottom = 20.dp)
+                .fillMaxSize()
+                .padding(start = 16.dp, end = 74.dp, top = 65.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Category & Tags Row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Upper Center: Sharp 3D Book Cover Card
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    shape = RoundedCornerShape(14.dp),
+                    shadowElevation = 16.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .width(140.dp)
+                        .aspectRatio(0.68f)
+                        .clickable(onClick = onBookClick)
                 ) {
-                    Text(
-                        text = book.category.displayName.uppercase(),
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    BookCover(
+                        book = book,
+                        modifier = Modifier.fillMaxSize(),
+                        cornerRadius = 14
                     )
                 }
+            }
 
-                book.tags.take(2).forEach { tag ->
+            // Lower Section: Badges, Title, Author, Synopsis, Teaser & Start Reading
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Category & Chapter Count Badges
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = Color.White.copy(alpha = 0.15f)
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
                     ) {
                         Text(
-                            text = if (tag.startsWith("#")) tag else "#$tag",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            text = book.category.displayName.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
-                }
-            }
 
-            Spacer(Modifier.height(8.dp))
-
-            // Book Title
-            Text(
-                text = book.title.ifBlank { "İsimsiz Kitap" },
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.clickable(onClick = onBookClick)
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            // Author Row
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onOpenProfile)
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                UserAvatar(
-                    photoUrl = null,
-                    initials = book.authorName.take(1).uppercase().ifBlank { "L" },
-                    size = 24.dp
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = book.authorName.ifBlank { "Yazar" },
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White.copy(alpha = 0.95f)
-                )
-            }
-
-            // Synopsis Preview
-            val synopsis = book.description.ifBlank { book.discoverySummary }
-            if (synopsis.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = synopsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.8f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Chapter 1 Excerpt Teaser Box
-            if (!previewSnippet.isNullOrBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.12f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
                             Icon(
-                                Icons.Default.FormatQuote,
+                                Icons.Default.MenuBook,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(14.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(11.dp)
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                text = "1. Bölümden Kesit",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primaryContainer
+                                text = "${book.chapterCount} Bölüm",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                color = Color.White
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "“$previewSnippet…”",
-                            style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    }
+
+                    if (engagement.likesCount > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Favorite,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "${engagement.likesCount}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = Color.White
+                                )
+                            }
+                        }
                     }
                 }
-            }
 
-            Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
-            // Prominent "Okumaya Başla / Devam Et" Action Button
-            Button(
-                onClick = onStartReading,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                contentPadding = PaddingValues(vertical = 12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
+                // Title
                 Text(
-                    text = "Okumaya Başla",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    text = book.title.ifBlank { "İsimsiz Kitap" },
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onBookClick)
                 )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Author Row
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onOpenProfile)
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UserAvatar(
+                        photoUrl = null,
+                        initials = book.authorName.take(1).uppercase().ifBlank { "L" },
+                        size = 22.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = book.authorName.ifBlank { "Yazar" },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White.copy(alpha = 0.95f)
+                    )
+                }
+
+                // Synopsis
+                val synopsis = book.description.ifBlank { book.discoverySummary }
+                if (synopsis.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = synopsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Teaser excerpt from Chapter 1
+                if (!previewSnippet.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.FormatQuote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "1. Bölümden Alıntı",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "“$previewSnippet…”",
+                                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                                color = Color.White.copy(alpha = 0.92f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Prominent "Okumaya Başla" Action Button
+                Button(
+                    onClick = onStartReading,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Okumaya Başla",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
             }
         }
 
-        // Right Vertical Reels Action Column
+        // 5. Right Vertical Action Column (Like, Comment, Save, Share, Detail)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = 12.dp, bottom = 32.dp),
+                .padding(end = 10.dp, bottom = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Author Profile Avatar Button
+            // Author Avatar Button
             Surface(
                 shape = CircleShape,
                 color = Color.White.copy(alpha = 0.2f),
@@ -646,12 +687,12 @@ private fun BookReelItem(
                     UserAvatar(
                         photoUrl = null,
                         initials = book.authorName.take(1).uppercase().ifBlank { "L" },
-                        size = 40.dp
+                        size = 38.dp
                     )
                 }
             }
 
-            // Like Action
+            // Beğen (Like)
             ReelActionButton(
                 icon = if (engagement.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 label = if (engagement.likesCount > 0) "${engagement.likesCount}" else "Beğen",
@@ -659,7 +700,7 @@ private fun BookReelItem(
                 onClick = onLike
             )
 
-            // Comment Action
+            // Yorum (Comment)
             ReelActionButton(
                 icon = Icons.Default.ChatBubbleOutline,
                 label = if (engagement.commentsCount > 0) "${engagement.commentsCount}" else "Yorum",
@@ -667,7 +708,7 @@ private fun BookReelItem(
                 onClick = onOpenComments
             )
 
-            // Save Action
+            // Kaydet (Save)
             ReelActionButton(
                 icon = if (engagement.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                 label = if (engagement.isSaved) "Kaydedildi" else "Kaydet",
@@ -675,7 +716,7 @@ private fun BookReelItem(
                 onClick = onSave
             )
 
-            // Share Action
+            // Paylaş (Share)
             ReelActionButton(
                 icon = Icons.Default.Share,
                 label = "Paylaş",
@@ -683,7 +724,7 @@ private fun BookReelItem(
                 onClick = onShareBook
             )
 
-            // Book Details Action
+            // Detay (Detail)
             ReelActionButton(
                 icon = Icons.Default.Info,
                 label = "Detay",
@@ -708,8 +749,9 @@ private fun ReelActionButton(
     ) {
         Surface(
             shape = CircleShape,
-            color = Color.Black.copy(alpha = 0.4f),
-            modifier = Modifier.size(40.dp)
+            color = Color.Black.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+            modifier = Modifier.size(42.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -728,4 +770,24 @@ private fun ReelActionButton(
             maxLines = 1
         )
     }
+}
+
+/**
+ * Backward compatibility wrapper for callers referencing BookReelsDiscoverScreen.
+ */
+@Composable
+fun BookReelsDiscoverScreen(
+    onStartReading: (Book) -> Unit = {},
+    onBookClick: (Book) -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
+    onShareBook: (Book) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    BookDiscoverySection(
+        onStartReading = onStartReading,
+        onBookClick = onBookClick,
+        onOpenProfile = onOpenProfile,
+        onShareBook = onShareBook,
+        modifier = modifier
+    )
 }
