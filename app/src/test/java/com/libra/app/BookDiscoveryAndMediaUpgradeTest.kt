@@ -196,17 +196,31 @@ class BookDiscoveryAndMediaUpgradeTest {
     // 3. Pre-publish Validation
     @Test
     fun prePublishValidation_requiresTitleDescriptionAndActiveChapters() = runTest {
-        manageVm.initialize(sampleBook.copy(title = "", description = ""))
+        val emptyBook = Book(id = "bk_empty", ownerId = authorUser.uid, title = "", description = "")
+        fakeBookRepo.books.add(emptyBook)
+
+        val invalidVm = BookManagementViewModel(
+            bookRepository = fakeBookRepo,
+            authRepository = fakeAuthRepo,
+            storageRepository = fakeStorageRepo
+        )
+        invalidVm.initialize(emptyBook)
         advanceUntilIdle()
 
-        val missing = manageVm.validatePrePublish()
+        val missing = invalidVm.validatePrePublish()
         assertTrue(missing.any { it.contains("başlığı") })
         assertTrue(missing.any { it.contains("açıklaması") })
+        assertTrue(missing.any { it.contains("aktif bölüm") })
 
         // When valid
-        manageVm.initialize(sampleBook)
+        val validVm = BookManagementViewModel(
+            bookRepository = fakeBookRepo,
+            authRepository = fakeAuthRepo,
+            storageRepository = fakeStorageRepo
+        )
+        validVm.initialize(sampleBook)
         advanceUntilIdle()
-        val noMissing = manageVm.validatePrePublish()
+        val noMissing = validVm.validatePrePublish()
         assertTrue("All required fields provided; missing checklist must be empty", noMissing.isEmpty())
     }
 
