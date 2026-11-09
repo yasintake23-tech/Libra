@@ -3,6 +3,7 @@ package com.libra.app.feature.library
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
@@ -40,13 +42,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -85,6 +90,7 @@ fun LibraryScreen(
     onNavigateToWrite: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    onCreateBookClick: () -> Unit = onNavigateToWrite,
     onStartReading: (Book) -> Unit = {},
     onRemoveFromShelf: (Book, ShelfType) -> Unit = { _, _ -> },
     onAddToSaved: (Book) -> Unit = {},
@@ -126,6 +132,20 @@ fun LibraryScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            FilledTonalIconButton(
+                onClick = onCreateBookClick,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                modifier = Modifier.testTag("library_create_book_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Yeni Kitap Oluştur"
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
             IconButton(
                 onClick = onRetry,
                 modifier = Modifier
@@ -285,7 +305,7 @@ fun LibraryScreen(
                     items.isEmpty() -> {
                         ShelfEmptyView(
                             shelf = selectedShelf,
-                            onWrite = onNavigateToWrite,
+                            onWrite = onCreateBookClick,
                             onDiscover = onNavigateToDiscover
                         )
                     }
@@ -308,6 +328,74 @@ fun LibraryScreen(
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
+                                if (selectedShelf == ShelfType.MY_WRITINGS) {
+                                    item(key = "library_create_book_banner") {
+                                        Card(
+                                            onClick = onCreateBookClick,
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                            ),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("library_my_writings_create_banner")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(36.dp)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                Icons.Default.Add,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(Modifier.width(12.dp))
+                                                    Column {
+                                                        Text(
+                                                            text = "Yeni Kitap Oluştur",
+                                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Text(
+                                                            text = "Kendi hikayeni yazmaya hemen başla",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                                Button(
+                                                    onClick = onCreateBookClick,
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = MaterialTheme.colorScheme.primary,
+                                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                ) {
+                                                    Text("Oluştur", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 items(filteredItems, key = { it.id.ifBlank { "${it.shelfType}_${it.book.id}" } }) { item ->
                                     LibraryBookCard(
                                         item = item,
@@ -644,7 +732,7 @@ private fun ShelfEmptyView(
     onDiscover: () -> Unit
 ) {
     val icon = when (shelf) {
-        ShelfType.MY_WRITINGS -> Icons.Default.Edit
+        ShelfType.MY_WRITINGS -> Icons.Default.Add
         ShelfType.READING -> Icons.Default.AutoStories
         ShelfType.SAVED -> Icons.Default.BookmarkBorder
     }
@@ -659,7 +747,7 @@ private fun ShelfEmptyView(
         ShelfType.SAVED -> "Beğendiğin kitapları yer imine ekleyerek daha sonra kolayca bul."
     }
     val actionText = when (shelf) {
-        ShelfType.MY_WRITINGS -> "İlk Kitabını Yaz"
+        ShelfType.MY_WRITINGS -> "Yeni Kitap Oluştur"
         ShelfType.READING -> "Kitapları Keşfet"
         ShelfType.SAVED -> "Kitapları Keşfet"
     }
@@ -737,8 +825,18 @@ private fun ShelfMessageCard(
             Spacer(modifier = Modifier.height(18.dp))
             Button(
                 onClick = onAction,
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                modifier = if (action == "Yeni Kitap Oluştur") Modifier.testTag("library_empty_create_book_btn") else Modifier
             ) {
+                if (action == "Yeni Kitap Oluştur") {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(action, fontWeight = FontWeight.SemiBold)
             }
         }

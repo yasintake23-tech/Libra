@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,10 +22,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -365,11 +369,13 @@ private fun BookReelsFeed(
         val book = state.books[page]
         val engagement = state.engagements[book.id] ?: BookEngagementUi(likesCount = book.likesCount)
         val previewSnippet = state.chapterPreviews[book.id]
+        val previewHasMore = state.chapterPreviewHasMore[book.id] ?: false
 
         BookReelItem(
             book = book,
             engagement = engagement,
             previewSnippet = previewSnippet,
+            previewHasMore = previewHasMore,
             onLike = { onLike(book) },
             onSave = { onSave(book) },
             onOpenComments = { onOpenComments(book.id) },
@@ -386,6 +392,7 @@ private fun BookReelItem(
     book: Book,
     engagement: BookEngagementUi,
     previewSnippet: String?,
+    previewHasMore: Boolean = false,
     onLike: () -> Unit,
     onSave: () -> Unit,
     onOpenComments: () -> Unit,
@@ -608,37 +615,77 @@ private fun BookReelItem(
                     )
                 }
 
-                // Teaser excerpt from Chapter 1
+                // Teaser excerpt from Chapter 1 (1,200 - 1,800 chars, paragraph preserved)
                 if (!previewSnippet.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color.White.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Black.copy(alpha = 0.42f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.FormatQuote,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.FormatQuote,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "1. Bölümden Alıntı",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(onClick = onStartReading)
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Bölümün Devamını Oku",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 10.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    )
+                                    Spacer(Modifier.width(2.dp))
+                                    Icon(
+                                        Icons.Default.ArrowForward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                val displayText = if (previewHasMore) "$previewSnippet…" else previewSnippet
                                 Text(
-                                    text = "1. Bölümden Alıntı",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primaryContainer
+                                    text = displayText,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 11.5.sp,
+                                        lineHeight = 16.5.sp,
+                                        letterSpacing = 0.1.sp
+                                    ),
+                                    color = Color.White.copy(alpha = 0.94f)
                                 )
                             }
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "“$previewSnippet…”",
-                                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                                color = Color.White.copy(alpha = 0.92f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
                     }
                 }

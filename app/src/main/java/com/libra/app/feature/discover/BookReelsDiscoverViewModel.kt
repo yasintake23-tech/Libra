@@ -23,12 +23,77 @@ data class BookEngagementUi(
     val commentsCount: Int = 0
 )
 
+const val CHAPTER_PREVIEW_MIN_CHARS = 1200
+const val CHAPTER_PREVIEW_MAX_CHARS = 1800
+
+/**
+ * Formats a chapter teaser snippet:
+ * - Targets between [minChars] and [maxChars] characters (default 1,200 - 1,800).
+ * - If text <= [maxChars], returns full text with hasMore = false.
+ * - Preserves paragraph formatting (\n\n) without flattening lines.
+ * - Cuts cleanly at sentence boundaries (. , .\n, !, ?, etc.) within the target window,
+ *   or at word boundaries before [maxChars], avoiding awkward truncated words.
+ * - Returns a Pair of (formattedSnippet, hasMore).
+ */
+fun formatChapterTeaserSnippet(
+    rawContent: String,
+    minChars: Int = CHAPTER_PREVIEW_MIN_CHARS,
+    maxChars: Int = CHAPTER_PREVIEW_MAX_CHARS
+): Pair<String, Boolean> {
+    val trimmed = rawContent.trim()
+    if (trimmed.isEmpty()) {
+        return Pair("", false)
+    }
+    if (trimmed.length <= maxChars) {
+        return Pair(trimmed, false)
+    }
+
+    val candidate = trimmed.substring(0, maxChars)
+
+    // Look for sentence delimiters in range [minChars, maxChars]
+    val sentenceDelimiters = listOf(". ", ".\n", "!\n", "! ", "?\n", "? ", "\n\n")
+    var bestCut = -1
+
+    for (delim in sentenceDelimiters) {
+        val lastIdx = candidate.lastIndexOf(delim)
+        if (lastIdx in minChars..maxChars) {
+            val cutPoint = lastIdx + 1
+            if (cutPoint > bestCut) {
+                bestCut = cutPoint
+            }
+        }
+    }
+
+    // If no sentence ender found within [minChars, maxChars], check from minChars / 2 up to maxChars
+    if (bestCut == -1) {
+        for (delim in sentenceDelimiters) {
+            val lastIdx = candidate.lastIndexOf(delim)
+            if (lastIdx >= (minChars / 2) && (lastIdx + 1) > bestCut) {
+                bestCut = lastIdx + 1
+            }
+        }
+    }
+
+    // If still no sentence boundary found, cut at the last word boundary (space or newline) before maxChars
+    if (bestCut == -1) {
+        val lastSpace = candidate.lastIndexOf(' ')
+        val lastNewline = candidate.lastIndexOf('\n')
+        val wordBreak = maxOf(lastSpace, lastNewline)
+        bestCut = if (wordBreak >= (minChars / 2)) wordBreak else maxChars
+    }
+
+    val cutSnippet = candidate.substring(0, bestCut).trimEnd()
+    return Pair(cutSnippet, true)
+}
+
 data class BookReelsState(
     val books: List<Book> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val engagements: Map<String, BookEngagementUi> = emptyMap(),
     val chapterPreviews: Map<String, String> = emptyMap(),
+    val chapterPreviewHasMore: Map<String, Boolean> = emptyMap(),
+    val firstChapterIds: Map<String, String> = emptyMap(),
     val activeCommentsBookId: String? = null,
     val comments: List<BookComment> = emptyList(),
     val isLoadingComments: Boolean = false
@@ -110,16 +175,46 @@ class BookReelsDiscoverViewModel(
     private suspend fun loadChapterPreview(bookId: String) {
         when (val chaptersResult = bookRepository.getBookChapters(bookId).first()) {
             is AppResult.Success -> {
-                val activeChapters = chaptersResult.data.filter { !it.isArchived }.sortedBy { it.chapterNumber }
-                val firstChapter = activeChapters.firstOrNull()
-                if (firstChapter != null && firstChapter.content.isNotBlank()) {
-                    val cleanSnippet = firstChapter.content
-                        .trim()
-                        .replace(Regex("\\s+"), " ")
-                        .take(220)
-                    val updatedPreviews = _state.value.chapterPreviews.toMutableMap()
-                    updatedPreviews[bookId] = cleanSnippet
-                    _state.value = _state.value.copy(chapterPreviews = updatedPreviews)
+                // Only published, active (non-archived) chapters with readable text
+                val publishedChapters = chaptersResult.data
+                    .filter { it.isPublished && !it.isArchived && it.content.isNotBlank() }
+                    .sortedBy { it.chapterNumber }
+                val firstChapter = publishedChapters.firstOrNull()
+
+                if (firstChapter != null) {
+                    val (snippet, hasMore) = formatChapterTeaserSnippet(firstChapter.content)
+                    if (snippet.isNotBlank()) {
+                        val updatedPreviews = _state.value.chapterPreviews.toMutableMap()
+                        val updatedHasMore = _state.value.chapterPreviewHasMore.toMutableMap()
+                        val updatedFirstChapterIds = _state.value.firstChapterIds.toMutableMap()
+
+                        updatedPreviews[bookId] = snippet
+                        updatedHasMore[bookId] = hasMore
+                        updatedFirstChapterIds[bookId] = firstChapter.id
+
+                        _state.value = _state.value.copy(
+                            chapterPreviews = updatedPreviews,
+                            chapterPreviewHasMore = updatedHasMore,
+                            firstChapterIds = updatedFirstChapterIds
+                        )
+                    }
+                } else {
+                    // If no published chapter exists, clear teaser so no empty container is displayed
+                    if (_state.value.chapterPreviews.containsKey(bookId)) {
+                        val updatedPreviews = _state.value.chapterPreviews.toMutableMap()
+                        val updatedHasMore = _state.value.chapterPreviewHasMore.toMutableMap()
+                        val updatedFirstChapterIds = _state.value.firstChapterIds.toMutableMap()
+
+                        updatedPreviews.remove(bookId)
+                        updatedHasMore.remove(bookId)
+                        updatedFirstChapterIds.remove(bookId)
+
+                        _state.value = _state.value.copy(
+                            chapterPreviews = updatedPreviews,
+                            chapterPreviewHasMore = updatedHasMore,
+                            firstChapterIds = updatedFirstChapterIds
+                        )
+                    }
                 }
             }
             is AppResult.Error -> Unit

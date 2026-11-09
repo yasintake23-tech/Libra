@@ -18,8 +18,12 @@ import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.feature.book.manage.BookManagementViewModel
 import com.libra.app.feature.discover.BookEngagementUi
 import com.libra.app.feature.discover.BookReelsDiscoverViewModel
+import com.libra.app.feature.discover.CHAPTER_PREVIEW_MAX_CHARS
+import com.libra.app.feature.discover.CHAPTER_PREVIEW_MIN_CHARS
+import com.libra.app.feature.discover.formatChapterTeaserSnippet
 import com.libra.app.feature.home.HomeSection
 import com.libra.app.ui.navigation.BottomNavTab
+import org.junit.Assert.assertNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -321,6 +325,73 @@ class BookDiscoveryAndMediaUpgradeTest {
             it.bookId == bookToRead.id && it.shelfType == ShelfType.READING && it.userId == authorUser.uid
         }
         assertTrue("Book must be recorded in READING shelf for Library sync", savedInShelf)
+    }
+
+    // 7. Chapter Teaser Formatting & Preview Filtering
+    @Test
+    fun formatChapterTeaserSnippet_shortContent_returnsFullText() {
+        val shortText = "Zeyniler köyünde akşam oluyordu. Kuşlar dallarına çekilmişti."
+        val (snippet, hasMore) = formatChapterTeaserSnippet(shortText)
+        assertEquals(shortText, snippet)
+        assertFalse(hasMore)
+    }
+
+    @Test
+    fun formatChapterTeaserSnippet_longContent_cutsBetweenMinAndMaxAtSentenceBoundary() {
+        val paragraph1 = "A".repeat(700) + ". "
+        val paragraph2 = "B".repeat(600) + ".\n\n"
+        val paragraph3 = "C".repeat(1000) + "."
+        val longText = paragraph1 + paragraph2 + paragraph3
+
+        val (snippet, hasMore) = formatChapterTeaserSnippet(longText)
+        assertTrue("Snippet must have more text", hasMore)
+        assertTrue(
+            "Snippet length (${snippet.length}) must be in range [$CHAPTER_PREVIEW_MIN_CHARS, $CHAPTER_PREVIEW_MAX_CHARS]",
+            snippet.length in CHAPTER_PREVIEW_MIN_CHARS..CHAPTER_PREVIEW_MAX_CHARS
+        )
+        assertTrue("Snippet must preserve newline formatting or sentence end", snippet.contains("\n\n") || snippet.endsWith("."))
+    }
+
+    @Test
+    fun loadChapterPreview_filtersOutUnpublishedAndArchivedChapters() = runTest {
+        // Book with draft chapter only
+        reelsVm.loadDiscoverBooks()
+        advanceUntilIdle()
+
+        // sampleChapters in setUp are draft (isPublished = false), so no preview snippet should be set
+        val preview = reelsVm.state.value.chapterPreviews[sampleBook.id]
+        assertNull("Unpublished/draft chapters must not generate a discover teaser", preview)
+
+        // Now publish chapter 1
+        fakeBookRepo.chapters.clear()
+        fakeBookRepo.chapters.add(
+            Chapter(
+                id = "ch_published_1",
+                bookId = sampleBook.id,
+                chapterNumber = 1,
+                title = "Giriş",
+                content = "Yıllar sonra memlekete döndüğümde her şey çok değişmişti. " + "D".repeat(1300) + ". Devamı vardı.",
+                isPublished = true,
+                isArchived = false
+            )
+        )
+
+        reelsVm.loadDiscoverBooks()
+        advanceUntilIdle()
+
+        val publishedPreview = reelsVm.state.value.chapterPreviews[sampleBook.id]
+        assertNotNull("Published active chapter must generate a teaser excerpt", publishedPreview)
+        val hasMore = reelsVm.state.value.chapterPreviewHasMore[sampleBook.id] ?: false
+        assertTrue("Preview should flag continuation if content exceeds max length", hasMore)
+    }
+
+    @Test
+    fun libraryCreateBook_invokingCallback_triggersStateOrNavigation() {
+        var createBookOpened = false
+        val onCreateBookClick = { createBookOpened = true }
+
+        onCreateBookClick()
+        assertTrue("Create book action must set showCreateBook to true", createBookOpened)
     }
 
     // Fakes

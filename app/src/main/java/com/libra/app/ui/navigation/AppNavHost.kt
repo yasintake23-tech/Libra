@@ -124,6 +124,7 @@ fun AppNavHost(
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
     val homeVm: HomeViewModel = viewModel()
+    val libraryVm: LibraryViewModel = viewModel()
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
 
@@ -246,6 +247,7 @@ fun AppNavHost(
                 selectedWritingBook = newBook
                 writeVm.loadMyBooks()
                 homeVm.loadHomeData()
+                libraryVm.retryCurrentShelf()
             },
             modifier = modifier.fillMaxSize()
         )
@@ -513,12 +515,11 @@ fun AppNavHost(
                     onServersClick = { showCommunityServers = true }
                 )
                 BottomNavTab.LIBRARY -> {
-                    val vm: LibraryViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
+                    val state by libraryVm.uiState.collectAsState()
                     LibraryScreen(
                         uiState = state,
-                        onTabSelected = vm::selectShelf,
-                        onSearchChanged = vm::updateSearchQuery,
+                        onTabSelected = libraryVm::selectShelf,
+                        onSearchChanged = libraryVm::updateSearchQuery,
                         onBookClick = { book, shelf ->
                             if (shelf == ShelfType.MY_WRITINGS) {
                                 selectedWritingBook = book
@@ -527,13 +528,14 @@ fun AppNavHost(
                             }
                         },
                         onNavigateToWrite = { selectedTab = BottomNavTab.WRITE },
-                        onRetry = vm::retryCurrentShelf,
+                        onCreateBookClick = { showCreateBook = true },
+                        onRetry = libraryVm::retryCurrentShelf,
                         onStartReading = { book ->
                             selectedBook = book
                             readerBook = book
                         },
-                        onRemoveFromShelf = vm::removeFromShelf,
-                        onAddToSaved = { book -> vm.addToShelf(book, ShelfType.SAVED) },
+                        onRemoveFromShelf = libraryVm::removeFromShelf,
+                        onAddToSaved = { book -> libraryVm.addToShelf(book, ShelfType.SAVED) },
                         onNavigateToDiscover = { selectedTab = BottomNavTab.DISCOVER }
                     )
                 }
