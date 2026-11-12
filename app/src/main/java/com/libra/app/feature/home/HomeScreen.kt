@@ -41,6 +41,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
@@ -467,62 +475,15 @@ fun HomeScreen(
                 }
 
                 likeUsersPost?.let { post ->
-                    var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
-                    LaunchedEffect(post.id) {
-                        users = (ServiceLocator.postRepository.getPostLikeUsers(post.id) as? com.libra.app.core.result.AppResult.Success)?.data ?: emptyList()
-                    }
-                    ModalBottomSheet(onDismissRequest = { likeUsersPost = null }) {
-                        Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                            Text("Beğenenler", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text("${users.size} kişi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(12.dp))
-                            if (users.isEmpty()) {
-                                Text("Henüz beğenen yok.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                users.forEach { user ->
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable {
-                                                likeUsersPost = null
-                                                onOpenProfile(user.uid)
-                                            }
-                                            .padding(vertical = 7.dp, horizontal = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        UserAvatar(
-                                            photoUrl = user.profileImageUrl,
-                                            initials = user.displayName.take(1).uppercase().ifBlank { "U" },
-                                            size = 38.dp,
-                                            onClick = {
-                                                likeUsersPost = null
-                                                onOpenProfile(user.uid)
-                                            }
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Column {
-                                            Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold)
-                                            Text("@${user.username}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(20.dp))
-                        }
-                    }
+                    PostLikersBottomSheet(
+                        post = post,
+                        onOpenProfile = onOpenProfile,
+                        onDismiss = { likeUsersPost = null }
+                    )
                 }
 
                 shareContent?.let { content ->
                     ShareSheet(content = content, onDismiss = { shareContent = null })
-                }
-
-                selectedLikePost?.let { post ->
-                    PostLikeUsersDialog(
-                        post = post,
-                        onOpenProfile = onOpenProfile,
-                        onDismiss = { selectedLikePost = null }
-                    )
                 }
 
                 selectedPost?.let { post ->
@@ -683,6 +644,7 @@ private fun CreateChoiceMenu(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PostCard(
     post: Post,
@@ -905,15 +867,29 @@ private fun PostCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Like Button
-                IconButton(onClick = onLike) {
+                val haptic = LocalHapticFeedback.current
+
+                // Like Button (Tek Dokunma: Beğen / Beğeniyi Kaldır, Basılı Tutma: Beğenen Kişileri Gör)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = onLike,
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onShowLikes()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = if (post.likedByCurrentUser) {
                             Icons.Default.Favorite
                         } else {
                             Icons.Default.FavoriteBorder
                         },
-                        contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen",
+                        contentDescription = if (post.likedByCurrentUser) "Beğeniyi kaldır" else "Beğen (Basılı tutarak beğenenleri gör)",
                         tint = if (post.likedByCurrentUser) {
                             MaterialTheme.colorScheme.error
                         } else {
@@ -922,12 +898,18 @@ private fun PostCard(
                     )
                 }
 
-                // Like Count (Single click opens Likers list!)
+                // Like Count (Tek dokunma veya basılı tutma: Beğenenleri Gör)
                 Text(
                     text = post.likesCount.toString(),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .clickable(onClick = onShowLikes)
+                        .combinedClickable(
+                            onClick = onShowLikes,
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onShowLikes()
+                            }
+                        )
                         .padding(horizontal = 6.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -984,8 +966,9 @@ private fun PostCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PostLikeUsersDialog(
+private fun PostLikersBottomSheet(
     post: Post,
     onOpenProfile: (String) -> Unit = {},
     onDismiss: () -> Unit
@@ -993,8 +976,10 @@ private fun PostLikeUsersDialog(
     var users by remember(post.id) { mutableStateOf<List<UserProfile>>(emptyList()) }
     var loading by remember(post.id) { mutableStateOf(true) }
     var error by remember(post.id) { mutableStateOf<String?>(null) }
+    var searchQuery by remember(post.id) { mutableStateOf("") }
+    var reloadTrigger by remember(post.id) { mutableStateOf(0) }
 
-    LaunchedEffect(post.id) {
+    LaunchedEffect(post.id, reloadTrigger) {
         loading = true
         error = null
         when (val result = ServiceLocator.postRepository.getPostLikeUsers(post.id)) {
@@ -1004,55 +989,231 @@ private fun PostLikeUsersDialog(
         loading = false
     }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Beğenenler", fontWeight = FontWeight.Bold)
-                Text(
-                    post.likesCount.toString() + " beğeni",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = {
+            Surface(
+                modifier = Modifier.padding(vertical = 10.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                shape = CircleShape
+            ) {
+                Box(modifier = Modifier.size(width = 36.dp, height = 4.dp))
             }
-        },
-        text = {
-            when {
-                loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
-                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 6.dp)
+                .navigationBarsPadding()
+        ) {
+            // Header: Heart icon, title, count badge, close button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = Color(0xFFE53935),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Beğenenler",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                    ) {
+                        val count = if (users.isNotEmpty()) users.size else post.likesCount
+                        Text(
+                            text = "$count kişi",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
-                error != null -> Text(error ?: "Beğenenler yüklenemedi.")
-                users.isEmpty() -> Text("Henüz beğenen yok.")
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(users, key = { it.uid }) { user ->
-                        Surface(
+
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Kapat")
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Search Filter (shown if more than 3 likers)
+            if (users.size > 3) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Beğenenlerde ara…", style = MaterialTheme.typography.bodySmall) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Temizle", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // Body
+            when {
+                loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = "Beğenenler yükleniyor…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                error != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = error ?: "Beğenenler yüklenemedi.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { reloadTrigger++ }) {
+                            Text("Tekrar Dene")
+                        }
+                    }
+                }
+                users.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.FavoriteBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(36.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "Bu gönderiyi henüz kimse beğenmedi.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    val filteredUsers = if (searchQuery.isBlank()) users else {
+                        users.filter {
+                            it.displayName.contains(searchQuery, ignoreCase = true) ||
+                            it.username.contains(searchQuery, ignoreCase = true)
+                        }
+                    }
+
+                    if (filteredUsers.isEmpty()) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    onDismiss()
-                                    onOpenProfile(user.uid)
-                                },
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                UserAvatar(
-                                    photoUrl = user.profileImageUrl,
-                                    initials = user.initials,
-                                    size = 38.dp,
-                                    onClick = {
-                                        onDismiss()
-                                        onOpenProfile(user.uid)
-                                    }
-                                )
-                                Spacer(Modifier.width(9.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(user.displayName.ifBlank { "Libra kullanıcısı" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                    if (user.username.isNotBlank()) {
-                                        Text("@" + user.username, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = "Aramana uygun kullanıcı bulunamadı.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(filteredUsers, key = { it.uid }) { user ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onDismiss()
+                                            onOpenProfile(user.uid)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        UserAvatar(
+                                            photoUrl = user.profileImageUrl,
+                                            initials = user.initials,
+                                            size = 42.dp,
+                                            onClick = {
+                                                onDismiss()
+                                                onOpenProfile(user.uid)
+                                            }
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = user.displayName.ifBlank { "Libra kullanıcısı" },
+                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (user.username.isNotBlank()) {
+                                                Text(
+                                                    text = "@${user.username}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = "Profili Gör",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -1060,9 +1221,10 @@ private fun PostLikeUsersDialog(
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } }
-    )
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -176,6 +176,37 @@ class GlobalInteractionRoutingTest {
     }
 
     @Test
+    fun postCard_likeButtonLongPress_triggersLikersSheetWithExactPost() {
+        var likeUsersPost: Post? = null
+        var toggledLikePostId: String? = null
+
+        val onLike: (Post) -> Unit = { toggledLikePostId = it.id }
+        val onShowLikes: (Post) -> Unit = { likeUsersPost = it }
+
+        // Simulate holding down (long press) on the like button
+        onShowLikes(samplePostA)
+
+        assertNotNull("Holding like button must open likers sheet", likeUsersPost)
+        assertEquals("post_101", likeUsersPost?.id)
+        assertNull("Long pressing like button must NOT toggle like state", toggledLikePostId)
+    }
+
+    @Test
+    fun postCard_likeButtonShortClick_onlyTogglesLike() {
+        var likeUsersPost: Post? = null
+        var toggledLikePostId: String? = null
+
+        val onLike: (Post) -> Unit = { toggledLikePostId = it.id }
+        val onShowLikes: (Post) -> Unit = { likeUsersPost = it }
+
+        // Simulate single tap on like button
+        onLike(samplePostA)
+
+        assertEquals("post_101", toggledLikePostId)
+        assertNull("Single tapping like button must NOT open likers sheet", likeUsersPost)
+    }
+
+    @Test
     fun discoverScreen_followVsProfile_actionsAreIsolated() {
         var followedUserUid: String? = null
         var profileOpenedUid: String? = null

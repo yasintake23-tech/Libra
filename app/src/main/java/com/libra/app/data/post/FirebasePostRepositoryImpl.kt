@@ -14,7 +14,10 @@ import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import com.libra.app.domain.model.AppNotification
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -197,7 +200,8 @@ class FirebasePostRepositoryImpl(
                         likeRef,
                         mapOf(
                             "userId" to user.uid,
-                            "createdAt" to System.currentTimeMillis()
+                            "createdAt" to System.currentTimeMillis(),
+                            "likedAt" to System.currentTimeMillis()
                         )
                     )
                     transaction.update(postRef, "likesCount", currentCount + 1L)
@@ -244,20 +248,29 @@ class FirebasePostRepositoryImpl(
 
         return try {
             val snapshot = postsRef.document(postId).collection("likes")
-                .orderBy("likedAt", Query.Direction.ASCENDING)
-                .limit(200)
+                .limit(100)
                 .get()
                 .await()
 
-            val users = snapshot.documents.mapNotNull { like ->
-                val uid = like.getString("userId").orEmpty().ifBlank { like.id }
-                if (uid.isBlank()) {
-                    null
-                } else {
-                    runCatching {
-                        (userRepository.getUserProfileFresh(uid) as? AppResult.Success)?.data
-                    }.getOrNull()
-                }
+            val uidsWithTimestamp = snapshot.documents.mapNotNull { like ->
+                val uid = like.getString("userId").orEmpty().ifBlank { like.id }.trim()
+                if (uid.isNotBlank()) {
+                    uid to (like.getLong("createdAt") ?: like.getLong("likedAt") ?: 0L)
+                } else null
+            }.sortedByDescending { it.second }.map { it.first }
+
+            val users = coroutineScope {
+                uidsWithTimestamp.map { uid ->
+                    async {
+                        val profile = (userRepository.getUserProfileFresh(uid) as? AppResult.Success)?.data
+                        profile ?: com.libra.app.domain.model.UserProfile(
+                            uid = uid,
+                            displayName = "Libra Okuru",
+                            username = uid.take(8),
+                            email = ""
+                        )
+                    }
+                }.awaitAll()
             }
 
             AppResult.Success(users)
