@@ -170,7 +170,8 @@ fun CommunityServersScreen(
         AnimatedContent(
             targetState = selectedChannel,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "serverChannelTransition"
+            label = "serverChannelTransition",
+            modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         ) { channel ->
             if (channel != null) {
                 ServerChatScreen(
@@ -202,6 +203,8 @@ fun CommunityServersScreen(
     Column(
         modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
             .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

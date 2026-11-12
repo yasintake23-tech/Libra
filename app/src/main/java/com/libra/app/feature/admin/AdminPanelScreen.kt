@@ -43,29 +43,69 @@ import kotlinx.coroutines.tasks.await
 private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri","Güncelleme ayarları")
 
 @Composable
-fun AdminPanelScreen(onBack: () -> Unit, modifier: Modifier = Modifier, permissions: AdminPermissionSet = AdminPermissionSet(manageMembers=true,manageBans=true,editProfiles=true,manageBooks=true,managePosts=true,manageStories=true,manageServers=true,manageGlobalChat=true,manageAdminRoles=true,manageCosmetics=true,sendFeedback=true,manageUpdates=true), vm: AdminViewModel = viewModel()) {
-    var section by remember { mutableStateOf<String?>(null) }
-    var member by remember { mutableStateOf<UserProfile?>(null) }
-    if (section == "Güncelleme ayarları") { UpdateSettingsPage(vm, { section = null }, modifier); return }
-    if (member != null) {
-        MemberAdminScreen(member!!, vm, { member = null }, permissions, modifier)
-    } else if (section == "Üye işlemleri") {
-        MembersScreen(vm.members.collectAsState().value, { section = null }, { member = it }, modifier, permissions.manageMembers)
-    } else {
-        Surface(modifier.fillMaxSize(), color = Color.White) {
-            Column(Modifier.fillMaxSize().padding(20.dp)) {
+fun AdminPanelScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    permissions: AdminPermissionSet = AdminPermissionSet(
+        manageMembers = true,
+        manageBans = true,
+        editProfiles = true,
+        manageBooks = true,
+        managePosts = true,
+        manageStories = true,
+        manageServers = true,
+        manageGlobalChat = true,
+        manageAdminRoles = true,
+        manageCosmetics = true,
+        sendFeedback = true,
+        manageUpdates = true
+    ),
+    vm: AdminViewModel = viewModel()
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        var section by remember { mutableStateOf<String?>(null) }
+        var member by remember { mutableStateOf<UserProfile?>(null) }
+        if (section == "Güncelleme ayarları") {
+            UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
+        } else if (member != null) {
+            MemberAdminScreen(member!!, vm, { member = null }, permissions, Modifier.fillMaxSize())
+        } else if (section == "Üye işlemleri") {
+            MembersScreen(vm.members.collectAsState().value, { section = null }, { member = it }, Modifier.fillMaxSize(), permissions.manageMembers)
+        } else {
+            Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
                     Column {
                         Text("Yönetim", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                        Text("Libra yönetim merkezi", color = Color.Gray)
+                        Text("Libra yönetim merkezi", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Spacer(Modifier.height(28.dp))
                 sections.forEach { title ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp)).clickable(enabled = when (title) { "Üye işlemleri" -> permissions.manageMembers; "Kitap işlemleri" -> permissions.manageBooks; "Gönderi işlemleri" -> permissions.managePosts; "Hikâye işlemleri" -> permissions.manageStories; "Sunucu işlemleri" -> permissions.manageServers; "Genel chat işlemleri" -> permissions.manageGlobalChat; "Güncelleme ayarları" -> permissions.manageUpdates; else -> false }) { section = title }.padding(18.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+                            .clickable(enabled = when (title) {
+                                "Üye işlemleri" -> permissions.manageMembers
+                                "Kitap işlemleri" -> permissions.manageBooks
+                                "Gönderi işlemleri" -> permissions.managePosts
+                                "Hikâye işlemleri" -> permissions.manageStories
+                                "Sunucu işlemleri" -> permissions.manageServers
+                                "Genel chat işlemleri" -> permissions.manageGlobalChat
+                                "Güncelleme ayarları" -> permissions.manageUpdates
+                                else -> false
+                            }) { section = title }
+                            .padding(18.dp),
+                        Arrangement.SpaceBetween,
+                        Alignment.CenterVertically
+                    ) {
                         Text(title, fontWeight = FontWeight.SemiBold)
-                        Icon(Icons.Default.Settings, null, tint = Color.Gray)
+                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -121,7 +161,13 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
         detected?.releaseId?.let { releaseId = it }
     }
 
-    Column(modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .padding(16.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, enabled = !busy) {
                 Icon(Icons.Default.ArrowBack, "Geri")
@@ -347,7 +393,13 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
         }
         match && date
     }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .padding(16.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Text("Üye işlemleri", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))

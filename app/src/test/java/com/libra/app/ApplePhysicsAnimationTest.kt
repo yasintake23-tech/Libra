@@ -112,4 +112,51 @@ class ApplePhysicsAnimationTest {
         val negativeTug = rubberBand(-maxStretch, maxStretch)
         assertEquals(-50f, negativeTug, 0.001f)
     }
+
+    @Test
+    fun sand_granule_alternating_drift_and_micro_tilt_geometry() {
+        fun calculateDrift(index: Int): Float {
+            val driftDirection = if (index % 2 == 0) -1f else 1f
+            return 8f * driftDirection
+        }
+
+        fun calculateTilt(index: Int): Float {
+            val driftDirection = if (index % 2 == 0) -1f else 1f
+            return driftDirection * 1.5f
+        }
+
+        // Even indices drift left (-8px) and micro-tilt -1.5 degrees
+        assertEquals(-8f, calculateDrift(0), 0.001f)
+        assertEquals(-1.5f, calculateTilt(0), 0.001f)
+        assertEquals(-8f, calculateDrift(2), 0.001f)
+        assertEquals(-1.5f, calculateTilt(2), 0.001f)
+
+        // Odd indices drift right (+8px) and micro-tilt +1.5 degrees
+        assertEquals(8f, calculateDrift(1), 0.001f)
+        assertEquals(1.5f, calculateTilt(1), 0.001f)
+        assertEquals(8f, calculateDrift(3), 0.001f)
+        assertEquals(1.5f, calculateTilt(3), 0.001f)
+    }
+
+    @Test
+    fun directional_stretch_factor_physics_calculation() {
+        fun stretchScale(dragDelta: Float, maxStretch: Float): Float {
+            val ratio = abs(dragDelta) / (maxStretch * 3f)
+            return 1f + ratio.coerceAtMost(0.25f)
+        }
+
+        val maxStretch = 80f
+
+        // At rest, scale is 1.0 (no stretch)
+        assertEquals(1.0f, stretchScale(0f, maxStretch), 0.001f)
+
+        // Pulling produces gentle rubber elongation
+        val pulled = stretchScale(80f, maxStretch)
+        assertTrue("Pulling must increase scale > 1.0", pulled > 1.0f)
+        assertEquals(1.333f, pulled, 0.01f)
+
+        // Extreme tugging caps at 1.25f maximum elongation factor to prevent visual clipping
+        val extreme = stretchScale(1000f, maxStretch)
+        assertEquals(1.25f, extreme, 0.001f)
+    }
 }

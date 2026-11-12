@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.libra.app.ui.animation.AppleSprings
@@ -273,10 +274,19 @@ fun AppNavHost(
     var lastSelectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     if (selectedPublicProfile != null) lastSelectedPublicProfile = selectedPublicProfile
 
+    val isAnyOverlayActive = showCreateBook || createContentMode != null || readerBook != null ||
+        selectedBook != null || selectedWritingBook != null || selectedPublicProfile != null ||
+        showNotifications || showCommunityServers || showGlobalChat || showAdminPanel ||
+        showProfileEdit || showSettings
+
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
-            bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
+            bottomBar = {
+                if (!isAnyOverlayActive) {
+                    LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+                }
+            },
             containerColor = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
         ) { paddingValues ->
@@ -442,17 +452,19 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            CreateBookScreen(
-                onBack = { showCreateBook = false },
-                onBookCreated = { newBook ->
-                    showCreateBook = false
-                    selectedWritingBook = newBook
-                    writeVm.loadMyBooks()
-                    homeVm.loadHomeData()
-                    libraryVm.retryCurrentShelf()
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                CreateBookScreen(
+                    onBack = { showCreateBook = false },
+                    onBookCreated = { newBook ->
+                        showCreateBook = false
+                        selectedWritingBook = newBook
+                        writeVm.loadMyBooks()
+                        homeVm.loadHomeData()
+                        libraryVm.retryCurrentShelf()
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -461,58 +473,62 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            lastCreateContentMode?.let { mode ->
-                val vm: HomeViewModel = viewModel()
-                CreateContentScreen(
-                    mode = mode,
-                    user = profile,
-                    isPosting = vm.isPosting.collectAsState().value,
-                    error = vm.postError.collectAsState().value,
-                    onPublishPost = { title, text, tags, mediaUrl, mediaType ->
-                        vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
-                            if (success && mode == CreateContentMode.POST) {
-                                createContentMode = null
-                                selectedTab = BottomNavTab.HOME
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastCreateContentMode?.let { mode ->
+                    val vm: HomeViewModel = viewModel()
+                    CreateContentScreen(
+                        mode = mode,
+                        user = profile,
+                        isPosting = vm.isPosting.collectAsState().value,
+                        error = vm.postError.collectAsState().value,
+                        onPublishPost = { title, text, tags, mediaUrl, mediaType ->
+                            vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
+                                if (success && mode == CreateContentMode.POST) {
+                                    createContentMode = null
+                                    selectedTab = BottomNavTab.HOME
+                                }
                             }
-                        }
-                    },
-                    onPublishStory = { text, mediaUrl, mediaType ->
-                        vm.createStory(text, mediaUrl, mediaType) { success ->
-                            if (success) {
-                                createContentMode = null
-                                selectedTab = BottomNavTab.HOME
+                        },
+                        onPublishStory = { text, mediaUrl, mediaType ->
+                            vm.createStory(text, mediaUrl, mediaType) { success ->
+                                if (success) {
+                                    createContentMode = null
+                                    selectedTab = BottomNavTab.HOME
+                                }
                             }
-                        }
-                    },
-                    onBack = { createContentMode = null },
-                    onClearError = vm::clearPostError,
-                    modifier = Modifier.fillMaxSize()
-                )
+                        },
+                        onBack = { createContentMode = null },
+                        onClearError = vm::clearPostError,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
         AnimatedVisibility(
-            visible = selectedBook != null,
+            visible = selectedBook != null && readerBook == null,
             enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            lastSelectedBook?.let { book ->
-                BookDetailScreen(
-                    book = book,
-                    userId = profile.uid,
-                    onBack = { selectedBook = null },
-                    onRead = { selected, chapter ->
-                        readerBook = selected
-                        readerChapterId = chapter?.id
-                    },
-                    onOpenChapter = { selected, chapter ->
-                        readerBook = selected
-                        readerChapterId = chapter.id
-                    },
-                    onOpenAuthor = ::openPublicProfile,
-                    modifier = Modifier.fillMaxSize()
-                )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedBook?.let { book ->
+                    BookDetailScreen(
+                        book = book,
+                        userId = profile.uid,
+                        onBack = { selectedBook = null },
+                        onRead = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter?.id
+                        },
+                        onOpenChapter = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter.id
+                        },
+                        onOpenAuthor = ::openPublicProfile,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
@@ -522,17 +538,19 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            lastReaderBook?.let { book ->
-                BookReaderScreen(
-                    book = book,
-                    userId = profile.uid,
-                    initialChapterId = lastReaderChapterId,
-                    onBack = {
-                        readerBook = null
-                        readerChapterId = null
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastReaderBook?.let { book ->
+                    BookReaderScreen(
+                        book = book,
+                        userId = profile.uid,
+                        initialChapterId = lastReaderChapterId,
+                        onBack = {
+                            readerBook = null
+                            readerChapterId = null
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
@@ -542,23 +560,25 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            lastSelectedWritingBook?.let { book ->
-                BookManagementRootScreen(
-                    book = book,
-                    onBack = {
-                        selectedWritingBook = null
-                        writeVm.loadMyBooks()
-                    },
-                    onPreviewBook = { target ->
-                        selectedBook = target
-                    },
-                    onDeleteBook = { target ->
-                        writeVm.deleteBook(target.id)
-                        selectedWritingBook = null
-                    },
-                    onOpenProfile = ::openPublicProfile,
-                    modifier = Modifier.fillMaxSize()
-                )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedWritingBook?.let { book ->
+                    BookManagementRootScreen(
+                        book = book,
+                        onBack = {
+                            selectedWritingBook = null
+                            writeVm.loadMyBooks()
+                        },
+                        onPreviewBook = { target ->
+                            selectedBook = target
+                        },
+                        onDeleteBook = { target ->
+                            writeVm.deleteBook(target.id)
+                            selectedWritingBook = null
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
@@ -568,20 +588,22 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            lastSelectedPublicProfile?.let { publicProfile ->
-                PublicProfileScreen(
-                    profile = publicProfile,
-                    isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
-                    onBack = { selectedPublicProfile = null },
-                    onFollow = { friendsVm.toggleFollowUser(publicProfile) },
-                    onMessage = {
-                        selectedPublicProfile = null
-                        selectedDirectUser = publicProfile
-                        selectedTab = BottomNavTab.DM
-                    },
-                    onOpenProfile = ::openPublicProfile,
-                    modifier = Modifier.fillMaxSize()
-                )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedPublicProfile?.let { publicProfile ->
+                    PublicProfileScreen(
+                        profile = publicProfile,
+                        isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+                        onBack = { selectedPublicProfile = null },
+                        onFollow = { friendsVm.toggleFollowUser(publicProfile) },
+                        onMessage = {
+                            selectedPublicProfile = null
+                            selectedDirectUser = publicProfile
+                            selectedTab = BottomNavTab.DM
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
@@ -591,21 +613,23 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            NotificationsScreen(
-                onBack = { showNotifications = false },
-                onOpenProfile = ::openPublicProfile,
-                onOpenNotification = { notification ->
-                    if (
-                        notification.referenceId.isNotBlank() &&
-                        (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
-                    ) {
-                        notificationPostTargetId = notification.referenceId
-                        showNotifications = false
-                        selectedTab = BottomNavTab.HOME
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                NotificationsScreen(
+                    onBack = { showNotifications = false },
+                    onOpenProfile = ::openPublicProfile,
+                    onOpenNotification = { notification ->
+                        if (
+                            notification.referenceId.isNotBlank() &&
+                            (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
+                        ) {
+                            notificationPostTargetId = notification.referenceId
+                            showNotifications = false
+                            selectedTab = BottomNavTab.HOME
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -614,11 +638,13 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            CommunityServersScreen(
-                onBack = { showCommunityServers = false },
-                onOpenProfile = ::openPublicProfile,
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                CommunityServersScreen(
+                    onBack = { showCommunityServers = false },
+                    onOpenProfile = ::openPublicProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -627,12 +653,14 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            GlobalChatScreen(
-                onBack = { showGlobalChat = false },
-                onOpenProfile = ::openPublicProfile,
-                canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                GlobalChatScreen(
+                    onBack = { showGlobalChat = false },
+                    onOpenProfile = ::openPublicProfile,
+                    canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -641,11 +669,13 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            AdminPanelScreen(
-                onBack = { showAdminPanel = false },
-                permissions = adminPermissions,
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                AdminPanelScreen(
+                    onBack = { showAdminPanel = false },
+                    permissions = adminPermissions,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -654,29 +684,33 @@ fun AppNavHost(
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            ProfileEditScreen(
-                profile = profile,
-                onSaved = { showProfileEdit = false; authViewModel.checkSession() },
-                onBack = { showProfileEdit = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                ProfileEditScreen(
+                    profile = profile,
+                    onSaved = { showProfileEdit = false; authViewModel.checkSession() },
+                    onBack = { showProfileEdit = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         AnimatedVisibility(
-            visible = showSettings,
+            visible = showSettings && !showProfileEdit,
             enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
-            SettingsScreen(
-                profile = profile,
-                darkTheme = darkTheme,
-                onDarkThemeChanged = onDarkThemeChanged,
-                onEditProfile = { showProfileEdit = true },
-                onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
-                onBack = { showSettings = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                SettingsScreen(
+                    profile = profile,
+                    darkTheme = darkTheme,
+                    onDarkThemeChanged = onDarkThemeChanged,
+                    onEditProfile = { showProfileEdit = true },
+                    onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                    onBack = { showSettings = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

@@ -1,17 +1,20 @@
 package com.libra.app.ui.navigation
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -19,13 +22,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
 
+/**
+ * Floating glass pill navigation dock with round circular 3D buttons.
+ * Designed to mirror Apple iOS floating dynamic controls with elastic pull & stretch physics.
+ */
 @Composable
 fun LibraBottomBar(
     selectedTab: BottomNavTab,
@@ -36,21 +45,24 @@ fun LibraBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .shadow(8.dp),
-        color = MaterialTheme.colorScheme.surface
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .shadow(12.dp, shape = RoundedCornerShape(32.dp)),
+        shape = RoundedCornerShape(32.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 5.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            BottomItem(BottomNavTab.HOME, selectedTab, onTabSelected, Modifier.weight(1f))
-            BottomItem(BottomNavTab.DISCOVER, selectedTab, onTabSelected, Modifier.weight(1f))
-            BottomItem(BottomNavTab.DM, selectedTab, onTabSelected, Modifier.weight(1f))
-            BottomItem(BottomNavTab.LIBRARY, selectedTab, onTabSelected, Modifier.weight(1f))
-            BottomItem(BottomNavTab.PROFILE, selectedTab, onTabSelected, Modifier.weight(1f))
+            BottomItem(tab = BottomNavTab.HOME, selectedTab = selectedTab, onTabSelected = onTabSelected)
+            BottomItem(tab = BottomNavTab.DISCOVER, selectedTab = selectedTab, onTabSelected = onTabSelected)
+            BottomItem(tab = BottomNavTab.DM, selectedTab = selectedTab, onTabSelected = onTabSelected)
+            BottomItem(tab = BottomNavTab.LIBRARY, selectedTab = selectedTab, onTabSelected = onTabSelected)
+            BottomItem(tab = BottomNavTab.PROFILE, selectedTab = selectedTab, onTabSelected = onTabSelected)
         }
     }
 }
@@ -66,23 +78,38 @@ private fun BottomItem(
     var tapToken by remember { mutableIntStateOf(0) }
 
     val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1.10f else 1.0f,
+        targetValue = if (selected) 1.15f else 1.0f,
         animationSpec = AppleSprings.FloatBouncy,
         label = "tab_icon_scale"
     )
 
-    Column(
+    val buttonBgColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+    }
+
+    val buttonBorderColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    } else {
+        Color.Transparent
+    }
+
+    Box(
         modifier = modifier
+            .size(46.dp)
             .testTag(tab.testTag)
+            .clip(CircleShape)
+            .background(buttonBgColor, CircleShape)
+            .border(1.dp, buttonBorderColor, CircleShape)
             .appleBouncy(
-                pressedScale = 0.88f,
+                pressedScale = 0.85f,
                 onClick = {
                     tapToken += 1
                     onTabSelected(tab)
                 }
-            )
-            .padding(vertical = 3.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            ),
+        contentAlignment = Alignment.Center
     ) {
         LibraAnimatedNavIcon(
             tab = tab,
@@ -90,21 +117,11 @@ private fun BottomItem(
             tapToken = tapToken,
             backgroundColor = MaterialTheme.colorScheme.surface,
             modifier = Modifier
-                .size(25.dp)
+                .size(24.dp)
                 .graphicsLayer {
                     scaleX = iconScale
                     scaleY = iconScale
                 }
-        )
-        Text(
-            tab.title,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onBackground
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            maxLines = 1
         )
     }
 }
