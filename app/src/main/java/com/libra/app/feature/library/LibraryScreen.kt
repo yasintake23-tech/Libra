@@ -21,8 +21,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.libra.app.ui.animation.AppleSprings
+import com.libra.app.ui.animation.appleBouncy
+import com.libra.app.ui.animation.appleGlassSurface
+import com.libra.app.ui.animation.appleSquircle
+import com.libra.app.ui.animation.staggeredVaporEntrance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
@@ -138,7 +144,9 @@ fun LibraryScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
-                modifier = Modifier.testTag("library_create_book_btn")
+                modifier = Modifier
+                    .appleBouncy(pressedScale = 0.88f, onClick = onCreateBookClick)
+                    .testTag("library_create_book_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
@@ -151,6 +159,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .appleBouncy(pressedScale = 0.88f, onClick = onRetry)
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
@@ -396,13 +405,14 @@ fun LibraryScreen(
                                     }
                                 }
 
-                                items(filteredItems, key = { it.id.ifBlank { "${it.shelfType}_${it.book.id}" } }) { item ->
+                                itemsIndexed(filteredItems, key = { _, it -> it.id.ifBlank { "${it.shelfType}_${it.book.id}" } }) { index, item ->
                                     LibraryBookCard(
                                         item = item,
                                         shelfType = selectedShelf,
                                         onClick = { onBookClick(item.book, selectedShelf) },
                                         onStartReading = { onStartReading(item.book) },
-                                        onRemove = { onRemoveFromShelf(item.book, selectedShelf) }
+                                        onRemove = { onRemoveFromShelf(item.book, selectedShelf) },
+                                        index = index
                                     )
                                 }
                             }
@@ -420,14 +430,17 @@ private fun LibraryBookCard(
     shelfType: ShelfType,
     onClick: () -> Unit,
     onStartReading: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    index: Int = 0
 ) {
     val book = item.book
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .staggeredVaporEntrance(index = index)
+            .appleSquircle(16.dp)
+            .appleBouncy(pressedScale = 0.97f, onClick = onClick)
             .testTag("library_book_card_${book.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

@@ -2,6 +2,15 @@ package com.libra.app.ui.navigation
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -17,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.libra.app.ui.animation.AppleSprings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -239,323 +249,436 @@ fun AppNavHost(
         }
     }
 
-    if (showCreateBook) {
-        CreateBookScreen(
-            onBack = { showCreateBook = false },
-            onBookCreated = { newBook ->
-                showCreateBook = false
-                selectedWritingBook = newBook
-                writeVm.loadMyBooks()
-                homeVm.loadHomeData()
-                libraryVm.retryCurrentShelf()
-            },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    createContentMode?.let { mode ->
-        val vm: HomeViewModel = viewModel()
-        CreateContentScreen(
-            mode = mode,
-            user = profile,
-            isPosting = vm.isPosting.collectAsState().value,
-            error = vm.postError.collectAsState().value,
-            onPublishPost = { title, text, tags, mediaUrl, mediaType ->
-                vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
-                    if (success && mode == CreateContentMode.POST) {
-                        createContentMode = null
-                        selectedTab = BottomNavTab.HOME
-                    }
-                }
-            },
-            onPublishStory = { text, mediaUrl, mediaType ->
-                vm.createStory(text, mediaUrl, mediaType) { success ->
-                    if (success) {
-                        createContentMode = null
-                        selectedTab = BottomNavTab.HOME
-                    }
-                }
-            },
-            onBack = { createContentMode = null },
-            onClearError = vm::clearPostError,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    readerBook?.let { book ->
-        BookReaderScreen(
-            book = book,
-            userId = profile.uid,
-            initialChapterId = readerChapterId,
-            onBack = {
-                readerBook = null
-                readerChapterId = null
-            },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    selectedBook?.let { book ->
-        BookDetailScreen(
-            book = book,
-            userId = profile.uid,
-            onBack = { selectedBook = null },
-            onRead = { selected, chapter ->
-                readerBook = selected
-                readerChapterId = chapter?.id
-            },
-            onOpenChapter = { selected, chapter ->
-                readerBook = selected
-                readerChapterId = chapter.id
-            },
-            onOpenAuthor = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    selectedWritingBook?.let { book ->
-        BookManagementRootScreen(
-            book = book,
-            onBack = {
-                selectedWritingBook = null
-                writeVm.loadMyBooks()
-            },
-            onPreviewBook = { target ->
-                selectedBook = target
-            },
-            onDeleteBook = { target ->
-                writeVm.deleteBook(target.id)
-                selectedWritingBook = null
-            },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    selectedPublicProfile?.let { publicProfile ->
-        PublicProfileScreen(
-            profile = publicProfile,
-            isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
-            onBack = { selectedPublicProfile = null },
-            onFollow = { friendsVm.toggleFollowUser(publicProfile) },
-            onMessage = {
-                selectedPublicProfile = null
-                selectedDirectUser = publicProfile
-                selectedTab = BottomNavTab.DM
-            },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showNotifications) {
-        NotificationsScreen(
-            onBack = { showNotifications = false },
-            onOpenProfile = ::openPublicProfile,
-            onOpenNotification = { notification ->
-                if (
-                    notification.referenceId.isNotBlank() &&
-                    (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
-                ) {
-                    notificationPostTargetId = notification.referenceId
-                    showNotifications = false
-                    selectedTab = BottomNavTab.HOME
-                }
-            },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-    if (showCommunityServers) {
-        CommunityServersScreen(
-            onBack = { showCommunityServers = false },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-    if (showGlobalChat) {
-        GlobalChatScreen(
-            onBack = { showGlobalChat = false }, onOpenProfile = ::openPublicProfile,
-            canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-    if (showAdminPanel) {
-        if (hasAdminAccess) {
-            AdminPanelScreen(onBack = { showAdminPanel = false }, permissions = adminPermissions, modifier = modifier.fillMaxSize())
-        } else {
-            showAdminPanel = false
-        }
-        return
-    }
-    if (showProfileEdit) {
-        ProfileEditScreen(
-            profile = profile,
-            onSaved = { showProfileEdit = false; authViewModel.checkSession() },
-            onBack = { showProfileEdit = false },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-    if (showSettings) {
-        SettingsScreen(
-            profile = profile, darkTheme = darkTheme, onDarkThemeChanged = onDarkThemeChanged,
-            onEditProfile = { showProfileEdit = true },
-            onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
-            onBack = { showSettings = false }, modifier = modifier.fillMaxSize()
-        )
-        return
-    }
     if (!profile.profileCompleted) {
         ProfileSetupScreen(profile = profile, onCompleted = authViewModel::checkSession, modifier = modifier.fillMaxSize())
         return
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
-        bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier.fillMaxSize()
-    ) { paddingValues ->
-        Box(Modifier.fillMaxSize().padding(paddingValues)) {
-            when (selectedTab) {
-                BottomNavTab.HOME -> {
-                    val state by homeVm.uiState.collectAsState()
-                    HomeScreen(
-                        state,
-                        { selectedBook = it },
-                        { selectedTab = BottomNavTab.WRITE },
-                        { selectedTab = BottomNavTab.LIBRARY },
-                        { selectedTab = BottomNavTab.PROFILE },
-                        { selectedTab = BottomNavTab.DISCOVER },
-                        { showCommunityServers = true },
-                        { showNotifications = true },
-                        unreadNotificationCount,
-                        homeVm::loadHomeData,
-                        onCreatePost = homeVm::createPost,
-                        onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
-                        onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
-                        canComment = profile.moderation.canComment,
-                        onToggleLike = homeVm::toggleLike, onToggleSave = homeVm::toggleSave,
-                        onDeletePost = homeVm::deletePost, onOpenComments = homeVm::openComments,
-                        comments = homeVm.comments.collectAsState().value, onAddComment = homeVm::addComment,
-                        onDeleteComment = homeVm::deleteComment, isCommenting = homeVm.isCommenting.collectAsState().value,
-                        commentError = homeVm.commentError.collectAsState().value, onClearCommentError = homeVm::clearCommentError,
-                        onCloseComments = homeVm::closeComments, isPosting = homeVm.isPosting.collectAsState().value,
-                        postError = homeVm.postError.collectAsState().value, onClearPostError = homeVm::clearPostError,
-                        onOpenProfile = ::openPublicProfile,
-                        onCreateBookClick = { showCreateBook = true },
-                        onStartReading = { book ->
-                            selectedBook = book
-                            readerBook = book
-                        },
-                        onShareBook = { book ->
-                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_SUBJECT, book.title)
-                                putExtra(android.content.Intent.EXTRA_TEXT, "${book.title} - ${book.authorName} Libra'da!\nhttps://libra.app/book/${book.id}")
-                            }
-                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Kitabı Paylaş"))
-                        },
-                        initialCommentPostId = notificationPostTargetId,
-                        onInitialCommentPostConsumed = { notificationPostTargetId = null },
-                        onStoryReply = { story ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
-                                    is com.libra.app.core.result.AppResult.Success -> result.data?.let {
-                                        selectedDirectUser = it
-                                        selectedTab = BottomNavTab.DM
-                                        val shared = SharedContent(
-                                            type = "story", id = story.id,
-                                            title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
-                                            text = story.text, authorId = story.authorId, authorName = story.authorName,
-                                            mediaUrl = story.mediaUrl, url = sharedContentUrl("story", story.id)
-                                        )
-                                        ServiceLocator.chatRepository.sendDirectMessage(
-                                            recipientId = story.authorId, text = "Hikâyenden bahsetti.", sharedContent = shared
-                                        )
+    var lastSelectedBook by remember { mutableStateOf<Book?>(null) }
+    if (selectedBook != null) lastSelectedBook = selectedBook
+
+    var lastReaderBook by remember { mutableStateOf<Book?>(null) }
+    var lastReaderChapterId by remember { mutableStateOf<String?>(null) }
+    if (readerBook != null) {
+        lastReaderBook = readerBook
+        lastReaderChapterId = readerChapterId
+    }
+
+    var lastSelectedWritingBook by remember { mutableStateOf<Book?>(null) }
+    if (selectedWritingBook != null) lastSelectedWritingBook = selectedWritingBook
+
+    var lastCreateContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
+    if (createContentMode != null) lastCreateContentMode = createContentMode
+
+    var lastSelectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    if (selectedPublicProfile != null) lastSelectedPublicProfile = selectedPublicProfile
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
+            bottomBar = { LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it }) },
+            containerColor = MaterialTheme.colorScheme.background,
+            modifier = Modifier.fillMaxSize()
+        ) { paddingValues ->
+            Box(Modifier.fillMaxSize().padding(paddingValues)) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        val forward = targetState.ordinal > initialState.ordinal
+                        val slideOffset = { size: Int -> (size * 0.16f).toInt() }
+                        if (forward) {
+                            (slideInHorizontally(animationSpec = AppleSprings.snappy(), initialOffsetX = slideOffset) +
+                                fadeIn(animationSpec = AppleSprings.snappy()))
+                                .togetherWith(
+                                    slideOutHorizontally(animationSpec = AppleSprings.snappy(), targetOffsetX = { -slideOffset(it) }) +
+                                        fadeOut(animationSpec = AppleSprings.snappy())
+                                )
+                        } else {
+                            (slideInHorizontally(animationSpec = AppleSprings.snappy(), initialOffsetX = { -slideOffset(it) }) +
+                                fadeIn(animationSpec = AppleSprings.snappy()))
+                                .togetherWith(
+                                    slideOutHorizontally(animationSpec = AppleSprings.snappy(), targetOffsetX = slideOffset) +
+                                        fadeOut(animationSpec = AppleSprings.snappy())
+                                )
+                        }
+                    },
+                    label = "tab_navigation_animation"
+                ) { tab ->
+                    when (tab) {
+                        BottomNavTab.HOME -> {
+                            val state by homeVm.uiState.collectAsState()
+                            HomeScreen(
+                                state,
+                                { selectedBook = it },
+                                { selectedTab = BottomNavTab.WRITE },
+                                { selectedTab = BottomNavTab.LIBRARY },
+                                { selectedTab = BottomNavTab.PROFILE },
+                                { selectedTab = BottomNavTab.DISCOVER },
+                                { showCommunityServers = true },
+                                { showNotifications = true },
+                                unreadNotificationCount,
+                                homeVm::loadHomeData,
+                                onCreatePost = homeVm::createPost,
+                                onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                                onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                                canComment = profile.moderation.canComment,
+                                onToggleLike = homeVm::toggleLike, onToggleSave = homeVm::toggleSave,
+                                onDeletePost = homeVm::deletePost, onOpenComments = homeVm::openComments,
+                                comments = homeVm.comments.collectAsState().value, onAddComment = homeVm::addComment,
+                                onDeleteComment = homeVm::deleteComment, isCommenting = homeVm.isCommenting.collectAsState().value,
+                                commentError = homeVm.commentError.collectAsState().value, onClearCommentError = homeVm::clearCommentError,
+                                onCloseComments = homeVm::closeComments, isPosting = homeVm.isPosting.collectAsState().value,
+                                postError = homeVm.postError.collectAsState().value, onClearPostError = homeVm::clearPostError,
+                                onOpenProfile = ::openPublicProfile,
+                                onCreateBookClick = { showCreateBook = true },
+                                onStartReading = { book ->
+                                    selectedBook = book
+                                    readerBook = book
+                                },
+                                onShareBook = { book ->
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, book.title)
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "${book.title} - ${book.authorName} Libra'da!\nhttps://libra.app/book/${book.id}")
                                     }
-                                    is com.libra.app.core.result.AppResult.Error ->
-                                        Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        onStoryLike = homeVm::toggleStoryLike, onStoriesRefresh = homeVm::refreshStories
-                    )
-                }
-                BottomNavTab.DISCOVER -> FriendsScreen(
-                    uiState = friendsState,
-                    onSearchChanged = friendsVm::updateSearchQuery,
-                    onFollowUser = { user -> friendsVm.toggleFollowUser(user) },
-                    onUserClick = { user -> openPublicProfile(user.uid) },
-                    onRetry = friendsVm::loadSocialData
-                )
-                BottomNavTab.WRITE -> {
-                    val state by writeVm.uiState.collectAsState()
-                    WriteScreen(
-                        uiState = state,
-                        onCreateBookClick = { showCreateBook = true },
-                        onBookClick = { selectedWritingBook = it },
-                        onRetry = writeVm::loadMyBooks
-                    )
-                }
-                BottomNavTab.DM -> DirectMessagesScreen(
-                    onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
-                    onGlobalChatClick = { showGlobalChat = true },
-                    initialUser = selectedDirectUser, onInitialUserConsumed = { selectedDirectUser = null },
-                    onOpenProfile = ::openPublicProfile, canMessage = profile.moderation.canMessage,
-                    onServersClick = { showCommunityServers = true }
-                )
-                BottomNavTab.LIBRARY -> {
-                    val state by libraryVm.uiState.collectAsState()
-                    LibraryScreen(
-                        uiState = state,
-                        onTabSelected = libraryVm::selectShelf,
-                        onSearchChanged = libraryVm::updateSearchQuery,
-                        onBookClick = { book, shelf ->
-                            if (shelf == ShelfType.MY_WRITINGS) {
-                                selectedWritingBook = book
-                            } else {
-                                selectedBook = book
-                            }
-                        },
-                        onNavigateToWrite = { selectedTab = BottomNavTab.WRITE },
-                        onCreateBookClick = { showCreateBook = true },
-                        onRetry = libraryVm::retryCurrentShelf,
-                        onStartReading = { book ->
-                            selectedBook = book
-                            readerBook = book
-                        },
-                        onRemoveFromShelf = libraryVm::removeFromShelf,
-                        onAddToSaved = { book -> libraryVm.addToShelf(book, ShelfType.SAVED) },
-                        onNavigateToDiscover = { selectedTab = BottomNavTab.DISCOVER }
-                    )
-                }
-                BottomNavTab.PROFILE -> {
-                    val vm: ProfileViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
-                    ProfileScreen(
-                        uiState = state,
-                        onSignOutClick = { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
-                        onRetry = vm::loadProfile,
-                        onSettingsClick = { showSettings = true },
-                        onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null,
-                        onMyBooksClick = { selectedTab = BottomNavTab.LIBRARY },
-                        onOpenProfile = ::openPublicProfile
-                    )
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Kitabı Paylaş"))
+                                },
+                                initialCommentPostId = notificationPostTargetId,
+                                onInitialCommentPostConsumed = { notificationPostTargetId = null },
+                                onStoryReply = { story ->
+                                    scope.launch {
+                                        when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
+                                            is com.libra.app.core.result.AppResult.Success -> result.data?.let {
+                                                selectedDirectUser = it
+                                                selectedTab = BottomNavTab.DM
+                                                val shared = SharedContent(
+                                                    type = "story", id = story.id,
+                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                                    text = story.text, authorId = story.authorId, authorName = story.authorName,
+                                                    mediaUrl = story.mediaUrl, url = sharedContentUrl("story", story.id)
+                                                )
+                                                ServiceLocator.chatRepository.sendDirectMessage(
+                                                    recipientId = story.authorId, text = "Hikâyenden bahsetti.", sharedContent = shared
+                                                )
+                                            }
+                                            is com.libra.app.core.result.AppResult.Error ->
+                                                Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                onStoryLike = homeVm::toggleStoryLike, onStoriesRefresh = homeVm::refreshStories
+                            )
+                        }
+                        BottomNavTab.DISCOVER -> FriendsScreen(
+                            uiState = friendsState,
+                            onSearchChanged = friendsVm::updateSearchQuery,
+                            onFollowUser = { user -> friendsVm.toggleFollowUser(user) },
+                            onUserClick = { user -> openPublicProfile(user.uid) },
+                            onRetry = friendsVm::loadSocialData
+                        )
+                        BottomNavTab.WRITE -> {
+                            val state by writeVm.uiState.collectAsState()
+                            WriteScreen(
+                                uiState = state,
+                                onCreateBookClick = { showCreateBook = true },
+                                onBookClick = { selectedWritingBook = it },
+                                onRetry = writeVm::loadMyBooks
+                            )
+                        }
+                        BottomNavTab.DM -> DirectMessagesScreen(
+                            onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                            onGlobalChatClick = { showGlobalChat = true },
+                            initialUser = selectedDirectUser, onInitialUserConsumed = { selectedDirectUser = null },
+                            onOpenProfile = ::openPublicProfile, canMessage = profile.moderation.canMessage,
+                            onServersClick = { showCommunityServers = true }
+                        )
+                        BottomNavTab.LIBRARY -> {
+                            val state by libraryVm.uiState.collectAsState()
+                            LibraryScreen(
+                                uiState = state,
+                                onTabSelected = libraryVm::selectShelf,
+                                onSearchChanged = libraryVm::updateSearchQuery,
+                                onBookClick = { book, shelf ->
+                                    if (shelf == ShelfType.MY_WRITINGS) {
+                                        selectedWritingBook = book
+                                    } else {
+                                        selectedBook = book
+                                    }
+                                },
+                                onNavigateToWrite = { selectedTab = BottomNavTab.WRITE },
+                                onCreateBookClick = { showCreateBook = true },
+                                onRetry = libraryVm::retryCurrentShelf,
+                                onStartReading = { book ->
+                                    selectedBook = book
+                                    readerBook = book
+                                },
+                                onRemoveFromShelf = libraryVm::removeFromShelf,
+                                onAddToSaved = { book -> libraryVm.addToShelf(book, ShelfType.SAVED) },
+                                onNavigateToDiscover = { selectedTab = BottomNavTab.DISCOVER }
+                            )
+                        }
+                        BottomNavTab.PROFILE -> {
+                            val vm: ProfileViewModel = viewModel()
+                            val state by vm.uiState.collectAsState()
+                            ProfileScreen(
+                                uiState = state,
+                                onSignOutClick = { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                                onRetry = vm::loadProfile,
+                                onSettingsClick = { showSettings = true },
+                                onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null,
+                                onMyBooksClick = { selectedTab = BottomNavTab.LIBRARY },
+                                onOpenProfile = ::openPublicProfile
+                            )
+                        }
+                    }
                 }
             }
         }
-    }
 
+        // --- Animated Modal Presentation Overlays (Apple Sheet / Full-Screen Spring Physics) ---
+        AnimatedVisibility(
+            visible = showCreateBook,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            CreateBookScreen(
+                onBack = { showCreateBook = false },
+                onBookCreated = { newBook ->
+                    showCreateBook = false
+                    selectedWritingBook = newBook
+                    writeVm.loadMyBooks()
+                    homeVm.loadHomeData()
+                    libraryVm.retryCurrentShelf()
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = createContentMode != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            lastCreateContentMode?.let { mode ->
+                val vm: HomeViewModel = viewModel()
+                CreateContentScreen(
+                    mode = mode,
+                    user = profile,
+                    isPosting = vm.isPosting.collectAsState().value,
+                    error = vm.postError.collectAsState().value,
+                    onPublishPost = { title, text, tags, mediaUrl, mediaType ->
+                        vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
+                            if (success && mode == CreateContentMode.POST) {
+                                createContentMode = null
+                                selectedTab = BottomNavTab.HOME
+                            }
+                        }
+                    },
+                    onPublishStory = { text, mediaUrl, mediaType ->
+                        vm.createStory(text, mediaUrl, mediaType) { success ->
+                            if (success) {
+                                createContentMode = null
+                                selectedTab = BottomNavTab.HOME
+                            }
+                        }
+                    },
+                    onBack = { createContentMode = null },
+                    onClearError = vm::clearPostError,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            lastSelectedBook?.let { book ->
+                BookDetailScreen(
+                    book = book,
+                    userId = profile.uid,
+                    onBack = { selectedBook = null },
+                    onRead = { selected, chapter ->
+                        readerBook = selected
+                        readerChapterId = chapter?.id
+                    },
+                    onOpenChapter = { selected, chapter ->
+                        readerBook = selected
+                        readerChapterId = chapter.id
+                    },
+                    onOpenAuthor = ::openPublicProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = readerBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            lastReaderBook?.let { book ->
+                BookReaderScreen(
+                    book = book,
+                    userId = profile.uid,
+                    initialChapterId = lastReaderChapterId,
+                    onBack = {
+                        readerBook = null
+                        readerChapterId = null
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedWritingBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            lastSelectedWritingBook?.let { book ->
+                BookManagementRootScreen(
+                    book = book,
+                    onBack = {
+                        selectedWritingBook = null
+                        writeVm.loadMyBooks()
+                    },
+                    onPreviewBook = { target ->
+                        selectedBook = target
+                    },
+                    onDeleteBook = { target ->
+                        writeVm.deleteBook(target.id)
+                        selectedWritingBook = null
+                    },
+                    onOpenProfile = ::openPublicProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedPublicProfile != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            lastSelectedPublicProfile?.let { publicProfile ->
+                PublicProfileScreen(
+                    profile = publicProfile,
+                    isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+                    onBack = { selectedPublicProfile = null },
+                    onFollow = { friendsVm.toggleFollowUser(publicProfile) },
+                    onMessage = {
+                        selectedPublicProfile = null
+                        selectedDirectUser = publicProfile
+                        selectedTab = BottomNavTab.DM
+                    },
+                    onOpenProfile = ::openPublicProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showNotifications,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            NotificationsScreen(
+                onBack = { showNotifications = false },
+                onOpenProfile = ::openPublicProfile,
+                onOpenNotification = { notification ->
+                    if (
+                        notification.referenceId.isNotBlank() &&
+                        (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
+                    ) {
+                        notificationPostTargetId = notification.referenceId
+                        showNotifications = false
+                        selectedTab = BottomNavTab.HOME
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showCommunityServers,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            CommunityServersScreen(
+                onBack = { showCommunityServers = false },
+                onOpenProfile = ::openPublicProfile,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showGlobalChat,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            GlobalChatScreen(
+                onBack = { showGlobalChat = false },
+                onOpenProfile = ::openPublicProfile,
+                canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showAdminPanel && hasAdminAccess,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            AdminPanelScreen(
+                onBack = { showAdminPanel = false },
+                permissions = adminPermissions,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showProfileEdit,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ProfileEditScreen(
+                profile = profile,
+                onSaved = { showProfileEdit = false; authViewModel.checkSession() },
+                onBack = { showProfileEdit = false },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            SettingsScreen(
+                profile = profile,
+                darkTheme = darkTheme,
+                onDarkThemeChanged = onDarkThemeChanged,
+                onEditProfile = { showProfileEdit = true },
+                onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                onBack = { showSettings = false },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
 }
 
 private const val LIBRA_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"

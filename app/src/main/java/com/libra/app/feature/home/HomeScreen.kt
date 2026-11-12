@@ -38,11 +38,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import com.libra.app.ui.animation.AppleSprings
+import com.libra.app.ui.animation.appleBouncy
+import com.libra.app.ui.animation.appleGlassSurface
+import com.libra.app.ui.animation.appleSquircle
+import com.libra.app.ui.animation.elasticStretch
+import com.libra.app.ui.animation.staggeredVaporEntrance
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
@@ -248,7 +255,7 @@ fun HomeScreen(
                             if (data.posts.isEmpty()) {
                                 item { EmptySection("Henüz gösterilecek gönderi yok.") }
                             } else {
-                                items(data.posts, key = { it.id }) { post ->
+                                itemsIndexed(data.posts, key = { _, it -> it.id }) { index, post ->
                                     PostCard(
                                         post = post,
                                         currentUserId = data.currentUser?.uid.orEmpty(),
@@ -285,8 +292,10 @@ fun HomeScreen(
                                             }
                                         },
                                         onDelete = { onDeletePost(post) },
-                                        canComment = canComment
+                                        canComment = canComment,
+                                        index = index
                                     )
+                                    Spacer(Modifier.height(10.dp))
                                 }
                             }
                         }
@@ -415,32 +424,34 @@ fun HomeScreen(
                 if (selectedSection == HomeSection.POSTS) {
                     val createButtonRotation by animateFloatAsState(
                         targetValue = if (showCreateMenu) 45f else 0f,
-                        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                         label = "createButtonRotation"
                     )
 
-                    androidx.compose.material3.Surface(
-                        onClick = { showCreateMenu = !showCreateMenu },
+                    Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(top = 14.dp, end = 20.dp)
-                            .size(42.dp)
-                            .graphicsLayer {
-                                rotationZ = createButtonRotation
-                            },
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        contentColor = MaterialTheme.colorScheme.background,
-                        shadowElevation = 3.dp,
-                        tonalElevation = 0.dp
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Add,
-                                if (showCreateMenu) "Kapat" else "Oluştur",
-                                modifier = Modifier.size(20.dp)
+                            .size(44.dp)
+                            .elasticStretch(maxStretchDp = 14.dp)
+                            .appleBouncy(
+                                pressedScale = 0.88f,
+                                onClick = { showCreateMenu = !showCreateMenu }
                             )
-                        }
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = if (showCreateMenu) "Kapat" else "Oluştur",
+                            tint = MaterialTheme.colorScheme.background,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .graphicsLayer {
+                                    rotationZ = createButtonRotation
+                                }
+                        )
                     }
                 }
 
@@ -527,15 +538,27 @@ private fun HomeSectionButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.02f else 1.0f,
+        animationSpec = AppleSprings.FloatSnappy,
+        label = "section_btn_scale"
+    )
+
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.onBackground
-                else MaterialTheme.colorScheme.surface
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .appleSquircle(12.dp)
+            .appleGlassSurface(
+                cornerRadius = 12.dp,
+                elevation = if (selected) 3.dp else 1.dp,
+                containerColor = if (selected) MaterialTheme.colorScheme.onBackground
+                else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
             )
-            .clickable(onClick = onClick)
-            .padding(vertical = 13.dp),
+            .appleBouncy(pressedScale = 0.95f, onClick = onClick)
+            .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -583,19 +606,18 @@ private fun CreateChoiceMenu(
     onPost: () -> Unit,
     onBook: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.width(190.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    Box(
+        modifier = Modifier
+            .width(190.dp)
+            .appleGlassSurface(cornerRadius = 18.dp, elevation = 12.dp)
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                     .clickable(enabled = canStory, onClick = onStory).alpha(if (canStory) 1f else 0.45f)
+                    .staggeredVaporEntrance(index = 0)
+                    .appleBouncy(enabled = canStory, pressedScale = 0.95f, onClick = onStory)
+                    .alpha(if (canStory) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -607,7 +629,9 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                     .clickable(enabled = canPost, onClick = onPost).alpha(if (canPost) 1f else 0.45f)
+                    .staggeredVaporEntrance(index = 1)
+                    .appleBouncy(enabled = canPost, pressedScale = 0.95f, onClick = onPost)
+                    .alpha(if (canPost) 1f else 0.45f)
                     .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -623,7 +647,8 @@ private fun CreateChoiceMenu(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onBook)
+                    .staggeredVaporEntrance(index = 2)
+                    .appleBouncy(pressedScale = 0.95f, onClick = onBook)
                     .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -657,13 +682,16 @@ private fun PostCard(
     onOpenProfile: () -> Unit = {},
     onDetailClick: () -> Unit = onComment,
     onDelete: () -> Unit = {},
-    canComment: Boolean = true
+    canComment: Boolean = true,
+    index: Int = 0
 ) {
     var showOptionsMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .staggeredVaporEntrance(index = index)
+            .appleSquircle(16.dp)
             .padding(horizontal = 12.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -684,7 +712,7 @@ private fun PostCard(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(onClick = onOpenProfile)
+                        .appleBouncy(pressedScale = 0.98f, onClick = onOpenProfile)
                 ) {
                     Text(
                         text = post.authorName.ifBlank { "Libra kullanıcısı" },
@@ -869,12 +897,19 @@ private fun PostCard(
             ) {
                 val haptic = LocalHapticFeedback.current
 
+                val likeScale by animateFloatAsState(
+                    targetValue = if (post.likedByCurrentUser) 1.25f else 1.0f,
+                    animationSpec = AppleSprings.FloatBouncy,
+                    label = "heart_bounce"
+                )
+
                 // Like Button (Tek Dokunma: Beğen / Beğeniyi Kaldır, Basılı Tutma: Beğenen Kişileri Gör)
                 Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .combinedClickable(
+                        .appleBouncy(
+                            pressedScale = 0.85f,
                             onClick = onLike,
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -894,6 +929,10 @@ private fun PostCard(
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = likeScale
+                            scaleY = likeScale
                         }
                     )
                 }
@@ -903,7 +942,8 @@ private fun PostCard(
                     text = post.likesCount.toString(),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .combinedClickable(
+                        .appleBouncy(
+                            pressedScale = 0.90f,
                             onClick = onShowLikes,
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -917,10 +957,21 @@ private fun PostCard(
                 Spacer(Modifier.width(8.dp))
 
                 // Comment Button
-                IconButton(onClick = onComment, enabled = canComment) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(
+                            enabled = canComment,
+                            pressedScale = 0.85f,
+                            onClick = onComment
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.ChatBubbleOutline,
-                        contentDescription = "Yorumlar"
+                        contentDescription = "Yorumlar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -929,7 +980,11 @@ private fun PostCard(
                     text = post.commentsCount.toString(),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .clickable(enabled = canComment, onClick = onComment)
+                        .appleBouncy(
+                            enabled = canComment,
+                            pressedScale = 0.90f,
+                            onClick = onComment
+                        )
                         .padding(horizontal = 6.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -937,7 +992,16 @@ private fun PostCard(
                 Spacer(Modifier.weight(1f))
 
                 // Share Button
-                IconButton(onClick = onShare) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(
+                            pressedScale = 0.85f,
+                            onClick = onShare
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.Share,
                         contentDescription = "Paylaş",
@@ -945,8 +1009,23 @@ private fun PostCard(
                     )
                 }
 
+                val saveScale by animateFloatAsState(
+                    targetValue = if (post.savedByCurrentUser) 1.20f else 1.0f,
+                    animationSpec = AppleSprings.FloatBouncy,
+                    label = "save_bounce"
+                )
+
                 // Save Button
-                IconButton(onClick = onSave) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(
+                            pressedScale = 0.85f,
+                            onClick = onSave
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = if (post.savedByCurrentUser) {
                             Icons.Default.Bookmark
@@ -958,6 +1037,10 @@ private fun PostCard(
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = saveScale
+                            scaleY = saveScale
                         }
                     )
                 }

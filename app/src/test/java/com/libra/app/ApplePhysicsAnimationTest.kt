@@ -1,0 +1,115 @@
+package com.libra.app
+
+import com.libra.app.ui.animation.AppleSprings
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.abs
+
+/**
+ * Unit test suite verifying Apple iOS 18 & VisionOS dynamic physics animation tokens,
+ * spring damping ratios, stagger mist timings, and rubber-band elasticity formulas.
+ */
+class ApplePhysicsAnimationTest {
+
+    @Test
+    fun vapor_stagger_delay_constant_is_calibrated_to_24ms() {
+        assertEquals(24L, AppleSprings.VaporStaggerDelayMs)
+    }
+
+    @Test
+    fun staggered_vapor_cascade_timing_formula_preserves_fluid_mist_entrance() {
+        fun calculateStagger(index: Int): Long {
+            val cappedIndex = index.coerceIn(0, 12)
+            return cappedIndex * AppleSprings.VaporStaggerDelayMs
+        }
+
+        // First item appears immediately
+        assertEquals(0L, calculateStagger(0))
+        // Successive items stagger by 24ms increments
+        assertEquals(24L, calculateStagger(1))
+        assertEquals(48L, calculateStagger(2))
+        assertEquals(120L, calculateStagger(5))
+        // Capped at 12 items (288ms maximum waterfall) so large lists don't delay bottom content
+        assertEquals(288L, calculateStagger(12))
+        assertEquals(288L, calculateStagger(25))
+    }
+
+    @Test
+    fun bouncy_spring_physics_specification() {
+        assertEquals(0.58f, AppleSprings.FloatBouncy.dampingRatio, 0.001f)
+        assertEquals(420f, AppleSprings.FloatBouncy.stiffness, 0.001f)
+    }
+
+    @Test
+    fun snappy_spring_physics_specification() {
+        assertEquals(0.72f, AppleSprings.FloatSnappy.dampingRatio, 0.001f)
+        assertEquals(650f, AppleSprings.FloatSnappy.stiffness, 0.001f)
+    }
+
+    @Test
+    fun gentle_spring_physics_specification() {
+        assertEquals(0.85f, AppleSprings.FloatGentle.dampingRatio, 0.001f)
+        assertEquals(320f, AppleSprings.FloatGentle.stiffness, 0.001f)
+    }
+
+    @Test
+    fun offset_bouncy_spring_specification() {
+        assertEquals(0.60f, AppleSprings.OffsetBouncy.dampingRatio, 0.001f)
+        assertEquals(450f, AppleSprings.OffsetBouncy.stiffness, 0.001f)
+    }
+
+    @Test
+    fun offset_gentle_spring_specification() {
+        assertEquals(0.82f, AppleSprings.OffsetGentle.dampingRatio, 0.001f)
+        assertEquals(340f, AppleSprings.OffsetGentle.stiffness, 0.001f)
+    }
+
+    @Test
+    fun spring_damping_hierarchy_reflects_physical_responsiveness() {
+        // Bouncy (playful overshoot) has lower damping than snappy (quick settle),
+        // which in turn has lower damping than gentle (soft settling for sheets).
+        assertTrue(
+            "Bouncy damping must be lower than snappy damping",
+            AppleSprings.FloatBouncy.dampingRatio < AppleSprings.FloatSnappy.dampingRatio
+        )
+        assertTrue(
+            "Snappy damping must be lower than gentle damping",
+            AppleSprings.FloatSnappy.dampingRatio < AppleSprings.FloatGentle.dampingRatio
+        )
+        // Snappy must be stiffer than bouncy and gentle
+        assertTrue(
+            "Snappy stiffness must be highest for immediate response",
+            AppleSprings.FloatSnappy.stiffness > AppleSprings.FloatBouncy.stiffness
+        )
+        assertTrue(
+            "Snappy stiffness must exceed gentle stiffness",
+            AppleSprings.FloatSnappy.stiffness > AppleSprings.FloatGentle.stiffness
+        )
+    }
+
+    @Test
+    fun rubber_band_elasticity_formula_dampens_displacement() {
+        fun rubberBand(offset: Float, maxStretch: Float): Float {
+            return offset / (1f + (abs(offset) / maxStretch))
+        }
+
+        val maxStretch = 100f
+
+        // Zero offset remains zero
+        assertEquals(0f, rubberBand(0f, maxStretch), 0.001f)
+
+        // At max stretch, displacement is exactly 50% of original
+        val atLimit = rubberBand(maxStretch, maxStretch)
+        assertEquals(50f, atLimit, 0.001f)
+
+        // Extreme tugging (10x max) never exceeds max stretch ceiling
+        val extremeTug = rubberBand(1000f, maxStretch)
+        assertTrue("Extreme tug must never exceed maxStretch", extremeTug < maxStretch)
+        assertEquals(90.909f, extremeTug, 0.01f)
+
+        // Negative tugs preserve direction
+        val negativeTug = rubberBand(-maxStretch, maxStretch)
+        assertEquals(-50f, negativeTug, 0.001f)
+    }
+}

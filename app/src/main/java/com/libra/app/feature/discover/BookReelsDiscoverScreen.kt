@@ -54,6 +54,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.libra.app.ui.animation.AppleSprings
+import com.libra.app.ui.animation.appleBouncy
+import com.libra.app.ui.animation.appleGlassSurface
+import com.libra.app.ui.animation.appleSquircle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -741,7 +745,9 @@ private fun BookReelItem(
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 contentPadding = PaddingValues(vertical = 12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .appleBouncy(pressedScale = 0.95f, onClick = onStartReading)
             ) {
                 Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -771,7 +777,7 @@ private fun BookReelItem(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onOpenProfile)
+                    .appleBouncy(pressedScale = 0.88f, onClick = onOpenProfile)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     UserAvatar(
@@ -834,7 +840,7 @@ private fun ReelActionButton(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.appleBouncy(pressedScale = 0.86f, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(

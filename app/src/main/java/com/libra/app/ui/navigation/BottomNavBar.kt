@@ -1,5 +1,6 @@
 package com.libra.app.ui.navigation
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,8 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.libra.app.ui.animation.AppleSprings
+import com.libra.app.ui.animation.appleBouncy
 
 @Composable
 fun LibraBottomBar(
@@ -61,13 +65,22 @@ private fun BottomItem(
     val selected = selectedTab == tab
     var tapToken by remember { mutableIntStateOf(0) }
 
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.10f else 1.0f,
+        animationSpec = AppleSprings.FloatBouncy,
+        label = "tab_icon_scale"
+    )
+
     Column(
         modifier = modifier
             .testTag(tab.testTag)
-            .clickable {
-                tapToken += 1
-                onTabSelected(tab)
-            }
+            .appleBouncy(
+                pressedScale = 0.88f,
+                onClick = {
+                    tapToken += 1
+                    onTabSelected(tab)
+                }
+            )
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -76,7 +89,12 @@ private fun BottomItem(
             selected = selected,
             tapToken = tapToken,
             backgroundColor = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.size(25.dp)
+            modifier = Modifier
+                .size(25.dp)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                }
         )
         Text(
             tab.title,
