@@ -140,23 +140,21 @@ class ApplePhysicsAnimationTest {
 
     @Test
     fun directional_stretch_factor_physics_calculation() {
-        fun stretchScale(dragDelta: Float, maxStretch: Float): Float {
-            val ratio = abs(dragDelta) / (maxStretch * 3f)
-            return 1f + ratio.coerceAtMost(0.25f)
+        fun calculateStretchFactor(dampedOffset: Float, maxStretch: Float): Float {
+            return (abs(dampedOffset) / maxStretch.coerceAtLeast(1f)) * 0.16f
         }
 
         val maxStretch = 80f
 
-        // At rest, scale is 1.0 (no stretch)
-        assertEquals(1.0f, stretchScale(0f, maxStretch), 0.001f)
+        // At rest, elongation factor is 0.0 (no stretch)
+        assertEquals(0.0f, calculateStretchFactor(0f, maxStretch), 0.001f)
 
-        // Pulling produces gentle rubber elongation
-        val pulled = stretchScale(80f, maxStretch)
-        assertTrue("Pulling must increase scale > 1.0", pulled > 1.0f)
-        assertEquals(1.333f, pulled, 0.01f)
+        // At half-damped displacement (when dragged by maxStretch), factor is 0.08
+        val halfDamped = 40f // 80 / (1 + 80/80) = 40
+        assertEquals(0.08f, calculateStretchFactor(halfDamped, maxStretch), 0.001f)
 
-        // Extreme tugging caps at 1.25f maximum elongation factor to prevent visual clipping
-        val extreme = stretchScale(1000f, maxStretch)
-        assertEquals(1.25f, extreme, 0.001f)
+        // Asymptotically approaching maxStretch, elongation factor reaches 0.16f ceiling
+        val atCeiling = calculateStretchFactor(80f, maxStretch)
+        assertEquals(0.16f, atCeiling, 0.001f)
     }
 }
