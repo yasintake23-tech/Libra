@@ -1,5 +1,6 @@
 package com.libra.app
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        enableHighRefreshRate()
         setContent {
             val preferences = remember {
                 getSharedPreferences("libra_settings", MODE_PRIVATE)
@@ -34,6 +36,20 @@ class MainActivity : ComponentActivity() {
                         preferences.edit().putBoolean("dark_theme", it).apply()
                     }
                 )
+            }
+        }
+    }
+
+    private fun enableHighRefreshRate() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                val modes = display?.supportedModes ?: emptyArray()
+                val highRefreshMode = modes.maxByOrNull { it.refreshRate }
+                if (highRefreshMode != null && highRefreshMode.refreshRate >= 90f) {
+                    window.attributes = window.attributes.apply {
+                        preferredDisplayModeId = highRefreshMode.modeId
+                    }
+                }
             }
         }
     }

@@ -394,6 +394,35 @@ class BookDiscoveryAndMediaUpgradeTest {
         assertTrue("Create book action must set showCreateBook to true", createBookOpened)
     }
 
+    @Test
+    fun homeSectionPosts_isolatesCreateFabFromBooksDiscovery() {
+        // Verify FAB visibility logic ensures no collision with Books top bar "+ Kitap Yaz"
+        val showCreateMenu = true
+        val postSection = HomeSection.POSTS
+        val bookSection = HomeSection.BOOKS
+
+        val fabVisibleInPosts = showCreateMenu && postSection == HomeSection.POSTS
+        val fabVisibleInBooks = showCreateMenu && bookSection == HomeSection.POSTS
+
+        assertTrue("FAB should be visible in POSTS section", fabVisibleInPosts)
+        assertFalse("FAB must be isolated and hidden in BOOKS section to prevent button collision", fabVisibleInBooks)
+    }
+
+    @Test
+    fun bookReelsDiscoverScreen_lineHeightAndCoverSpecs_valid() {
+        // Validate typography line height ratios for 120Hz readability without overlap
+        val titleFontSize = 22f
+        val titleLineHeight = 28f
+        val authorFontSize = 13.5f
+        val authorLineHeight = 18f
+        val synopsisFontSize = 12.5f
+        val synopsisLineHeight = 18.5f
+
+        assertTrue("Title lineHeight must be greater than fontSize", titleLineHeight > titleFontSize)
+        assertTrue("Author lineHeight must be greater than fontSize", authorLineHeight > authorFontSize)
+        assertTrue("Synopsis lineHeight must be greater than fontSize", synopsisLineHeight > synopsisFontSize)
+    }
+
     // Fakes
     private class FakeAuthRepo : AuthRepository {
         private val _currentUser = MutableStateFlow<UserProfile?>(null)

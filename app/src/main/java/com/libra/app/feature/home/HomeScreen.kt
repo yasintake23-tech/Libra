@@ -369,7 +369,7 @@ fun HomeScreen(
                 }
 
                 AnimatedVisibility(
-                    visible = showCreateMenu,
+                    visible = showCreateMenu && selectedSection == HomeSection.POSTS,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = 76.dp, end = 18.dp),
@@ -404,33 +404,35 @@ fun HomeScreen(
                     )
                 }
 
-                val createButtonRotation by animateFloatAsState(
-                    targetValue = if (showCreateMenu) 45f else 0f,
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                    label = "createButtonRotation"
-                )
+                if (selectedSection == HomeSection.POSTS) {
+                    val createButtonRotation by animateFloatAsState(
+                        targetValue = if (showCreateMenu) 45f else 0f,
+                        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                        label = "createButtonRotation"
+                    )
 
-                androidx.compose.material3.Surface(
-                    onClick = { showCreateMenu = !showCreateMenu },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 14.dp, end = 20.dp)
-                        .size(42.dp)
-                        .graphicsLayer {
-                            rotationZ = createButtonRotation
-                        },
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    contentColor = MaterialTheme.colorScheme.background,
-                    shadowElevation = 3.dp,
-                    tonalElevation = 0.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Default.Add,
-                            if (showCreateMenu) "Kapat" else "Oluştur",
-                            modifier = Modifier.size(20.dp)
-                        )
+                    androidx.compose.material3.Surface(
+                        onClick = { showCreateMenu = !showCreateMenu },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 14.dp, end = 20.dp)
+                            .size(42.dp)
+                            .graphicsLayer {
+                                rotationZ = createButtonRotation
+                            },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        contentColor = MaterialTheme.colorScheme.background,
+                        shadowElevation = 3.dp,
+                        tonalElevation = 0.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Add,
+                                if (showCreateMenu) "Kapat" else "Oluştur",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
@@ -812,12 +814,15 @@ private fun PostCard(
                     Spacer(Modifier.height(10.dp))
                     Text(
                         post.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(lineHeight = 22.sp),
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(post.text, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    post.text,
+                    style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp)
+                )
             }
 
             // Post Media Image (Gönderi görseli -> Tam Ekran Görüntüleyici)
