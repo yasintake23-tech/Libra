@@ -65,6 +65,7 @@ import com.libra.app.domain.model.ServerRoleDefinition
 import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -208,7 +209,10 @@ fun CommunityServersScreen(
             .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+            ) {
                 Icon(Icons.Default.ArrowBack, "Geri")
             }
             Column(Modifier.weight(1f)) {
@@ -222,7 +226,11 @@ fun CommunityServersScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            FilledTonalButton(onClick = { showCreate = true }) {
+            FilledTonalButton(
+                onClick = { showCreate = true },
+                modifier = Modifier.appleBouncy(pressedScale = 0.92f, onClick = { showCreate = true }),
+                shape = RoundedCornerShape(16.dp)
+            ) {
                 Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Oluştur")
@@ -264,23 +272,30 @@ fun CommunityServersScreen(
                         label = { Text("Sunucu anahtarı") },
                         shape = RoundedCornerShape(14.dp)
                     )
-                    Button(
-                        enabled = inviteKeyInput.isNotBlank() && !inviteLookupLoading,
-                        onClick = {
-                            inviteLookupLoading = true
-                            error = null
-                            scope.launch {
-                                when (val result = communityRepository.findCommunityServerByInviteKey(inviteKeyInput)) {
-                                    is AppResult.Success -> {
-                                        previewIsMember = false
-                                        previewServer = result.data
-                                    }
-                                    is AppResult.Error -> error = result.error.message
+                    val canLookup = inviteKeyInput.isNotBlank() && !inviteLookupLoading
+                    val onLookup = {
+                        inviteLookupLoading = true
+                        error = null
+                        scope.launch {
+                            when (val result = communityRepository.findCommunityServerByInviteKey(inviteKeyInput)) {
+                                is AppResult.Success -> {
+                                    previewIsMember = false
+                                    previewServer = result.data
                                 }
-                                inviteLookupLoading = false
+                                is AppResult.Error -> error = result.error.message
                             }
-                        },
-                        shape = RoundedCornerShape(14.dp),
+                            inviteLookupLoading = false
+                        }
+                    }
+                    Button(
+                        enabled = canLookup,
+                        onClick = onLookup,
+                        modifier = Modifier.appleBouncy(
+                            enabled = canLookup,
+                            pressedScale = 0.92f,
+                            onClick = onLookup
+                        ),
+                        shape = RoundedCornerShape(16.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
                     ) {
                         Text(if (inviteLookupLoading) "..." else "Bul")

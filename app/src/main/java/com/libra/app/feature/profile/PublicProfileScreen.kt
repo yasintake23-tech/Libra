@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,7 +93,10 @@ fun PublicProfileScreen(
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+            ) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Geri")
             }
             Text(
@@ -165,12 +169,12 @@ fun PublicProfileScreen(
                         ProfileStat(
                             following.size,
                             "Takip",
-                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWING }
+                            Modifier.appleBouncy(pressedScale = 0.94f, onClick = { socialDialog = PublicSocialListType.FOLLOWING })
                         )
                         ProfileStat(
                             followers.size,
                             "Takipçi",
-                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWERS }
+                            Modifier.appleBouncy(pressedScale = 0.94f, onClick = { socialDialog = PublicSocialListType.FOLLOWERS })
                         )
                     }
 
@@ -183,7 +187,10 @@ fun PublicProfileScreen(
                         if (isFollowing) {
                             OutlinedButton(
                                 onClick = onFollow,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .appleBouncy(pressedScale = 0.93f, onClick = onFollow),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.Person, null)
                                 Text("  Takipte")
@@ -191,7 +198,10 @@ fun PublicProfileScreen(
                         } else {
                             Button(
                                 onClick = onFollow,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .appleBouncy(pressedScale = 0.93f, onClick = onFollow),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.PersonAdd, null)
                                 Text("  Takip et")
@@ -200,7 +210,10 @@ fun PublicProfileScreen(
 
                         OutlinedButton(
                             onClick = onMessage,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .appleBouncy(pressedScale = 0.93f, onClick = onMessage),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(Icons.Default.ChatBubbleOutline, null)
                             Text("  Mesaj")

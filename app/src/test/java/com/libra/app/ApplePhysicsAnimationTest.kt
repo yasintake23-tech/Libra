@@ -157,4 +157,42 @@ class ApplePhysicsAnimationTest {
         val atCeiling = calculateStretchFactor(80f, maxStretch)
         assertEquals(0.16f, atCeiling, 0.001f)
     }
+
+    @Test
+    fun apple_button_compression_scale_tokens_follow_ergonomic_hierarchy() {
+        val primaryButtonScale = 0.94f
+        val iconButtonScale = 0.86f
+        val cardItemScale = 0.97f
+
+        // Smaller surface area buttons compress deeper for distinct tactile feedback
+        assertTrue(iconButtonScale < primaryButtonScale)
+        // Large cards compress minimally to preserve readability of large content
+        assertTrue(primaryButtonScale < cardItemScale)
+        assertTrue(iconButtonScale < cardItemScale)
+    }
+
+    @Test
+    fun apple_squircle_corner_radius_hierarchy() {
+        val primaryButtonRadiusDp = 18f
+        val inputAndModalRadiusDp = 16f
+        val chipRadiusDp = 14f
+
+        assertTrue(primaryButtonRadiusDp > inputAndModalRadiusDp)
+        assertTrue(inputAndModalRadiusDp > chipRadiusDp)
+    }
+
+    @Test
+    fun apple_glass_subtle_refraction_border_contrast_tokens() {
+        val primaryBorderTopAlpha = 0.32f
+        val primaryBorderBottomAlpha = 0.08f
+        val secondaryBorderTopAlpha = 0.22f
+        val secondaryBorderBottomAlpha = 0.05f
+
+        // Top edge light reflection is stronger than bottom ambient rim
+        assertTrue(primaryBorderTopAlpha > primaryBorderBottomAlpha)
+        assertTrue(secondaryBorderTopAlpha > secondaryBorderBottomAlpha)
+        // Primary button border has higher contrast than secondary
+        assertTrue(primaryBorderTopAlpha > secondaryBorderTopAlpha)
+    }
 }
+

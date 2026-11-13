@@ -43,6 +43,7 @@ import com.libra.app.domain.model.BookStatus
 import com.libra.app.ui.components.AppButton
 import com.libra.app.ui.components.AppButtonVariant
 import com.libra.app.ui.components.BookCover
+import com.libra.app.ui.animation.appleBouncy
 
 @Composable
 fun WriteScreen(
@@ -164,7 +165,10 @@ private fun StudioStat(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier, shape = RoundedCornerShape(14.dp)) {
+    Card(
+        modifier = modifier.appleBouncy(pressedScale = 0.95f, onClick = {}),
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Column(Modifier.padding(12.dp)) {
             Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -176,10 +180,10 @@ private fun StudioStat(
 @Composable
 private fun AuthorBookCard(book: Book, onOpenEditor: () -> Unit) {
     Card(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenEditor),
-        shape = RoundedCornerShape(16.dp),
+            .appleBouncy(pressedScale = 0.97f, onClick = onOpenEditor),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -218,7 +222,8 @@ private fun AuthorBookCard(book: Book, onOpenEditor: () -> Unit) {
             }
             Button(
                 onClick = onOpenEditor,
-                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.appleBouncy(pressedScale = 0.92f, onClick = onOpenEditor),
+                shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text("Yönet", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))

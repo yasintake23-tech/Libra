@@ -62,6 +62,7 @@ import com.libra.app.ui.theme.LibraLavenderBorder
 import com.libra.app.ui.theme.LibraLavenderLight
 import com.libra.app.ui.theme.LibraLavenderSurface
 import com.libra.app.ui.theme.LibraLavenderText
+import com.libra.app.ui.animation.appleBouncy
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -370,12 +371,17 @@ fun CreateBookStage4Publish(
             // Publish Button (Primary)
             Button(
                 onClick = { showPublishConfirmDialog = true },
-                enabled = uiState.canPublish,
+                enabled = uiState.canPublish && !uiState.isPublishing,
                 colors = ButtonDefaults.buttonColors(containerColor = LibraLavender),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
+                    .appleBouncy(
+                        enabled = uiState.canPublish && !uiState.isPublishing,
+                        pressedScale = 0.93f,
+                        onClick = { showPublishConfirmDialog = true }
+                    )
             ) {
                 if (uiState.isPublishing) {
                     CircularProgressIndicator(
@@ -400,10 +406,15 @@ fun CreateBookStage4Publish(
             OutlinedButton(
                 onClick = onSaveDraft,
                 enabled = !uiState.isSavingDraft && !uiState.isPublishing,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
+                    .appleBouncy(
+                        enabled = !uiState.isSavingDraft && !uiState.isPublishing,
+                        pressedScale = 0.93f,
+                        onClick = onSaveDraft
+                    )
             ) {
                 if (uiState.isSavingDraft) {
                     CircularProgressIndicator(
@@ -466,14 +477,14 @@ private fun VisibilityOption(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onSelect),
+            .clip(RoundedCornerShape(14.dp))
+            .appleBouncy(pressedScale = 0.97f, onClick = onSelect),
         color = if (selected) LibraLavenderSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (selected) LibraLavender else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),

@@ -89,6 +89,7 @@ import coil.compose.AsyncImage
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ReadingProgress
+import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
@@ -356,8 +357,14 @@ fun BookReaderScreen(
                                                 selectedIndex--
                                                 scope.launch { scrollState.scrollTo(0) }
                                             },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(12.dp)
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .appleBouncy(pressedScale = 0.93f, onClick = {
+                                                    saveNow(true)
+                                                    selectedIndex--
+                                                    scope.launch { scrollState.scrollTo(0) }
+                                                }),
+                                            shape = RoundedCornerShape(16.dp)
                                         ) {
                                             Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(16.dp))
                                             Spacer(Modifier.width(4.dp))
@@ -372,8 +379,14 @@ fun BookReaderScreen(
                                                 selectedIndex++
                                                 scope.launch { scrollState.scrollTo(0) }
                                             },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .appleBouncy(pressedScale = 0.93f, onClick = {
+                                                    saveNow(true)
+                                                    selectedIndex++
+                                                    scope.launch { scrollState.scrollTo(0) }
+                                                }),
+                                            shape = RoundedCornerShape(16.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                         ) {
                                             Text("Sonraki Bölüm")
@@ -443,10 +456,16 @@ fun BookReaderScreen(
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            saveNow(true)
-                            onBack()
-                        }) {
+                        IconButton(
+                            onClick = {
+                                saveNow(true)
+                                onBack()
+                            },
+                            modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = {
+                                saveNow(true)
+                                onBack()
+                            })
+                        ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri", tint = foreground)
                         }
 
@@ -467,11 +486,17 @@ fun BookReaderScreen(
                             )
                         }
 
-                        IconButton(onClick = { showChapters = true }) {
+                        IconButton(
+                            onClick = { showChapters = true },
+                            modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { showChapters = true })
+                        ) {
                             Icon(Icons.Default.List, contentDescription = "Bölümler", tint = foreground)
                         }
 
-                        IconButton(onClick = { showSettings = true }) {
+                        IconButton(
+                            onClick = { showSettings = true },
+                            modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { showSettings = true })
+                        ) {
                             Icon(Icons.Default.FormatSize, contentDescription = "Okuma Ayarları", tint = foreground)
                         }
                     }
@@ -517,7 +542,16 @@ fun BookReaderScreen(
                             saveNow(true)
                             selectedIndex--
                             scope.launch { scrollState.scrollTo(0) }
-                        }
+                        },
+                        modifier = Modifier.appleBouncy(
+                            enabled = selectedIndex > 0,
+                            pressedScale = 0.86f,
+                            onClick = {
+                                saveNow(true)
+                                selectedIndex--
+                                scope.launch { scrollState.scrollTo(0) }
+                            }
+                        )
                     ) {
                         Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Önceki Bölüm", tint = foreground)
                     }
@@ -542,7 +576,16 @@ fun BookReaderScreen(
                             saveNow(true)
                             selectedIndex++
                             scope.launch { scrollState.scrollTo(0) }
-                        }
+                        },
+                        modifier = Modifier.appleBouncy(
+                            enabled = selectedIndex < chapters.lastIndex,
+                            pressedScale = 0.86f,
+                            onClick = {
+                                saveNow(true)
+                                selectedIndex++
+                                scope.launch { scrollState.scrollTo(0) }
+                            }
+                        )
                     ) {
                         Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Sonraki Bölüm", tint = foreground)
                     }
@@ -849,8 +892,8 @@ private fun ReaderThemeButton(
     Surface(
         modifier = modifier
             .height(44.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+            .appleBouncy(pressedScale = 0.90f, onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
         color = bgColor,
         border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
     ) {

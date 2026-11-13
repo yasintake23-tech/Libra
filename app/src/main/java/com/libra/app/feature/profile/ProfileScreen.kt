@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import com.libra.app.ui.animation.appleBouncy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.state.UiState
@@ -151,6 +153,8 @@ private fun ProfileContent(
                 if (onAdminClick != null) {
                     androidx.compose.material3.Button(
                         onClick = onAdminClick,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.92f, onClick = onAdminClick),
+                        shape = RoundedCornerShape(16.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             horizontal = 14.dp,
                             vertical = 8.dp
@@ -168,7 +172,10 @@ private fun ProfileContent(
                         )
                     }
                 }
-                androidx.compose.material3.IconButton(onClick = onSettingsClick) {
+                androidx.compose.material3.IconButton(
+                    onClick = onSettingsClick,
+                    modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onSettingsClick)
+                ) {
                     Icon(
                         Icons.Default.Settings,
                         contentDescription = "Ayarlar",
@@ -293,7 +300,9 @@ private fun ProfileContent(
 
         TextButton(
             onClick = onSignOut,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .appleBouncy(pressedScale = 0.94f, onClick = onSignOut)
         ) {
             Icon(Icons.Default.ExitToApp, contentDescription = null)
             Text("  Çıkış yap")
@@ -311,7 +320,8 @@ private fun ProfileAction(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(14.dp))
+            .appleBouncy(pressedScale = 0.97f, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

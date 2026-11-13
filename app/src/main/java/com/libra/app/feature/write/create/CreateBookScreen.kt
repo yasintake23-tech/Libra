@@ -66,6 +66,7 @@ import com.libra.app.ui.theme.LibraLavender
 import com.libra.app.ui.theme.LibraLavenderBorder
 import com.libra.app.ui.theme.LibraLavenderSurface
 import com.libra.app.ui.theme.LibraLavenderText
+import com.libra.app.ui.animation.appleBouncy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,14 +125,16 @@ fun CreateBookScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            when {
-                                uiState.currentStep > 1 -> viewModel.previousStep()
-                                uiState.hasAnyContent -> viewModel.setDiscardConfirmDialog(true)
-                                else -> onBack()
-                            }
+                    val onNavBack = {
+                        when {
+                            uiState.currentStep > 1 -> viewModel.previousStep()
+                            uiState.hasAnyContent -> viewModel.setDiscardConfirmDialog(true)
+                            else -> onBack()
                         }
+                    }
+                    IconButton(
+                        onClick = onNavBack,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onNavBack)
                     ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Geri")
                     }
@@ -139,7 +142,12 @@ fun CreateBookScreen(
                 actions = {
                     TextButton(
                         onClick = { viewModel.saveAsDraft(onBookCreated) },
-                        enabled = !uiState.isSavingDraft && !uiState.isPublishing
+                        enabled = !uiState.isSavingDraft && !uiState.isPublishing,
+                        modifier = Modifier.appleBouncy(
+                            enabled = !uiState.isSavingDraft && !uiState.isPublishing,
+                            pressedScale = 0.92f,
+                            onClick = { viewModel.saveAsDraft(onBookCreated) }
+                        )
                     ) {
                         if (uiState.isSavingDraft) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -172,7 +180,11 @@ fun CreateBookScreen(
                         if (uiState.currentStep > 1) {
                             OutlinedButton(
                                 onClick = viewModel::previousStep,
-                                shape = RoundedCornerShape(12.dp)
+                                modifier = Modifier.appleBouncy(
+                                    pressedScale = 0.93f,
+                                    onClick = viewModel::previousStep
+                                ),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.ArrowBack, null, Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -191,8 +203,13 @@ fun CreateBookScreen(
                         Button(
                             onClick = viewModel::nextStep,
                             enabled = canProceed,
+                            modifier = Modifier.appleBouncy(
+                                enabled = canProceed,
+                                pressedScale = 0.93f,
+                                onClick = viewModel::nextStep
+                            ),
                             colors = ButtonDefaults.buttonColors(containerColor = LibraLavender),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Text("İleri", fontWeight = FontWeight.Bold)
                             Spacer(Modifier.width(6.dp))

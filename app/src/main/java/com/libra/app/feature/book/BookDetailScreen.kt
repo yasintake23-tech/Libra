@@ -79,6 +79,7 @@ import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ReadingProgress
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.BookCover
+import com.libra.app.ui.animation.appleBouncy
 
 @Composable
 fun BookDetailScreen(
@@ -182,19 +183,28 @@ private fun BookDetailContent(
             TopAppBar(
                 title = { },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                     }
                 },
                 actions = {
-                    IconButton(onClick = onToggleLike) {
+                    IconButton(
+                        onClick = onToggleLike,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onToggleLike)
+                    ) {
                         Icon(
                             if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = "Beğen",
                             tint = if (isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = onToggleSave) {
+                    IconButton(
+                        onClick = onToggleSave,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onToggleSave)
+                    ) {
                         Icon(
                             if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                             contentDescription = "Kaydet",
@@ -202,7 +212,10 @@ private fun BookDetailContent(
                         )
                     }
                     onShare?.let { shareFn ->
-                        IconButton(onClick = { shareFn(book) }) {
+                        IconButton(
+                            onClick = { shareFn(book) },
+                            modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { shareFn(book) })
+                        ) {
                             Icon(Icons.Default.Share, contentDescription = "Paylaş")
                         }
                     }
@@ -256,8 +269,13 @@ private fun BookDetailContent(
                         enabled = primaryChapter != null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(14.dp),
+                            .height(50.dp)
+                            .appleBouncy(
+                                enabled = primaryChapter != null,
+                                pressedScale = 0.94f,
+                                onClick = { primaryChapter?.let { onRead(book, it) } }
+                            ),
+                        shape = RoundedCornerShape(18.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -358,9 +376,11 @@ private fun BookDetailContent(
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(24.dp))
-                                .clickable(enabled = onOpenAuthor != null) {
-                                    onOpenAuthor?.invoke(book.ownerId)
-                                }
+                                .appleBouncy(
+                                    enabled = onOpenAuthor != null,
+                                    pressedScale = 0.94f,
+                                    onClick = { onOpenAuthor?.invoke(book.ownerId) }
+                                )
                                 .padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -578,8 +598,11 @@ private fun BookDetailContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp, vertical = 4.dp)
-                            .clickable { onOpenChapter(book, chapter) },
-                        shape = RoundedCornerShape(14.dp),
+                            .appleBouncy(
+                                pressedScale = 0.97f,
+                                onClick = { onOpenChapter(book, chapter) }
+                            ),
+                        shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isCurrentReading) {
                                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -646,8 +669,8 @@ private fun DetailStatChip(
     tint: Color = MaterialTheme.colorScheme.primary
 ) {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.appleBouncy(pressedScale = 0.95f, onClick = {}),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp
     ) {

@@ -51,6 +51,7 @@ import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -346,7 +347,10 @@ fun DirectMessagesScreen(
                 Text("Mesajlar", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
                 Text("Birebir veya grup sohbeti başlat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { showNewChat = true }) {
+            IconButton(
+                onClick = { showNewChat = true },
+                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { showNewChat = true })
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Yeni sohbet")
             }
         }
@@ -442,22 +446,25 @@ fun DirectMessagesScreen(
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            if (conversation.isGroup) {
-                                                selectedConversation = conversation
-                                                selectedUser = null
-                                            } else {
-                                                selectedUser = UserProfile(
-                                                    uid = conversation.otherUserId,
-                                                    displayName = conversation.otherUserName,
-                                                    username = conversation.otherUserUsername,
-                                                    profileImageUrl = conversation.otherUserPhotoUrl
-                                                )
-                                                selectedConversation = null
+                                        .appleBouncy(
+                                            pressedScale = 0.97f,
+                                            onClick = {
+                                                if (conversation.isGroup) {
+                                                    selectedConversation = conversation
+                                                    selectedUser = null
+                                                } else {
+                                                    selectedUser = UserProfile(
+                                                        uid = conversation.otherUserId,
+                                                        displayName = conversation.otherUserName,
+                                                        username = conversation.otherUserUsername,
+                                                        profileImageUrl = conversation.otherUserPhotoUrl
+                                                    )
+                                                    selectedConversation = null
+                                                }
+                                                viewModel.openConversation(conversation)
                                             }
-                                            viewModel.openConversation(conversation)
-                                        },
-                                    shape = RoundedCornerShape(14.dp)
+                                        ),
+                                    shape = RoundedCornerShape(16.dp)
                                 ) {
                                     Row(
                                         Modifier.fillMaxWidth().padding(12.dp),
@@ -805,7 +812,10 @@ private fun DirectConversationScreen(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+            ) { Icon(Icons.Default.ArrowBack, "Geri") }
             UserAvatar(
                 user.profileImageUrl,
                 user.initials,
@@ -1111,7 +1121,16 @@ private fun DirectConversationScreen(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(enabled = canMessage && !mediaUploading && editingMessage == null, onClick = { mediaLauncher.launch("image/*") }) {
+            val canAttach = canMessage && !mediaUploading && editingMessage == null
+            IconButton(
+                enabled = canAttach,
+                onClick = { mediaLauncher.launch("image/*") },
+                modifier = Modifier.appleBouncy(
+                    enabled = canAttach,
+                    pressedScale = 0.86f,
+                    onClick = { mediaLauncher.launch("image/*") }
+                )
+            ) {
                 Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
             }
             OutlinedTextField(
@@ -1122,47 +1141,56 @@ private fun DirectConversationScreen(
                 placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
-            IconButton(
-                enabled = canMessage && !sending &&
-                    (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
-                    !mediaUploading,
-                onClick = {
-                    val text = draft.trim()
-                    val editing = editingMessage
-                    if (editing != null) {
-                        onEdit(editing.id, text)
-                        editingMessage = null
-                        draft = ""
-                    } else {
-                        sending = true
-                        if (pendingMediaUrl.isNotBlank()) {
-                            onSendMedia(
-                                pendingMediaUrl,
-                                pendingMediaType,
-                                text,
-                                replyTarget
-                            ) { success ->
-                                sending = false
-                                if (success) {
-                                    pendingMediaUri = null
-                                    pendingMediaUrl = ""
-                                    mediaError = null
-                                    mediaProgress = 0
-                                    replyTarget = null
-                                    draft = ""
-                                }
+            val onSendClick = {
+                val text = draft.trim()
+                val editing = editingMessage
+                if (editing != null) {
+                    onEdit(editing.id, text)
+                    editingMessage = null
+                    draft = ""
+                } else {
+                    sending = true
+                    if (pendingMediaUrl.isNotBlank()) {
+                        onSendMedia(
+                            pendingMediaUrl,
+                            pendingMediaType,
+                            text,
+                            replyTarget
+                        ) { success ->
+                            sending = false
+                            if (success) {
+                                pendingMediaUri = null
+                                pendingMediaUrl = ""
+                                mediaError = null
+                                mediaProgress = 0
+                                replyTarget = null
+                                draft = ""
                             }
-                        } else {
-                            onSend(text, replyTarget) { success ->
-                                sending = false
-                                if (success) {
-                                    replyTarget = null
-                                    draft = ""
-                                }
+                        }
+                    } else {
+                        onSend(text, replyTarget) { success ->
+                            sending = false
+                            if (success) {
+                                replyTarget = null
+                                draft = ""
                             }
                         }
                     }
                 }
+            }
+
+            val canSend = canMessage && !sending &&
+                (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
+                !mediaUploading
+
+            IconButton(
+                enabled = canSend,
+                onClick = onSendClick,
+                modifier = Modifier.appleBouncy(
+                    enabled = canSend,
+                    pressedScale = 0.86f,
+                    onClick = onSendClick
+                )
             ) {
                 if (sending) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -1203,9 +1231,11 @@ private fun DirectConversationScreen(
 @Composable
 private fun SectionButton(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.clip(RoundedCornerShape(10.dp))
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
             .background(if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick).padding(vertical = 10.dp),
+            .appleBouncy(pressedScale = 0.93f, onClick = onClick)
+            .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(text, color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1275,7 +1305,7 @@ private fun CommunityFeatureCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .appleBouncy(pressedScale = 0.97f, onClick = onClick),
         shape = RoundedCornerShape(if (large) 24.dp else 20.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
