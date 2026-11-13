@@ -1,8 +1,12 @@
 package com.libra.app.domain.repository
 
 import com.libra.app.core.result.AppResult
+import com.libra.app.core.result.AppError
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
+import com.libra.app.domain.model.BookComment
+import com.libra.app.domain.model.BookEngagement
+import com.libra.app.domain.model.ReadingProgress
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserShelfItem
@@ -23,8 +27,40 @@ interface BookRepository {
     suspend fun updateBook(book: Book): AppResult<Book>
     suspend fun deleteBook(bookId: String): AppResult<Unit>
     suspend fun addBookToShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit>
+    suspend fun removeBookFromShelf(userId: String, bookId: String, shelfType: ShelfType): AppResult<Unit>
 
     // Chapters
     fun getBookChapters(bookId: String): Flow<AppResult<List<Chapter>>>
     suspend fun saveChapter(chapter: Chapter): AppResult<Chapter>
+    suspend fun deleteChapter(bookId: String, chapterId: String): AppResult<Unit>
+    suspend fun reorderChapters(bookId: String, chapters: List<Chapter>): AppResult<Unit> =
+        AppResult.Success(Unit)
+    suspend fun duplicateChapter(bookId: String, chapterId: String): AppResult<Chapter> =
+        AppResult.Error(AppError.Database("Bölüm çoğaltma işlemi desteklenmiyor."))
+    suspend fun archiveChapter(bookId: String, chapterId: String): AppResult<Unit> =
+        AppResult.Error(AppError.Database("Bölüm arşivleme işlemi desteklenmiyor."))
+    suspend fun unarchiveChapter(bookId: String, chapterId: String): AppResult<Unit> =
+        AppResult.Error(AppError.Database("Arşivden çıkarma işlemi desteklenmiyor."))
+    suspend fun publishBook(bookId: String): AppResult<Book> =
+        AppResult.Error(AppError.Database("Yayınlama işlemi desteklenmiyor."))
+    suspend fun unpublishBook(bookId: String): AppResult<Book> =
+        AppResult.Error(AppError.Database("Yayından kaldırma işlemi desteklenmiyor."))
+
+    // Book social and reader state. Implemented by the data layer in the next book-system phase.
+    suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> =
+        AppResult.Error(AppError.Database("Kitap etkileşim sistemi henüz bağlanmadı."))
+    suspend fun toggleBookLike(bookId: String, userId: String): AppResult<Boolean> =
+        AppResult.Error(AppError.Database("Kitap beğeni sistemi henüz bağlanmadı."))
+    suspend fun toggleBookSave(bookId: String, userId: String): AppResult<Boolean> =
+        AppResult.Error(AppError.Database("Kitap kaydetme sistemi henüz bağlanmadı."))
+    fun getBookComments(bookId: String): Flow<AppResult<List<BookComment>>> =
+        kotlinx.coroutines.flow.flowOf(AppResult.Success(emptyList()))
+    suspend fun addBookComment(comment: BookComment): AppResult<BookComment> =
+        AppResult.Error(AppError.Database("Kitap yorum sistemi henüz bağlanmadı."))
+    suspend fun deleteBookComment(bookId: String, commentId: String): AppResult<Unit> =
+        AppResult.Error(AppError.Database("Kitap yorum sistemi henüz bağlanmadı."))
+    suspend fun saveReadingProgress(progress: ReadingProgress): AppResult<ReadingProgress> =
+        AppResult.Error(AppError.Database("Okuma ilerleme sistemi henüz bağlanmadı."))
+    fun getReadingProgress(userId: String, bookId: String): Flow<AppResult<ReadingProgress?>> =
+        kotlinx.coroutines.flow.flowOf(AppResult.Success(null))
 }

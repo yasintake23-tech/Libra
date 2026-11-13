@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.libra.app.ui.animation.appleBouncy
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -128,6 +130,7 @@ fun LoginScreen(
             label = { Text("E-posta") },
             placeholder = { Text("ornek@mail.com") },
             singleLine = true,
+            shape = RoundedCornerShape(16.dp),
             colors = fieldColors
         )
 
@@ -140,6 +143,7 @@ fun LoginScreen(
             label = { Text("Şifre") },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
+            shape = RoundedCornerShape(16.dp),
             colors = fieldColors
         )
 
@@ -206,7 +210,8 @@ private fun BoxedLogo() {
         modifier = Modifier
             .size(72.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onBackground),
+            .background(MaterialTheme.colorScheme.onBackground)
+            .appleBouncy(pressedScale = 0.88f, onClick = {}),
         contentAlignment = Alignment.Center
     ) {
         Icon(

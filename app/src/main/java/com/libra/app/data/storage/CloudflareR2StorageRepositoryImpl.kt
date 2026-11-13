@@ -55,13 +55,15 @@ class CloudflareR2StorageRepositoryImpl(
 
         val ownerDirectory = "users/" + uid
         val targetDirectory = request.targetDirectory.trim('/').ifBlank { ownerDirectory }
-        if (targetDirectory != ownerDirectory) {
+        val isOwnerPath = targetDirectory == ownerDirectory || targetDirectory.startsWith("$ownerDirectory/")
+        val isAdminPath = targetDirectory == "admin" || targetDirectory.startsWith("admin/")
+        if (!isOwnerPath && !isAdminPath) {
             emit(AppResult.Error(AppError.Storage("R2 hedef klasörü giriş yapan kullanıcıya ait olmalı.")))
             return@flow
         }
 
         val fileName = sanitizeFileName(request.fileName)
-        val objectKey = ownerDirectory + "/" + UUID.randomUUID() + "-" + fileName
+        val objectKey = targetDirectory + "/" + UUID.randomUUID() + "-" + fileName
 
         try {
             withContext(Dispatchers.IO) {

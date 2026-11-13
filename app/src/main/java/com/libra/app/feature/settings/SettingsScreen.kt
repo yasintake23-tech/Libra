@@ -29,6 +29,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,13 +68,17 @@ fun SettingsScreen(
         mutableStateOf(prefs.getBoolean("online_status_enabled", true))
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
@@ -197,6 +202,7 @@ fun SettingsScreen(
         item {
             Spacer(Modifier.height(10.dp))
         }
+    }
     }
 }
 

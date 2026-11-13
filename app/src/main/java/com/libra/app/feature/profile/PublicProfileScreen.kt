@@ -37,14 +37,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.libra.app.ui.animation.appleBouncy
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.AdminRole
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.ui.components.CosmeticRoleReveal
 
 @Composable
 fun PublicProfileScreen(
@@ -59,6 +64,9 @@ fun PublicProfileScreen(
     var socialDialog by remember { mutableStateOf<PublicSocialListType?>(null) }
     var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var adminRole by remember { mutableStateOf<AdminRole?>(null) }
+    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
+    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
 
     LaunchedEffect(profile.uid, isFollowing) {
         ServiceLocator.userRepository.getFollowers(profile.uid).let {
@@ -67,6 +75,10 @@ fun PublicProfileScreen(
         ServiceLocator.userRepository.getFollowing(profile.uid).let {
             if (it is com.libra.app.core.result.AppResult.Success) following = it.data
         }
+    }
+    LaunchedEffect(profile.uid) {
+        adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
+        (ServiceLocator.adminRepository.observeCosmeticRoles().first() as? com.libra.app.core.result.AppResult.Success)?.let { cosmeticRoles = it.data }
     }
 
     Column(
@@ -81,7 +93,10 @@ fun PublicProfileScreen(
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+            ) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Geri")
             }
             Text(
@@ -119,12 +134,17 @@ fun PublicProfileScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    Text(
-                        profile.displayName,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(profile.displayName, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                        adminRole?.let { role ->
+                            androidx.compose.material3.Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                        cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
+                            CosmeticRoleBadge(role) { selectedCosmetic = role }
+                        }
+                    }
 
                     Text(
                         profile.handle,
@@ -149,12 +169,12 @@ fun PublicProfileScreen(
                         ProfileStat(
                             following.size,
                             "Takip",
-                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWING }
+                            Modifier.appleBouncy(pressedScale = 0.94f, onClick = { socialDialog = PublicSocialListType.FOLLOWING })
                         )
                         ProfileStat(
                             followers.size,
                             "Takipçi",
-                            Modifier.clickable { socialDialog = PublicSocialListType.FOLLOWERS }
+                            Modifier.appleBouncy(pressedScale = 0.94f, onClick = { socialDialog = PublicSocialListType.FOLLOWERS })
                         )
                     }
 
@@ -167,7 +187,10 @@ fun PublicProfileScreen(
                         if (isFollowing) {
                             OutlinedButton(
                                 onClick = onFollow,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .appleBouncy(pressedScale = 0.93f, onClick = onFollow),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.Person, null)
                                 Text("  Takipte")
@@ -175,7 +198,10 @@ fun PublicProfileScreen(
                         } else {
                             Button(
                                 onClick = onFollow,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .appleBouncy(pressedScale = 0.93f, onClick = onFollow),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.PersonAdd, null)
                                 Text("  Takip et")
@@ -184,7 +210,10 @@ fun PublicProfileScreen(
 
                         OutlinedButton(
                             onClick = onMessage,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .appleBouncy(pressedScale = 0.93f, onClick = onMessage),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(Icons.Default.ChatBubbleOutline, null)
                             Text("  Mesaj")
@@ -218,6 +247,13 @@ fun PublicProfileScreen(
                 }
             }
         }
+    }
+
+    selectedCosmetic?.let { role ->
+        CosmeticRoleReveal(
+            role = role,
+            onDismiss = { selectedCosmetic = null }
+        )
     }
 
     socialDialog?.let { type ->

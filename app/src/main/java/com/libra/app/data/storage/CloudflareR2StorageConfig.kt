@@ -98,9 +98,12 @@ object CloudflareR2StorageConfig {
 
     private fun canonicalRawKey(value: String): String? {
         val decoded = Uri.decode(value).trim('/')
-        return decoded.takeIf {
-            it.startsWith("users/") && it.length > "users/".length
+        if (decoded.isBlank() || decoded.startsWith("http://") || decoded.startsWith("https://")) {
+            return null
         }
+        return decoded.takeIf {
+            it.startsWith("users/") || it.startsWith("admin/") || it.startsWith("covers/") || it.contains('/')
+        } ?: decoded.takeIf { it.isNotBlank() }
     }
 
 }

@@ -1,6 +1,7 @@
 package com.libra.app.data.post
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -13,7 +14,10 @@ import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.UserRepository
 import com.libra.app.domain.model.AppNotification
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -86,6 +90,9 @@ class FirebasePostRepositoryImpl(
                                 mediaType = data["mediaType"] as? String ?: "",
                                 tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
                                 likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: runCatching {
+                                    document.reference.collection("comments").count().get(AggregateSource.SERVER).await().count.toInt()
+                                }.getOrDefault(0),
                                 likedByCurrentUser = document.id in likedIds,
                                 savedByCurrentUser = document.id in savedIds,
                                 createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
@@ -149,6 +156,7 @@ class FirebasePostRepositoryImpl(
                     "mediaType" to post.mediaType,
                     "tags" to post.tags,
                     "likesCount" to 0,
+                    "commentsCount" to 0,
                     "createdAt" to post.createdAt
                 )
             ).await()
@@ -192,7 +200,8 @@ class FirebasePostRepositoryImpl(
                         likeRef,
                         mapOf(
                             "userId" to user.uid,
-                            "createdAt" to System.currentTimeMillis()
+                            "createdAt" to System.currentTimeMillis(),
+                            "likedAt" to System.currentTimeMillis()
                         )
                     )
                     transaction.update(postRef, "likesCount", currentCount + 1L)
@@ -229,6 +238,44 @@ class FirebasePostRepositoryImpl(
             AppResult.Success(nowLiked)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Beğeni işlemi başarısız.", e))
+        }
+    }
+
+    override suspend fun getPostLikeUsers(postId: String): AppResult<List<com.libra.app.domain.model.UserProfile>> {
+        if (postId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz gönderi."))
+        }
+
+        return try {
+            val snapshot = postsRef.document(postId).collection("likes")
+                .limit(100)
+                .get()
+                .await()
+
+            val uidsWithTimestamp = snapshot.documents.mapNotNull { like ->
+                val uid = like.getString("userId").orEmpty().ifBlank { like.id }.trim()
+                if (uid.isNotBlank()) {
+                    uid to (like.getLong("createdAt") ?: like.getLong("likedAt") ?: 0L)
+                } else null
+            }.sortedByDescending { it.second }.map { it.first }
+
+            val users = coroutineScope {
+                uidsWithTimestamp.map { uid ->
+                    async {
+                        val profile = (userRepository.getUserProfileFresh(uid) as? AppResult.Success)?.data
+                        profile ?: com.libra.app.domain.model.UserProfile(
+                            uid = uid,
+                            displayName = "Libra Okuru",
+                            username = uid.take(8),
+                            email = ""
+                        )
+                    }
+                }.awaitAll()
+            }
+
+            AppResult.Success(users)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Beğenenler yüklenemedi.", e))
         }
     }
 
@@ -275,7 +322,7 @@ class FirebasePostRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
-    override suspend fun addComment(postId: String, authorId: String, text: String): AppResult<PostComment> {
+    override suspend fun addComment(postId: String, authorId: String, text: String, parentCommentId: String): AppResult<PostComment> {
         val cleanText = text.trim()
         if (postId.isBlank() || authorId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         if (cleanText.isBlank()) return AppResult.Error(AppError.Validation("Yorum boş olamaz."))
@@ -283,6 +330,9 @@ class FirebasePostRepositoryImpl(
         return try {
             val profile = (userRepository.getUserProfileFresh(authorId) as? AppResult.Success)?.data
                 ?: return AppResult.Error(AppError.Database("Profil bilgileri alınamadı."))
+            if (!profile.moderation.canComment) {
+                return AppResult.Error(AppError.Auth("Yorum yapma yetkiniz geçici olarak kısıtlandı."))
+            }
             val ref = postsRef.document(postId).collection("comments").document()
             val comment = PostComment(
                 id = ref.id,
@@ -292,25 +342,48 @@ class FirebasePostRepositoryImpl(
                 authorUsername = profile.username,
                 authorPhotoUrl = profile.profileImageUrl,
                 text = cleanText,
+                parentCommentId = parentCommentId.trim(),
                 createdAt = System.currentTimeMillis()
             )
             ref.set(comment).await()
+            postsRef.document(postId).update(
+                "commentsCount",
+                com.google.firebase.firestore.FieldValue.increment(1)
+            ).await()
             val postSnapshot = postsRef.document(postId).get().await()
-            val recipientId = postSnapshot.getString("authorId").orEmpty()
+            val postOwnerId = postSnapshot.getString("authorId").orEmpty()
+
+            val recipientId = if (parentCommentId.isNotBlank()) {
+                postsRef.document(postId)
+                    .collection("comments")
+                    .document(parentCommentId.trim())
+                    .get()
+                    .await()
+                    .getString("authorId")
+                    .orEmpty()
+            } else {
+                postOwnerId
+            }
+
             if (recipientId.isNotBlank() && recipientId != authorId) {
-                runCatching { notificationRepository.create(
-                    AppNotification(
-                        recipientId = recipientId,
-                        actorId = authorId,
-                        actorName = profile.displayName,
-                        actorUsername = profile.username,
-                        actorPhotoUrl = profile.profileImageUrl,
-                        type = "COMMENT",
-                        title = "Yeni yorum",
-                        body = profile.displayName + " gönderine yorum yaptı.",
-                        referenceId = postId,
-                        createdAt = System.currentTimeMillis()
-                    )
+                runCatching {
+                    notificationRepository.create(
+                        AppNotification(
+                            recipientId = recipientId,
+                            actorId = authorId,
+                            actorName = profile.displayName,
+                            actorUsername = profile.username,
+                            actorPhotoUrl = profile.profileImageUrl,
+                            type = if (parentCommentId.isNotBlank()) "COMMENT_REPLY" else "COMMENT",
+                            title = if (parentCommentId.isNotBlank()) "Yorumuna yanıt" else "Yeni yorum",
+                            body = if (parentCommentId.isNotBlank()) {
+                                profile.displayName + " yorumuna yanıt verdi."
+                            } else {
+                                profile.displayName + " gönderine yorum yaptı."
+                            },
+                            referenceId = postId,
+                            createdAt = System.currentTimeMillis()
+                        )
                     )
                 }
             }
@@ -330,6 +403,10 @@ class FirebasePostRepositoryImpl(
                 return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
             }
             ref.delete().await()
+            postsRef.document(postId).update(
+                "commentsCount",
+                com.google.firebase.firestore.FieldValue.increment(-1)
+            ).await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum silinemedi.", e))
