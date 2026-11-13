@@ -355,6 +355,8 @@ fun AppNavHost(
                                 },
                                 initialCommentPostId = notificationPostTargetId,
                                 onInitialCommentPostConsumed = { notificationPostTargetId = null },
+                                onRefreshPosts = homeVm::refreshHome,
+                                onLoadMorePosts = homeVm::loadMorePosts,
                                 onStoryReply = { story ->
                                     scope.launch {
                                         when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {

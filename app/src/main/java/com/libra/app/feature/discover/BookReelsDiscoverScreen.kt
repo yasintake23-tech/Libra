@@ -53,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
@@ -103,7 +104,7 @@ fun BookDiscoverySection(
     onOpenProfile: (String) -> Unit,
     onShareBook: (Book) -> Unit,
     onCreateBookClick: () -> Unit = {},
-    topBar: @Composable () -> Unit = {},
+    topBar: @Composable (onRefresh: () -> Unit) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: BookReelsDiscoverViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
@@ -123,7 +124,9 @@ fun BookDiscoverySection(
             onOpenProfile = onOpenProfile,
             onShareBook = onShareBook,
             onRetry = viewModel::loadDiscoverBooks,
-            onCreateBook = onCreateBookClick
+            onCreateBook = onCreateBookClick,
+            onLoadMore = viewModel::loadMoreBooks,
+            onRefresh = viewModel::refreshBooks
         )
 
         // Overlay top bar (e.g. section selector)
@@ -132,7 +135,7 @@ fun BookDiscoverySection(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
         ) {
-            topBar()
+            topBar(viewModel::refreshBooks)
         }
 
         // Reader Comments Bottom Sheet
@@ -257,6 +260,7 @@ fun BookDiscoverySection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BookReelsFeed(
     state: BookReelsState,
@@ -269,6 +273,8 @@ private fun BookReelsFeed(
     onShareBook: (Book) -> Unit,
     onRetry: () -> Unit,
     onCreateBook: () -> Unit,
+    onLoadMore: () -> Unit = {},
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (state.isLoading && state.books.isEmpty()) {
@@ -366,32 +372,80 @@ private fun BookReelsFeed(
         return
     }
 
-    val pagerState = rememberPagerState(pageCount = { state.books.size })
+    val totalCount = state.books.size + if (state.isLoadingMore) 1 else 0
+    val pagerState = rememberPagerState(pageCount = { totalCount })
 
-    VerticalPager(
-        state = pagerState,
-        beyondViewportPageCount = 1,
-        key = { page -> state.books.getOrNull(page)?.id ?: page },
+    // Auto-trigger load more when user reaches near the end of loaded 5 books
+    LaunchedEffect(pagerState.currentPage, state.books.size, state.hasMoreBooks, state.isLoadingMore) {
+        if (state.hasMoreBooks && !state.isLoadingMore && pagerState.currentPage >= state.books.size - 2) {
+            onLoadMore()
+        }
+    }
+
+    LaunchedEffect(state.isRefreshing) {
+        if (state.isRefreshing && pagerState.currentPage > 0) {
+            pagerState.scrollToPage(0)
+        }
+    }
+
+    PullToRefreshBox(
+        isRefreshing = state.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier.fillMaxSize()
-    ) { page ->
-        val book = state.books[page]
-        val engagement = state.engagements[book.id] ?: BookEngagementUi(likesCount = book.likesCount)
-        val previewSnippet = state.chapterPreviews[book.id]
-        val previewHasMore = state.chapterPreviewHasMore[book.id] ?: false
+    ) {
+        VerticalPager(
+            state = pagerState,
+            beyondViewportPageCount = 1,
+            key = { page -> if (page < state.books.size) state.books[page].id else "loading_more_books_page" },
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            if (page < state.books.size) {
+                val book = state.books[page]
+                val engagement = state.engagements[book.id] ?: BookEngagementUi(likesCount = book.likesCount)
+                val previewSnippet = state.chapterPreviews[book.id]
+                val previewHasMore = state.chapterPreviewHasMore[book.id] ?: false
 
-        BookReelItem(
-            book = book,
-            engagement = engagement,
-            previewSnippet = previewSnippet,
-            previewHasMore = previewHasMore,
-            onLike = { onLike(book) },
-            onSave = { onSave(book) },
-            onOpenComments = { onOpenComments(book.id) },
-            onStartReading = { onStartReading(book) },
-            onBookClick = { onBookClick(book) },
-            onOpenProfile = { onOpenProfile(book.ownerId) },
-            onShareBook = { onShareBook(book) }
-        )
+                BookReelItem(
+                    book = book,
+                    engagement = engagement,
+                    previewSnippet = previewSnippet,
+                    previewHasMore = previewHasMore,
+                    onLike = { onLike(book) },
+                    onSave = { onSave(book) },
+                    onOpenComments = { onOpenComments(book.id) },
+                    onStartReading = { onStartReading(book) },
+                    onBookClick = { onBookClick(book) },
+                    onOpenProfile = { onOpenProfile(book.ownerId) },
+                    onShareBook = { onShareBook(book) }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFF382F5A),
+                                    Color(0xFF1D1830),
+                                    Color(0xFF100E1A)
+                                ),
+                                radius = 1400f
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "Daha Fazla Kitap Yükleniyor…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

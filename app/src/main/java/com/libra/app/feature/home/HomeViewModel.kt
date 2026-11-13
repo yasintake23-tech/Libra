@@ -26,13 +26,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+const val POST_PAGE_SIZE = 5
+
 data class HomeData(
     val currentUser: UserProfile?,
     val featuredBooks: List<Book>,
     val recentBooks: List<Book>,
     val currentlyReading: UserShelfItem?,
     val posts: List<Post> = emptyList(),
-    val stories: List<Story> = emptyList()
+    val stories: List<Story> = emptyList(),
+    val hasMorePosts: Boolean = false,
+    val isLoadingMorePosts: Boolean = false,
+    val isRefreshing: Boolean = false
 )
 
 class HomeViewModel(
@@ -58,6 +63,16 @@ class HomeViewModel(
     val commentError: StateFlow<String?> = _commentError.asStateFlow()
     private val _isCommenting = MutableStateFlow(false)
     val isCommenting: StateFlow<Boolean> = _isCommenting.asStateFlow()
+
+    private var allPostsPool: List<Post> = emptyList()
+    private var rawPostsCache: List<Post> = emptyList()
+    private val _visiblePostsCount = MutableStateFlow(POST_PAGE_SIZE)
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _isLoadingMorePosts = MutableStateFlow(false)
+    val isLoadingMorePosts: StateFlow<Boolean> = _isLoadingMorePosts.asStateFlow()
 
     private var homeJob: Job? = null
     private var postsJob: Job? = null
@@ -92,7 +107,10 @@ class HomeViewModel(
                 featuredBooks = emptyList(),
                 recentBooks = emptyList(),
                 currentlyReading = null,
-                posts = emptyList()
+                posts = emptyList(),
+                hasMorePosts = false,
+                isLoadingMorePosts = false,
+                isRefreshing = false
             )
         )
 
@@ -127,39 +145,100 @@ class HomeViewModel(
         postsJob = viewModelScope.launch {
             postRepository.observeFeed(userId).collect { result ->
                 if (result is AppResult.Success) {
-                    updateHome {
-                        it.copy(
-                            posts = result.data.map { post ->
-                                val pending = pendingLikeOverrides[post.id]
-                                if (pending == null) {
-                                    post
-                                } else {
-                                    val caughtUp =
-                                        post.likedByCurrentUser == pending.desiredLiked &&
-                                            post.likesCount == pending.expectedCount
+                    val rawPosts = result.data
+                    rawPostsCache = rawPosts
 
-                                    if (caughtUp) {
-                                        pendingLikeOverrides.remove(post.id)
-                                        post
-                                    } else {
-                                        // Firebase may deliver the like state before
-                                        // the counter (or vice versa). Keep the complete
-                                        // optimistic result until both match.
-                                        post.copy(
-                                            likedByCurrentUser = pending.desiredLiked,
-                                            likesCount = pending.expectedCount
-                                        )
-                                    }
-                                }
-                            }
-                        )
+                    if (allPostsPool.isEmpty()) {
+                        // Initial load: shuffle randomly!
+                        allPostsPool = rawPosts.shuffled()
+                    } else {
+                        // Background snapshot update: preserve existing order, update contents
+                        val rawMap = rawPosts.associateBy { it.id }
+                        val currentIds = allPostsPool.map { it.id }.toSet()
+                        val updatedPool = allPostsPool.map { existing -> rawMap[existing.id] ?: existing }.toMutableList()
+                        val newItems = rawPosts.filter { it.id !in currentIds }
+                        if (newItems.isNotEmpty()) {
+                            updatedPool.addAll(0, newItems)
+                        }
+                        allPostsPool = updatedPool
                     }
+                    updateVisiblePosts()
                 }
             }
         }
 
         viewModelScope.launch {
             loadStories(userId)
+        }
+    }
+
+    private fun updateVisiblePosts() {
+        val count = _visiblePostsCount.value
+        val visible = allPostsPool.take(count).map { post ->
+            val pending = pendingLikeOverrides[post.id]
+            if (pending == null) {
+                post
+            } else {
+                val caughtUp =
+                    post.likedByCurrentUser == pending.desiredLiked &&
+                        post.likesCount == pending.expectedCount
+
+                if (caughtUp) {
+                    pendingLikeOverrides.remove(post.id)
+                    post
+                } else {
+                    // Firebase may deliver the like state before
+                    // the counter (or vice versa). Keep the complete
+                    // optimistic result until both match.
+                    post.copy(
+                        likedByCurrentUser = pending.desiredLiked,
+                        likesCount = pending.expectedCount
+                    )
+                }
+            }
+        }
+        val hasMore = count < allPostsPool.size
+        updateHome {
+            it.copy(
+                posts = visible,
+                hasMorePosts = hasMore,
+                isLoadingMorePosts = _isLoadingMorePosts.value,
+                isRefreshing = _isRefreshing.value
+            )
+        }
+    }
+
+    fun refreshHome() {
+        val userId = authRepository.currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            updateHome { it.copy(isRefreshing = true) }
+            _visiblePostsCount.value = POST_PAGE_SIZE
+
+            // Shuffle randomly on refresh!
+            if (rawPostsCache.isNotEmpty()) {
+                allPostsPool = rawPostsCache.shuffled()
+            }
+            updateVisiblePosts()
+
+            loadStories(userId)
+
+            kotlinx.coroutines.delay(350)
+            _isRefreshing.value = false
+            updateHome { it.copy(isRefreshing = false) }
+        }
+    }
+
+    fun loadMorePosts() {
+        if (_isLoadingMorePosts.value || _visiblePostsCount.value >= allPostsPool.size) return
+        viewModelScope.launch {
+            _isLoadingMorePosts.value = true
+            updateHome { it.copy(isLoadingMorePosts = true) }
+            kotlinx.coroutines.delay(200)
+            _visiblePostsCount.value += POST_PAGE_SIZE
+            updateVisiblePosts()
+            _isLoadingMorePosts.value = false
+            updateHome { it.copy(isLoadingMorePosts = false) }
         }
     }
 
@@ -228,7 +307,13 @@ class HomeViewModel(
                         tags = tags
                     )
                 ) {
-                    is AppResult.Success -> onComplete(true)
+                    is AppResult.Success -> {
+                        val newPost = result.data
+                        allPostsPool = listOf(newPost) + allPostsPool
+                        rawPostsCache = listOf(newPost) + rawPostsCache
+                        updateVisiblePosts()
+                        onComplete(true)
+                    }
                     is AppResult.Error -> {
                         _postError.value = result.error.message
                         onComplete(false)
@@ -299,16 +384,13 @@ class HomeViewModel(
         // the like state and the counter. This prevents a transient 7 -> 8 -> 7
         // jump when the two Firestore listeners arrive in different snapshots.
         pendingLikeOverrides[post.id] = PendingLike(desiredLiked, expectedCount)
-        updateHome { data ->
-            data.copy(
-                posts = data.posts.map { item ->
-                    if (item.id != post.id) item else item.copy(
-                        likedByCurrentUser = desiredLiked,
-                        likesCount = expectedCount
-                    )
-                }
+        allPostsPool = allPostsPool.map { item ->
+            if (item.id != post.id) item else item.copy(
+                likedByCurrentUser = desiredLiked,
+                likesCount = expectedCount
             )
         }
+        updateVisiblePosts()
 
         viewModelScope.launch {
             when (val result = postRepository.toggleLike(post.id, userId)) {
@@ -316,16 +398,13 @@ class HomeViewModel(
                     // Only roll back if this request is still the latest user intent.
                     if (pendingLikeOverrides[post.id]?.desiredLiked == desiredLiked) {
                         pendingLikeOverrides.remove(post.id)
-                        updateHome { data ->
-                            data.copy(
-                                posts = data.posts.map { item ->
-                                    if (item.id == post.id) item.copy(
-                                        likedByCurrentUser = current.likedByCurrentUser,
-                                        likesCount = current.likesCount
-                                    ) else item
-                                }
-                            )
+                        allPostsPool = allPostsPool.map { item ->
+                            if (item.id == post.id) item.copy(
+                                likedByCurrentUser = current.likedByCurrentUser,
+                                likesCount = current.likesCount
+                            ) else item
                         }
+                        updateVisiblePosts()
                     }
                     _postError.value = result.error.message
                 }
@@ -350,33 +429,27 @@ class HomeViewModel(
         // Optimistic UI: reflect the bookmark immediately instead of waiting
         // for the Firestore listener / a screen recreation.
         val previousSaved = post.savedByCurrentUser
-        updateHome { data ->
-            data.copy(
-                posts = data.posts.map { current ->
-                    if (current.id == post.id) {
-                        current.copy(savedByCurrentUser = !previousSaved)
-                    } else {
-                        current
-                    }
-                }
-            )
+        allPostsPool = allPostsPool.map { current ->
+            if (current.id == post.id) {
+                current.copy(savedByCurrentUser = !previousSaved)
+            } else {
+                current
+            }
         }
+        updateVisiblePosts()
 
         viewModelScope.launch {
             when (val result = postRepository.toggleSave(post.id, userId)) {
                 is AppResult.Error -> {
                     // Roll back the optimistic state when persistence fails.
-                    updateHome { data ->
-                        data.copy(
-                            posts = data.posts.map { current ->
-                                if (current.id == post.id) {
-                                    current.copy(savedByCurrentUser = previousSaved)
-                                } else {
-                                    current
-                                }
-                            }
-                        )
+                    allPostsPool = allPostsPool.map { current ->
+                        if (current.id == post.id) {
+                            current.copy(savedByCurrentUser = previousSaved)
+                        } else {
+                            current
+                        }
                     }
+                    updateVisiblePosts()
                     _postError.value = result.error.message
                 }
                 is AppResult.Success -> Unit
@@ -386,6 +459,10 @@ class HomeViewModel(
 
     fun deletePost(post: Post) {
         val userId = authRepository.currentUser.value?.uid ?: return
+        allPostsPool = allPostsPool.filter { it.id != post.id }
+        rawPostsCache = rawPostsCache.filter { it.id != post.id }
+        updateVisiblePosts()
+
         viewModelScope.launch {
             when (val result = postRepository.deletePost(post.id, userId)) {
                 is AppResult.Error -> _postError.value = result.error.message

@@ -86,9 +86,14 @@ fun formatChapterTeaserSnippet(
     return Pair(cutSnippet, true)
 }
 
+const val BOOK_PAGE_SIZE = 5
+
 data class BookReelsState(
     val books: List<Book> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val hasMoreBooks: Boolean = false,
     val errorMessage: String? = null,
     val engagements: Map<String, BookEngagementUi> = emptyMap(),
     val chapterPreviews: Map<String, String> = emptyMap(),
@@ -107,13 +112,21 @@ class BookReelsDiscoverViewModel(
     private val _state = MutableStateFlow(BookReelsState())
     val state: StateFlow<BookReelsState> = _state.asStateFlow()
 
+    private var allBooksPool: List<Book> = emptyList()
+    private var rawBooksCache: List<Book> = emptyList()
+
     init {
         loadDiscoverBooks()
     }
 
-    fun loadDiscoverBooks() {
+    fun loadDiscoverBooks(isRefresh: Boolean = false) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, errorMessage = null)
+            if (isRefresh) {
+                _state.value = _state.value.copy(isRefreshing = true, errorMessage = null)
+            } else if (_state.value.books.isEmpty()) {
+                _state.value = _state.value.copy(isLoading = true, errorMessage = null)
+            }
+
             val featuredResult = bookRepository.getFeaturedBooks().first()
             val recentResult = bookRepository.getRecentBooks().first()
 
@@ -123,33 +136,92 @@ class BookReelsDiscoverViewModel(
             val combined = (featuredList + recentList).distinctBy { it.id }
             val publishedBooks = combined.filter { it.status == BookStatus.PUBLISHED }
             val finalBooks = if (publishedBooks.isNotEmpty()) publishedBooks else combined
+            rawBooksCache = finalBooks
 
-            val initialEngagements = mutableMapOf<String, BookEngagementUi>()
-            finalBooks.forEach { b ->
-                initialEngagements[b.id] = BookEngagementUi(
-                    isLiked = false,
-                    likesCount = b.likesCount,
-                    isSaved = false,
-                    commentsCount = 0
-                )
+            // Shuffle randomly on initial load and on every refresh!
+            allBooksPool = finalBooks.shuffled()
+
+            val initialBooks = allBooksPool.take(BOOK_PAGE_SIZE)
+            val hasMore = allBooksPool.size > BOOK_PAGE_SIZE
+
+            val initialEngagements = _state.value.engagements.toMutableMap()
+            initialBooks.forEach { b ->
+                if (!initialEngagements.containsKey(b.id)) {
+                    initialEngagements[b.id] = BookEngagementUi(
+                        isLiked = false,
+                        likesCount = b.likesCount,
+                        isSaved = false,
+                        commentsCount = 0
+                    )
+                }
+            }
+
+            if (isRefresh) {
+                kotlinx.coroutines.delay(300)
             }
 
             _state.value = _state.value.copy(
                 isLoading = false,
-                books = finalBooks,
+                isRefreshing = false,
+                books = initialBooks,
+                hasMoreBooks = hasMore,
+                isLoadingMore = false,
                 engagements = initialEngagements
             )
 
-            // Asynchronously load real user engagements and chapter 1 teasers
-            val userId = authRepository.currentUser.value?.uid.orEmpty()
-            finalBooks.forEach { book ->
-                launch {
-                    loadChapterPreview(book.id)
+            // Asynchronously load real user engagements and chapter 1 teasers for the visible batch
+            loadBatchMetadata(initialBooks)
+        }
+    }
+
+    fun refreshBooks() {
+        loadDiscoverBooks(isRefresh = true)
+    }
+
+    fun loadMoreBooks() {
+        val currentCount = _state.value.books.size
+        if (_state.value.isLoadingMore || currentCount >= allBooksPool.size) return
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoadingMore = true)
+            kotlinx.coroutines.delay(200)
+
+            val nextBatch = allBooksPool.drop(currentCount).take(BOOK_PAGE_SIZE)
+            val updatedBooks = _state.value.books + nextBatch
+            val hasMore = updatedBooks.size < allBooksPool.size
+
+            val updatedEngagements = _state.value.engagements.toMutableMap()
+            nextBatch.forEach { b ->
+                if (!updatedEngagements.containsKey(b.id)) {
+                    updatedEngagements[b.id] = BookEngagementUi(
+                        isLiked = false,
+                        likesCount = b.likesCount,
+                        isSaved = false,
+                        commentsCount = 0
+                    )
                 }
-                if (userId.isNotBlank()) {
-                    launch {
-                        loadEngagement(book.id, userId, book.likesCount)
-                    }
+            }
+
+            _state.value = _state.value.copy(
+                books = updatedBooks,
+                hasMoreBooks = hasMore,
+                isLoadingMore = false,
+                engagements = updatedEngagements
+            )
+
+            loadBatchMetadata(nextBatch)
+        }
+    }
+
+    private fun loadBatchMetadata(books: List<Book>) {
+        val userId = authRepository.currentUser.value?.uid.orEmpty()
+        books.forEach { book ->
+            viewModelScope.launch {
+                loadChapterPreview(book.id)
+            }
+            if (userId.isNotBlank()) {
+                viewModelScope.launch {
+                    loadEngagement(book.id, userId, book.likesCount)
                 }
             }
         }

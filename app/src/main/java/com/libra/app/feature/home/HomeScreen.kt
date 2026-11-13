@@ -41,7 +41,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -73,6 +76,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.PeopleOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -175,7 +179,9 @@ fun HomeScreen(
     onShareBook: (Book) -> Unit = {},
     initialSection: HomeSection = HomeSection.POSTS,
     initialCommentPostId: String? = null,
-    onInitialCommentPostConsumed: () -> Unit = {}
+    onInitialCommentPostConsumed: () -> Unit = {},
+    onRefreshPosts: () -> Unit = {},
+    onLoadMorePosts: () -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -208,96 +214,152 @@ fun HomeScreen(
             Box(modifier = Modifier.fillMaxSize()) {
                 when (selectedSection) {
                     HomeSection.POSTS -> {
-                        LazyColumn(
-                            modifier = modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 18.dp)
+                        val listState = rememberLazyListState()
+
+                        // Auto-trigger load more when user reaches within 2 items of the end
+                        val shouldLoadMore = remember {
+                            derivedStateOf {
+                                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+                                lastVisible.index >= listState.layoutInfo.totalItemsCount - 2
+                            }
+                        }
+
+                        LaunchedEffect(shouldLoadMore.value, data.hasMorePosts, data.isLoadingMorePosts) {
+                            if (shouldLoadMore.value && data.hasMorePosts && !data.isLoadingMorePosts) {
+                                onLoadMorePosts()
+                            }
+                        }
+
+                        LaunchedEffect(data.isRefreshing) {
+                            if (data.isRefreshing && listState.firstVisibleItemIndex > 0) {
+                                listState.scrollToItem(0)
+                            }
+                        }
+
+                        PullToRefreshBox(
+                            isRefreshing = data.isRefreshing,
+                            onRefresh = onRefreshPosts,
+                            modifier = modifier.fillMaxSize()
                         ) {
-                            item {
-                                HomeHeader(
-                                    data.currentUser,
-                                    onNavigateToProfile,
-                                    onNotifications,
-                                    unreadNotificationCount
-                                )
-                            }
-
-                            item {
-                                StoryStrip(
-                                    stories = data.stories,
-                                    currentUserId = data.currentUser?.uid.orEmpty(),
-                                    onStoryClick = { story -> selectedStoryIndex = data.stories.indexOfFirst { it.id == story.id }.takeIf { it >= 0 } },
-                                    onOpenProfile = onOpenProfile,
-                                    onCreateStory = onOpenCreateStory,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
-
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    HomeSectionButton(
-                                        title = "Gönderiler",
-                                        selected = true,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { selectedSection = HomeSection.POSTS }
-                                    )
-                                    HomeSectionButton(
-                                        title = "Kitaplar",
-                                        selected = false,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { selectedSection = HomeSection.BOOKS }
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 18.dp)
+                            ) {
+                                item {
+                                    HomeHeader(
+                                        data.currentUser,
+                                        onNavigateToProfile,
+                                        onNotifications,
+                                        unreadNotificationCount
                                     )
                                 }
-                            }
 
-                            if (data.posts.isEmpty()) {
-                                item { EmptySection("Henüz gösterilecek gönderi yok.") }
-                            } else {
-                                itemsIndexed(data.posts, key = { _, it -> it.id }) { index, post ->
-                                    PostCard(
-                                        post = post,
+                                item {
+                                    StoryStrip(
+                                        stories = data.stories,
                                         currentUserId = data.currentUser?.uid.orEmpty(),
-                                        onLike = { onToggleLike(post) },
-                                        onShowLikes = { likeUsersPost = post },
-                                        onComment = {
-                                            if (canComment) {
-                                                selectedPost = post
-                                                commentText = ""
-                                                replyTarget = null
-                                                onOpenComments(post)
-                                            }
-                                        },
-                                        onSave = { onToggleSave(post) },
-                                        onShare = {
-                                            shareContent = SharedContent(
-                                                type = "post",
-                                                id = post.id,
-                                                title = post.title.ifBlank { "Gönderi" },
-                                                text = post.text,
-                                                authorId = post.authorId,
-                                                authorName = post.authorName,
-                                                mediaUrl = post.mediaUrl,
-                                                url = sharedContentUrl("post", post.id)
-                                            )
-                                        },
-                                        onOpenProfile = { onOpenProfile(post.authorId) },
-                                        onDetailClick = {
-                                            if (canComment) {
-                                                selectedPost = post
-                                                commentText = ""
-                                                replyTarget = null
-                                                onOpenComments(post)
-                                            }
-                                        },
-                                        onDelete = { onDeletePost(post) },
-                                        canComment = canComment,
-                                        index = index
+                                        onStoryClick = { story -> selectedStoryIndex = data.stories.indexOfFirst { it.id == story.id }.takeIf { it >= 0 } },
+                                        onOpenProfile = onOpenProfile,
+                                        onCreateStory = onOpenCreateStory,
+                                        modifier = Modifier.padding(top = 2.dp)
                                     )
-                                    Spacer(Modifier.height(10.dp))
+                                }
+
+                                item {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        HomeSectionButton(
+                                            title = "Gönderiler",
+                                            selected = true,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { selectedSection = HomeSection.POSTS }
+                                        )
+                                        HomeSectionButton(
+                                            title = "Kitaplar",
+                                            selected = false,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { selectedSection = HomeSection.BOOKS }
+                                        )
+                                    }
+                                }
+
+                                if (data.posts.isEmpty()) {
+                                    item { EmptySection("Henüz gösterilecek gönderi yok.") }
+                                } else {
+                                    itemsIndexed(data.posts, key = { _, it -> it.id }) { index, post ->
+                                        PostCard(
+                                            post = post,
+                                            currentUserId = data.currentUser?.uid.orEmpty(),
+                                            onLike = { onToggleLike(post) },
+                                            onShowLikes = { likeUsersPost = post },
+                                            onComment = {
+                                                if (canComment) {
+                                                    selectedPost = post
+                                                    commentText = ""
+                                                    replyTarget = null
+                                                    onOpenComments(post)
+                                                }
+                                            },
+                                            onSave = { onToggleSave(post) },
+                                            onShare = {
+                                                shareContent = SharedContent(
+                                                    type = "post",
+                                                    id = post.id,
+                                                    title = post.title.ifBlank { "Gönderi" },
+                                                    text = post.text,
+                                                    authorId = post.authorId,
+                                                    authorName = post.authorName,
+                                                    mediaUrl = post.mediaUrl,
+                                                    url = sharedContentUrl("post", post.id)
+                                                )
+                                            },
+                                            onOpenProfile = { onOpenProfile(post.authorId) },
+                                            onDetailClick = {
+                                                if (canComment) {
+                                                    selectedPost = post
+                                                    commentText = ""
+                                                    replyTarget = null
+                                                    onOpenComments(post)
+                                                }
+                                            },
+                                            onDelete = { onDeletePost(post) },
+                                            canComment = canComment,
+                                            index = index
+                                        )
+                                        Spacer(Modifier.height(10.dp))
+                                    }
+
+                                    if (data.hasMorePosts || data.isLoadingMorePosts) {
+                                        item(key = "loading_more_posts_indicator") {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(20.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Text(
+                                                        text = "Daha fazla gönderi yükleniyor…",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -314,7 +376,7 @@ fun HomeScreen(
                             onOpenProfile = onOpenProfile,
                             onShareBook = onShareBook,
                             onCreateBookClick = onCreateBookClick,
-                            topBar = {
+                            topBar = { onRefreshBooks ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -356,28 +418,54 @@ fun HomeScreen(
                                         }
                                     }
 
-                                    Surface(
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = Color.Black.copy(alpha = 0.55f),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                                        modifier = Modifier.clickable { onCreateBookClick() }
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        // Yenile Butonu
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color.Black.copy(alpha = 0.55f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                                            modifier = Modifier.appleBouncy(pressedScale = 0.88f, onClick = onRefreshBooks)
                                         ) {
-                                            Icon(
-                                                Icons.Default.Add,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                            Text(
-                                                text = "Kitap Yaz",
-                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = Color.White
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Refresh,
+                                                    contentDescription = "Kitapları Yenile",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Kitap Yaz Butonu
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color.Black.copy(alpha = 0.55f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                                            modifier = Modifier.appleBouncy(pressedScale = 0.92f, onClick = { onCreateBookClick() })
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Add,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Kitap Yaz",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = Color.White
+                                                )
+                                            }
                                         }
                                     }
                                 }

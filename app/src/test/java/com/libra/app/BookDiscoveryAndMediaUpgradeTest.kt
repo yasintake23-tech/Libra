@@ -423,6 +423,49 @@ class BookDiscoveryAndMediaUpgradeTest {
         assertTrue("Synopsis lineHeight must be greater than fontSize", synopsisLineHeight > synopsisFontSize)
     }
 
+    @Test
+    fun discoverReels_fiveByFivePagination_andIncrementalLoadMore() = runTest {
+        // Populate 13 published books
+        fakeBookRepo.books.clear()
+        for (i in 1..13) {
+            fakeBookRepo.books.add(
+                sampleBook.copy(
+                    id = "bk_$i",
+                    title = "Kitap $i",
+                    status = BookStatus.PUBLISHED
+                )
+            )
+        }
+
+        reelsVm.loadDiscoverBooks()
+        advanceUntilIdle()
+
+        // Initial load should display exactly 5 books
+        assertEquals(5, reelsVm.state.value.books.size)
+        assertTrue("Should have more books after first 5", reelsVm.state.value.hasMoreBooks)
+
+        // Load next 5 -> 10 total
+        reelsVm.loadMoreBooks()
+        advanceUntilIdle()
+
+        assertEquals(10, reelsVm.state.value.books.size)
+        assertTrue("Should have more books after 10", reelsVm.state.value.hasMoreBooks)
+
+        // Load next 5 -> 13 total (exhausted)
+        reelsVm.loadMoreBooks()
+        advanceUntilIdle()
+
+        assertEquals(13, reelsVm.state.value.books.size)
+        assertFalse("Should not have more books after all 13 are loaded", reelsVm.state.value.hasMoreBooks)
+
+        // Refresh should reset back to 5 books
+        reelsVm.refreshBooks()
+        advanceUntilIdle()
+
+        assertEquals(5, reelsVm.state.value.books.size)
+        assertTrue("Has more books should reset to true on refresh", reelsVm.state.value.hasMoreBooks)
+    }
+
     // Fakes
     private class FakeAuthRepo : AuthRepository {
         private val _currentUser = MutableStateFlow<UserProfile?>(null)
