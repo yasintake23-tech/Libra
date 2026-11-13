@@ -27,7 +27,7 @@ fun Modifier.appleGlassSurface(
     containerColor: Color? = null
 ): Modifier = composed {
     val shape = RoundedCornerShape(cornerRadius)
-    val background = containerColor ?: MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+    val background = containerColor ?: MaterialTheme.colorScheme.surface
 
     val borderBrush = Brush.verticalGradient(
         colors = listOf(
@@ -37,7 +37,7 @@ fun Modifier.appleGlassSurface(
     )
 
     this
-        .shadow(elevation, shape, clip = false)
+        .then(if (elevation > 0.dp) Modifier.shadow(elevation, shape, clip = true) else Modifier)
         .clip(shape)
         .background(background)
         .border(

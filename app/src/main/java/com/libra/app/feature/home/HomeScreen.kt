@@ -543,6 +543,7 @@ private fun HomeSectionButton(
         animationSpec = AppleSprings.FloatSnappy,
         label = "section_btn_scale"
     )
+    val shape = RoundedCornerShape(14.dp)
 
     Box(
         modifier = modifier
@@ -550,20 +551,28 @@ private fun HomeSectionButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .appleSquircle(12.dp)
-            .appleGlassSurface(
-                cornerRadius = 12.dp,
-                elevation = if (selected) 3.dp else 1.dp,
-                containerColor = if (selected) MaterialTheme.colorScheme.onBackground
-                else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.onBackground
+                else MaterialTheme.colorScheme.surface
+            )
+            .then(
+                if (!selected) {
+                    Modifier.border(
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                        shape = shape
+                    )
+                } else {
+                    Modifier
+                }
             )
             .appleBouncy(pressedScale = 0.95f, onClick = onClick)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            title,
-            fontWeight = FontWeight.Bold,
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = if (selected) {
                 MaterialTheme.colorScheme.background
             } else {
@@ -1114,7 +1123,7 @@ private fun PostLikersBottomSheet(
                     Spacer(Modifier.width(10.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         val count = if (users.isNotEmpty()) users.size else post.likesCount
                         Text(
@@ -1415,7 +1424,7 @@ private fun PostCommentsDialog(
             if (replyTarget != null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                    color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

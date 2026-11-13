@@ -460,8 +460,9 @@ private fun BookDetailContent(
                             .padding(horizontal = 20.dp, vertical = 6.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                            containerColor = MaterialTheme.colorScheme.surface
                         ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Text(
@@ -604,13 +605,14 @@ private fun BookDetailContent(
                             ),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isCurrentReading) {
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
+                            containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentReading) 2.dp else 1.dp)
+                        border = if (isCurrentReading) {
+                            androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                        } else {
+                            androidx.compose.foundation.BorderStroke(0.6.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                        },
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentReading) 2.dp else 0.5.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
@@ -647,9 +649,10 @@ private fun BookDetailContent(
 
                             if (isCurrentReading) {
                                 Icon(
-                                    Icons.Default.BookmarkBorder,
+                                    Icons.Default.Bookmark,
                                     contentDescription = "Kaldığın Bölüm",
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }

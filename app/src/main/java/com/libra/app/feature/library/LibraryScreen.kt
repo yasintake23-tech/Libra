@@ -343,9 +343,9 @@ fun LibraryScreen(
                                             onClick = onCreateBookClick,
                                             shape = RoundedCornerShape(16.dp),
                                             colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                                containerColor = MaterialTheme.colorScheme.surface
                                             ),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .testTag("library_my_writings_create_banner")

@@ -349,7 +349,7 @@ private fun ChapterManagementCard(
             // Chapter Number badge
             Surface(
                 shape = CircleShape,
-                color = if (chapter.isArchived) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                color = if (chapter.isArchived) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(38.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {

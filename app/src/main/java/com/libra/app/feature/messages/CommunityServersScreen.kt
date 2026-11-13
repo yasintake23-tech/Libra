@@ -853,7 +853,7 @@ private fun ServerWorkspace(
                 }
                 if (visibleChannels.isEmpty()) {
                     item(key = "no-visible-channels") {
-                        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+                        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                             Column(Modifier.padding(18.dp)) {
                                 Text("Görebildiğin kanal yok", fontWeight = FontWeight.Bold)
                                 Text("Sunucu sahibiyle kanal izinlerini kontrol et.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -900,7 +900,7 @@ private fun ServerWorkspace(
                         InfoPill(categories.size.toString(), "kategori")
                     }
                     Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Column(
@@ -963,7 +963,7 @@ private fun ServerWorkspace(
                     if (isOwner) {
                         Spacer(Modifier.height(2.dp))
                         Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
                             shape = RoundedCornerShape(14.dp)
                         ) {
                             Text(
