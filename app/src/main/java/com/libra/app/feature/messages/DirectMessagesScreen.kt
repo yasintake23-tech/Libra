@@ -1141,7 +1141,7 @@ private fun DirectConversationScreen(
                 placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
                 maxLines = 4
             )
-            val onSendClick = {
+            val onSendClick: () -> Unit = {
                 val text = draft.trim()
                 val editing = editingMessage
                 if (editing != null) {

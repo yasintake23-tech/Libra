@@ -273,7 +273,7 @@ fun CommunityServersScreen(
                         shape = RoundedCornerShape(14.dp)
                     )
                     val canLookup = inviteKeyInput.isNotBlank() && !inviteLookupLoading
-                    val onLookup = {
+                    val onLookup: () -> Unit = {
                         inviteLookupLoading = true
                         error = null
                         scope.launch {

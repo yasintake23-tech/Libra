@@ -125,7 +125,7 @@ fun CreateBookScreen(
                     }
                 },
                 navigationIcon = {
-                    val onNavBack = {
+                    val onNavBack: () -> Unit = {
                         when {
                             uiState.currentStep > 1 -> viewModel.previousStep()
                             uiState.hasAnyContent -> viewModel.setDiscardConfirmDialog(true)
