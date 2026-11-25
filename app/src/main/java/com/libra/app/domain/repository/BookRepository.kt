@@ -22,6 +22,8 @@ interface BookRepository {
     fun getBookById(bookId: String): Flow<AppResult<Book?>>
     fun getUserLibrary(userId: String, shelfType: ShelfType): Flow<AppResult<List<UserShelfItem>>>
     fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>>
+    fun observeAllBooksForAdmin(): Flow<AppResult<List<Book>>> =
+        kotlinx.coroutines.flow.flowOf(AppResult.Success(emptyList()))
     
     suspend fun createBook(book: Book): AppResult<Book>
     suspend fun updateBook(book: Book): AppResult<Book>
@@ -45,6 +47,8 @@ interface BookRepository {
         AppResult.Error(AppError.Database("Yayınlama işlemi desteklenmiyor."))
     suspend fun unpublishBook(bookId: String): AppResult<Book> =
         AppResult.Error(AppError.Database("Yayından kaldırma işlemi desteklenmiyor."))
+    suspend fun archiveBook(bookId: String): AppResult<Book> =
+        AppResult.Error(AppError.Database("Kitap arşivleme işlemi desteklenmiyor."))
 
     // Book social and reader state. Implemented by the data layer in the next book-system phase.
     suspend fun getBookEngagement(bookId: String, userId: String): AppResult<BookEngagement> =

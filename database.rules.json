@@ -14,19 +14,19 @@
       }
     },
     "books": {
-      ".read": "auth != null && ((query.orderByChild === 'ownerId' && query.equalTo === auth.uid) || (query.orderByChild === 'status' && query.equalTo === 'PUBLISHED'))",
+      ".read": "auth != null && ((query.orderByChild === 'ownerId' && query.equalTo === auth.uid) || (query.orderByChild === 'status' && query.equalTo === 'PUBLISHED') || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)",
       ".indexOn": [
         "ownerId",
         "status"
       ],
       "$bookId": {
-        ".read": "auth != null && (data.child('status').val() === 'PUBLISHED' || data.child('ownerId').val() === auth.uid)",
-        ".write": "auth != null && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val() && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)",
+        ".read": "auth != null && (data.child('status').val() === 'PUBLISHED' || data.child('ownerId').val() === auth.uid || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)",
+        ".write": "auth != null && (auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true || (!root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val() && (data.exists() ? data.child('ownerId').val() === auth.uid : newData.child('ownerId').val() === auth.uid)))",
         ".validate": "newData.hasChildren(['id','ownerId','title','category','status','createdAt','updatedAt']) && newData.child('id').val() === $bookId && newData.child('ownerId').isString() && newData.child('title').isString()",
         "comments": {
           "$commentId": {
             ".read": "auth != null",
-            ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid) || root.child('books').child($bookId).child('ownerId').val() === auth.uid)",
+            ".write": "auth != null && (auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true || (!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid) || root.child('books').child($bookId).child('ownerId').val() === auth.uid)",
             ".validate": "newData.hasChildren(['id','bookId','userId','text','createdAt']) && newData.child('id').val() === $commentId && newData.child('bookId').val() === $bookId && newData.child('userId').isString() && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 1000 && newData.child('createdAt').isNumber()"
           }
         },
@@ -46,9 +46,11 @@
     },
     "chapters": {
       "$bookId": {
+        ".read": "auth != null && (root.child('books').child($bookId).child('status').val() === 'PUBLISHED' || root.child('books').child($bookId).child('ownerId').val() === auth.uid || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)",
+        ".write": "auth != null && ((root.child('books').child($bookId).child('ownerId').val() === auth.uid && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val()) || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)",
         "$chapterId": {
-          ".read": "auth != null && (root.child('books').child($bookId).child('status').val() === 'PUBLISHED' || root.child('books').child($bookId).child('ownerId').val() === auth.uid)",
-          ".write": "auth != null && root.child('books').child($bookId).child('ownerId').val() === auth.uid && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val()"
+          ".read": "auth != null && (root.child('books').child($bookId).child('status').val() === 'PUBLISHED' || root.child('books').child($bookId).child('ownerId').val() === auth.uid || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)",
+          ".write": "auth != null && ((root.child('books').child($bookId).child('ownerId').val() === auth.uid && !root.child('moderation').child(auth.uid).child('bookPublishingDisabled').val()) || auth.uid === 'ZBkz2js9plg07zrny2PzLW80X3i2' || root.child('adminRoles').child(auth.uid).child('permissions').child('manageBooks').val() === true)"
         }
       }
     },

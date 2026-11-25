@@ -696,6 +696,7 @@ fun AppNavHost(
                 AdminPanelScreen(
                     onBack = { showAdminPanel = false },
                     permissions = adminPermissions,
+                    onOpenProfile = ::openPublicProfile,
                     modifier = Modifier.fillMaxSize()
                 )
             }

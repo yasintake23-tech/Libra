@@ -208,6 +208,39 @@ class BookRepositoryImpl : BookRepository {
         libraries.addValueEventListener(listener)
         awaitClose { libraries.removeEventListener(listener) }
     }
+    private suspend fun isBookAdmin(uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (uid == LIBRA_ADMIN_UID) return true
+        val rtdbAllowed = runCatching {
+            database?.getReference("adminRoles")
+                ?.child(uid)
+                ?.child("permissions")
+                ?.child("manageBooks")
+                ?.get()
+                ?.await()
+                ?.getValue(Boolean::class.java) == true
+        }.getOrDefault(false)
+        if (rtdbAllowed) return true
+        return runCatching {
+            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                .collection("adminRoles")
+                .document(uid)
+                .get()
+                .await()
+                .get("permissions.manageBooks") == true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun hasBookManagePermission(ownerId: String?, uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (!ownerId.isNullOrBlank() && ownerId == uid) return true
+        return isBookAdmin(uid)
+    }
+
+    override fun observeAllBooksForAdmin(): Flow<AppResult<List<Book>>> = observeBooks { books ->
+        books.sortedByDescending { it.updatedAt }
+    }
+
     override fun getUserWrittenBooks(userId: String): Flow<AppResult<List<Book>>> = callbackFlow {
         val ref = booksRef ?: run { trySend(databaseError()); close(); return@callbackFlow }
         val query = ref.orderByChild("ownerId").equalTo(userId)
@@ -248,14 +281,15 @@ class BookRepositoryImpl : BookRepository {
 
         val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
-        if (book.ownerId != authUid) {
+        if (!hasBookManagePermission(book.ownerId, authUid)) {
             return AppResult.Error(AppError.Auth("Bu kitabı güncelleme yetkin yok."))
         }
 
         return try {
             val finalCover = book.coverImageUrl.ifBlank { book.coverUrl }
+            val preservedOwnerId = book.ownerId.ifBlank { authUid }
             val updated = book.copy(
-                ownerId = authUid,
+                ownerId = preservedOwnerId,
                 coverImageUrl = finalCover,
                 coverUrl = finalCover,
                 updatedAt = System.currentTimeMillis()
@@ -269,7 +303,13 @@ class BookRepositoryImpl : BookRepository {
 
     override suspend fun deleteBook(bookId: String): AppResult<Unit> {
         val db = database ?: return databaseError()
+        val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
+            val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
+            if (!owner.isNullOrBlank() && !hasBookManagePermission(owner, authUid)) {
+                return AppResult.Error(AppError.Auth("Bu kitabı silme yetkin yok."))
+            }
             db.reference.updateChildren(
                 mapOf("/books/$bookId" to null, "/chapters/$bookId" to null)
             ).await()
@@ -342,7 +382,7 @@ class BookRepositoryImpl : BookRepository {
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
             val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
-            if (owner != uid) return AppResult.Error(AppError.Auth("Bu bölümü silme yetkin yok."))
+            if (!hasBookManagePermission(owner, uid)) return AppResult.Error(AppError.Auth("Bu bölümü silme yetkin yok."))
             ref.removeValue().await()
             syncBookChapterCount(bookId)
             AppResult.Success(Unit)
@@ -353,6 +393,12 @@ class BookRepositoryImpl : BookRepository {
         val chapters = chaptersRef ?: return databaseError()
         if (chapter.bookId.isBlank()) return AppResult.Error(AppError.Validation("Bölüm bir kitaba bağlı olmalı."))
         if (chapter.title.isBlank()) return AppResult.Error(AppError.Validation("Bölüm başlığı boş olamaz."))
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val owner = booksRef?.child(chapter.bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
+        if (!owner.isNullOrBlank() && !hasBookManagePermission(owner, uid)) {
+            return AppResult.Error(AppError.Auth("Bu bölümü kaydetme yetkin yok."))
+        }
         val now = System.currentTimeMillis()
         val id = chapter.id.ifBlank { chapters.child(chapter.bookId).push().key ?: return AppResult.Error(AppError.Database("Bölüm kimliği oluşturulamadı.")) }
         val wordCount = chapter.content.trim().split(Regex("\\s+")).count { it.isNotBlank() }
@@ -377,7 +423,7 @@ class BookRepositoryImpl : BookRepository {
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
             val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
-            if (owner != uid) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
+            if (!hasBookManagePermission(owner, uid)) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
             val updates = mutableMapOf<String, Any>()
             val now = System.currentTimeMillis()
             chapters.forEachIndexed { index, chapter ->
@@ -398,7 +444,7 @@ class BookRepositoryImpl : BookRepository {
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
             val owner = booksRef?.child(bookId)?.child("ownerId")?.get()?.await()?.getValue(String::class.java)
-            if (owner != uid) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
+            if (!hasBookManagePermission(owner, uid)) return AppResult.Error(AppError.Auth("Bu işlemi yapma yetkin yok."))
             val snapshot = ref.child(chapterId).get().await()
             val original = parseChapter(snapshot, bookId) ?: return AppResult.Error(AppError.NotFound("Kopyalanacak bölüm bulunamadı."))
             val allChaptersSnap = ref.get().await()
@@ -428,17 +474,18 @@ class BookRepositoryImpl : BookRepository {
         return try {
             val bookSnap = bRef.get().await()
             val currentBook = parseBook(bookSnap) ?: return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
-            if (currentBook.ownerId != uid) return AppResult.Error(AppError.Auth("Bu kitabı yayınlama yetkin yok."))
+            if (!hasBookManagePermission(currentBook.ownerId, uid)) return AppResult.Error(AppError.Auth("Bu kitabı yayınlama yetkin yok."))
 
             val chapSnap = chaptersRef?.child(bookId)?.get()?.await()
             val chapters = chapSnap?.children?.mapNotNull { parseChapter(it, bookId) } ?: emptyList()
-            if (chapters.isEmpty()) {
-                return AppResult.Error(AppError.Validation("Yayınlamak için en az bir bölüm bulunmalıdır."))
+            val activeChapters = chapters.filter { !it.isArchived }
+            if (activeChapters.isEmpty()) {
+                return AppResult.Error(AppError.Validation("Yayınlamak için en az bir aktif bölüm bulunmalıdır."))
             }
 
             val now = System.currentTimeMillis()
             val chapUpdates = mutableMapOf<String, Any>()
-            chapters.forEach { ch ->
+            activeChapters.forEach { ch ->
                 chapUpdates["${ch.id}/isPublished"] = true
                 chapUpdates["${ch.id}/publishedAt"] = if (ch.publishedAt == 0L) now else ch.publishedAt
                 chapUpdates["${ch.id}/updatedAt"] = now
@@ -449,7 +496,7 @@ class BookRepositoryImpl : BookRepository {
                 status = BookStatus.PUBLISHED,
                 publishedAt = if (currentBook.publishedAt == 0L) now else currentBook.publishedAt,
                 updatedAt = now,
-                chapterCount = chapters.size
+                chapterCount = activeChapters.size
             )
             bRef.setValue(publishedBook).await()
             AppResult.Success(publishedBook)
@@ -465,7 +512,7 @@ class BookRepositoryImpl : BookRepository {
         return try {
             val bookSnap = bRef.get().await()
             val currentBook = parseBook(bookSnap) ?: return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
-            if (currentBook.ownerId != uid) return AppResult.Error(AppError.Auth("Bu kitabı düzenleme yetkin yok."))
+            if (!hasBookManagePermission(currentBook.ownerId, uid)) return AppResult.Error(AppError.Auth("Bu kitabı düzenleme yetkin yok."))
             val now = System.currentTimeMillis()
             val draftBook = currentBook.copy(
                 status = BookStatus.DRAFT,
@@ -475,6 +522,26 @@ class BookRepositoryImpl : BookRepository {
             AppResult.Success(draftBook)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Kitap taslağa alınamadı: ${e.localizedMessage}", e))
+        }
+    }
+
+    override suspend fun archiveBook(bookId: String): AppResult<Book> {
+        val bRef = booksRef?.child(bookId) ?: return databaseError()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val bookSnap = bRef.get().await()
+            val currentBook = parseBook(bookSnap) ?: return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            if (!hasBookManagePermission(currentBook.ownerId, uid)) return AppResult.Error(AppError.Auth("Bu kitabı arşivleme yetkin yok."))
+            val now = System.currentTimeMillis()
+            val archivedBook = currentBook.copy(
+                status = BookStatus.ARCHIVED,
+                updatedAt = now
+            )
+            bRef.setValue(archivedBook).await()
+            AppResult.Success(archivedBook)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Kitap arşivlenemedi: ${e.localizedMessage}", e))
         }
     }
 
@@ -669,7 +736,9 @@ class BookRepositoryImpl : BookRepository {
             if (!comment.exists()) return AppResult.Success(Unit)
             val author = comment.child("userId").getValue(String::class.java)
             val bookOwner = booksRef!!.child(bookId).child("ownerId").get().await().getValue(String::class.java)
-            if (author != uid && bookOwner != uid) return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
+            if (author != uid && !hasBookManagePermission(bookOwner, uid)) {
+                return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
+            }
             ref.removeValue().await()
             booksRef!!.child(bookId).child("commentsCount").runTransactionAwait(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
@@ -855,3 +924,5 @@ class BookRepositoryImpl : BookRepository {
         }.getOrNull()
     }
 }
+
+private const val LIBRA_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"

@@ -1,6 +1,7 @@
 package com.libra.app.feature.book.manage
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -14,10 +15,30 @@ fun BookManagementRootScreen(
     onPreviewBook: (Book) -> Unit,
     onDeleteBook: (Book) -> Unit,
     onOpenProfile: ((String) -> Unit)? = null,
+    initialSubPage: ManagementSubPage = ManagementSubPage.HUB,
     modifier: Modifier = Modifier
 ) {
     val viewModel: BookManagementViewModel = viewModel(key = "manage-book-${book.id}")
     val state by viewModel.state.collectAsState()
+
+    LaunchedEffect(book.id, initialSubPage) {
+        viewModel.initialize(book)
+        viewModel.navigateToSubPage(initialSubPage)
+    }
+
+    val handleSubPageBack: (ManagementSubPage) -> Unit = { current ->
+        when {
+            current == ManagementSubPage.STUDIO && initialSubPage == ManagementSubPage.CHAPTERS -> {
+                viewModel.navigateToSubPage(ManagementSubPage.CHAPTERS)
+            }
+            initialSubPage != ManagementSubPage.HUB -> {
+                onBack()
+            }
+            else -> {
+                viewModel.navigateToSubPage(ManagementSubPage.HUB)
+            }
+        }
+    }
 
     when (state.activeSubPage) {
         ManagementSubPage.HUB -> {
@@ -33,14 +54,14 @@ fun BookManagementRootScreen(
         ManagementSubPage.METADATA -> {
             BookMetadataEditScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.METADATA) },
                 modifier = modifier
             )
         }
         ManagementSubPage.CHAPTERS -> {
             ChapterManagementScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.CHAPTERS) },
                 onOpenStudio = { chapter -> viewModel.selectChapterForStudio(chapter) },
                 modifier = modifier
             )
@@ -48,28 +69,28 @@ fun BookManagementRootScreen(
         ManagementSubPage.STUDIO -> {
             WritingStudioScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.STUDIO) },
                 modifier = modifier
             )
         }
         ManagementSubPage.PUBLISHING, ManagementSubPage.PRIVACY -> {
             PublishingSettingsScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.PUBLISHING) },
                 modifier = modifier
             )
         }
         ManagementSubPage.ANALYTICS -> {
             BookAnalyticsScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.ANALYTICS) },
                 modifier = modifier
             )
         }
         ManagementSubPage.COMMENTS -> {
             BookCommentsModerationScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.COMMENTS) },
                 onOpenProfile = onOpenProfile,
                 modifier = modifier
             )
@@ -77,7 +98,7 @@ fun BookManagementRootScreen(
         ManagementSubPage.DRAFTS -> {
             BookDraftsScreen(
                 viewModel = viewModel,
-                onBack = { viewModel.navigateToSubPage(ManagementSubPage.HUB) },
+                onBack = { handleSubPageBack(ManagementSubPage.DRAFTS) },
                 modifier = modifier
             )
         }

@@ -545,6 +545,50 @@ fun BookMetadataEditScreen(
                 }
             }
 
+            // Language & Target Audience
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Dil", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("tr" to "Türkçe", "en" to "İngilizce", "de" to "Almanca", "fr" to "Fransızca").forEach { (code, label) ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = language.equals(code, ignoreCase = true),
+                                    onClick = { language = code },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Text("Hedef Kitle", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("ALL" to "Genel Okur", "YA" to "Genç Yetişkin (YA)", "ADULT" to "Yetişkin (18+)").forEach { (code, label) ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = targetAudience.equals(code, ignoreCase = true),
+                                    onClick = { targetAudience = code },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 Spacer(Modifier.height(32.dp))
             }

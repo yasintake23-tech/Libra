@@ -1,20 +1,30 @@
 package com.libra.app.feature.admin
 
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,25 +32,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import android.net.Uri
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.Locale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import com.libra.app.BuildConfig
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.libra.app.BuildConfig
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.*
-import kotlinx.coroutines.launch
+import com.libra.app.feature.book.BookDetailScreen
+import com.libra.app.feature.book.manage.BookManagementRootScreen
+import com.libra.app.feature.book.manage.ManagementSubPage
+import com.libra.app.feature.reader.BookReaderScreen
+import com.libra.app.feature.write.create.CreateBookScreen
+import com.libra.app.ui.animation.appleBouncy
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.util.Locale
 
-private val sections = listOf("Üye işlemleri","Kitap işlemleri","Gönderi işlemleri","Hikâye işlemleri","Sunucu işlemleri","Genel chat işlemleri","Güncelleme ayarları")
+private val sections = listOf(
+    "Üye işlemleri",
+    "Kitap işlemleri",
+    "Gönderi işlemleri",
+    "Hikâye işlemleri",
+    "Sunucu işlemleri",
+    "Genel chat işlemleri",
+    "Güncelleme ayarları"
+)
 
 @Composable
 fun AdminPanelScreen(
@@ -60,52 +83,290 @@ fun AdminPanelScreen(
         sendFeedback = true,
         manageUpdates = true
     ),
+    onOpenProfile: ((String) -> Unit)? = null,
     vm: AdminViewModel = viewModel()
 ) {
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
+        val currentUid = remember {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        }
+        val members by vm.members.collectAsState()
+        val books by vm.books.collectAsState()
+
         var section by remember { mutableStateOf<String?>(null) }
         var member by remember { mutableStateOf<UserProfile?>(null) }
-        if (section == "Güncelleme ayarları") {
-            UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
-        } else if (member != null) {
-            MemberAdminScreen(member!!, vm, { member = null }, permissions, Modifier.fillMaxSize())
-        } else if (section == "Üye işlemleri") {
-            MembersScreen(vm.members.collectAsState().value, { section = null }, { member = it }, Modifier.fillMaxSize(), permissions.manageMembers)
-        } else {
-            Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-                    Column {
-                        Text("Yönetim", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                        Text("Libra yönetim merkezi", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+        var booksOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
+        var controlBook by remember { mutableStateOf<Book?>(null) }
+        var bookSubModule by remember { mutableStateOf<ManagementSubPage?>(null) }
+        var previewBook by remember { mutableStateOf<Book?>(null) }
+        var previewReaderBook by remember { mutableStateOf<Book?>(null) }
+        var previewReaderChapterId by remember { mutableStateOf<String?>(null) }
+        var showCreateBook by remember { mutableStateOf(false) }
+
+        BackHandler {
+            when {
+                previewReaderBook != null -> {
+                    previewReaderBook = null
+                    previewReaderChapterId = null
                 }
-                Spacer(Modifier.height(28.dp))
-                sections.forEach { title ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 10.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-                            .clickable(enabled = when (title) {
-                                "Üye işlemleri" -> permissions.manageMembers
-                                "Kitap işlemleri" -> permissions.manageBooks
-                                "Gönderi işlemleri" -> permissions.managePosts
-                                "Hikâye işlemleri" -> permissions.manageStories
-                                "Sunucu işlemleri" -> permissions.manageServers
-                                "Genel chat işlemleri" -> permissions.manageGlobalChat
-                                "Güncelleme ayarları" -> permissions.manageUpdates
-                                else -> false
-                            }) { section = title }
-                            .padding(18.dp),
-                        Arrangement.SpaceBetween,
-                        Alignment.CenterVertically
-                    ) {
-                        Text(title, fontWeight = FontWeight.SemiBold)
-                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                previewBook != null -> previewBook = null
+                bookSubModule != null -> bookSubModule = null
+                controlBook != null -> controlBook = null
+                showCreateBook -> showCreateBook = false
+                section == "Kitap işlemleri" -> {
+                    section = null
+                    booksOwnerFilter = null
+                }
+                section == "Güncelleme ayarları" -> section = null
+                member != null -> member = null
+                section != null -> section = null
+                else -> onBack()
+            }
+        }
+
+        when {
+            previewReaderBook != null -> {
+                BookReaderScreen(
+                    book = previewReaderBook!!,
+                    userId = currentUid,
+                    initialChapterId = previewReaderChapterId,
+                    onBack = {
+                        previewReaderBook = null
+                        previewReaderChapterId = null
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            previewBook != null -> {
+                BookDetailScreen(
+                    book = previewBook!!,
+                    userId = currentUid,
+                    onBack = { previewBook = null },
+                    onRead = { selected, chapter ->
+                        previewReaderBook = selected
+                        previewReaderChapterId = chapter?.id
+                    },
+                    onOpenChapter = { selected, chapter ->
+                        previewReaderBook = selected
+                        previewReaderChapterId = chapter.id
+                    },
+                    onOpenAuthor = onOpenProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            controlBook != null && bookSubModule != null -> {
+                BookManagementRootScreen(
+                    book = controlBook!!,
+                    onBack = { bookSubModule = null },
+                    onPreviewBook = { target -> previewBook = target },
+                    onDeleteBook = { target ->
+                        vm.deleteBookAsAdmin(target.id) { ok ->
+                            if (ok) {
+                                bookSubModule = null
+                                controlBook = null
+                            }
+                        }
+                    },
+                    onOpenProfile = onOpenProfile,
+                    initialSubPage = bookSubModule!!,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            controlBook != null -> {
+                val activeBook = books.firstOrNull { it.id == controlBook!!.id } ?: controlBook!!
+                val ownerProfile = members.firstOrNull { it.uid == activeBook.ownerId }
+                AdminBookControlCenter(
+                    book = activeBook,
+                    ownerProfile = ownerProfile,
+                    vm = vm,
+                    permissions = permissions,
+                    onBack = { controlBook = null },
+                    onOpenSubModule = { subPage -> bookSubModule = subPage },
+                    onPreviewBook = { target -> previewBook = target },
+                    onOpenMemberAdmin = { targetMember ->
+                        controlBook = null
+                        bookSubModule = null
+                        booksOwnerFilter = null
+                        section = null
+                        member = targetMember
+                    },
+                    onFilterAuthorBooks = { ownerUid ->
+                        controlBook = null
+                        bookSubModule = null
+                        booksOwnerFilter = members.firstOrNull { it.uid == ownerUid }
+                            ?: UserProfile(uid = ownerUid, displayName = activeBook.authorName)
+                        section = "Kitap işlemleri"
+                    },
+                    onDeleted = {
+                        controlBook = null
+                        bookSubModule = null
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            showCreateBook -> {
+                CreateBookScreen(
+                    onBack = { showCreateBook = false },
+                    onBookCreated = { newBook ->
+                        showCreateBook = false
+                        controlBook = newBook
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            section == "Kitap işlemleri" -> {
+                AdminBooksScreen(
+                    vm = vm,
+                    permissions = permissions,
+                    initialOwnerFilter = booksOwnerFilter,
+                    onBack = {
+                        section = null
+                        booksOwnerFilter = null
+                    },
+                    onOpenBookManagement = { book, subPage ->
+                        controlBook = book
+                        bookSubModule = if (subPage == ManagementSubPage.HUB) null else subPage
+                    },
+                    onPreviewBook = { book -> previewBook = book },
+                    onCreateBook = { showCreateBook = true },
+                    onOpenMemberAdmin = { owner ->
+                        section = null
+                        booksOwnerFilter = null
+                        member = owner
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            section == "Güncelleme ayarları" -> {
+                UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
+            }
+            member != null -> {
+                MemberAdminScreen(
+                    member = member!!,
+                    vm = vm,
+                    onBack = { member = null },
+                    permissions = permissions,
+                    onOpenMemberBooks = { target ->
+                        booksOwnerFilter = target
+                        section = "Kitap işlemleri"
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            section == "Üye işlemleri" -> {
+                MembersScreen(members, { section = null }, { member = it }, Modifier.fillMaxSize(), permissions.manageMembers)
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+                            ) {
+                                Icon(Icons.Default.ArrowBack, "Geri")
+                            }
+                            Column {
+                                Text(
+                                    "Yönetim",
+                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    "Libra yönetim merkezi",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                    }
+
+                    items(sections, key = { it }) { title ->
+                        val enabled = when (title) {
+                            "Üye işlemleri" -> permissions.manageMembers
+                            "Kitap işlemleri" -> permissions.manageBooks
+                            "Gönderi işlemleri" -> permissions.managePosts
+                            "Hikâye işlemleri" -> permissions.manageStories
+                            "Sunucu işlemleri" -> permissions.manageServers
+                            "Genel chat işlemleri" -> permissions.manageGlobalChat
+                            "Güncelleme ayarları" -> permissions.manageUpdates
+                            else -> false
+                        }
+                        val (subtitle, icon) = when (title) {
+                            "Üye işlemleri" -> "${members.size} üye • Ban, rol, profil ve kitap yetkileri" to Icons.Default.People
+                            "Kitap işlemleri" -> "${books.size} kitap • Kategorizasyon, yayın, bölüm ve moderasyon" to Icons.AutoMirrored.Filled.MenuBook
+                            "Gönderi işlemleri" -> "Gönderi akışı moderasyonu (sıradaki modül)" to Icons.Default.Edit
+                            "Hikâye işlemleri" -> "Hikâye denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
+                            "Sunucu işlemleri" -> "Topluluk sunucu denetimi (sıradaki modül)" to Icons.Default.Groups
+                            "Genel chat işlemleri" -> "Genel sohbet denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
+                            "Güncelleme ayarları" -> "APK yayınlama ve sürüm yönetimi" to Icons.Default.SystemUpdate
+                            else -> "" to Icons.Default.Settings
+                        }
+
+                        val shape = RoundedCornerShape(18.dp)
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(shape)
+                                .appleBouncy(enabled = enabled, pressedScale = 0.97f, onClick = {
+                                    if (enabled) {
+                                        booksOwnerFilter = null
+                                        section = title
+                                    }
+                                }),
+                            shape = shape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(42.dp),
+                                    shape = CircleShape,
+                                    color = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (enabled) subtitle else "Bu alan için yetkin yok",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -409,23 +670,43 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Tümü","Bugün","7 gün","30 gün").forEach { FilterChip(filter == it, { filter = it }, label = { Text(it) }) }
         }
-        Text(list.size.toString() + " üye", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Text(list.size.toString() + " üye", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(6.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(list, key = { it.uid }) { u ->
-                Row(Modifier.fillMaxWidth().background(Color(0xFFF7F7F7), RoundedCornerShape(16.dp)).clickable { onSelect(u) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(u.displayName.ifBlank { "İsimsiz üye" }, fontWeight = FontWeight.SemiBold)
-                        Text("@" + u.username, color = Color.Gray)
-                        Text(u.email, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                val shape = RoundedCornerShape(16.dp)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(shape)
+                        .appleBouncy(pressedScale = 0.98f, onClick = { onSelect(u) }),
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(u.displayName.ifBlank { "İsimsiz üye" }, fontWeight = FontWeight.SemiBold)
+                            Text("@" + u.username, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(u.email, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (u.moderation.isBanned) Text("BAN", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                     }
-                    if (u.moderation.isBanned) Text("BAN", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
 
-@Composable private fun MemberAdminScreen(member: UserProfile, vm: AdminViewModel, onBack: () -> Unit, permissions: AdminPermissionSet, modifier: Modifier) {
+@Composable
+private fun MemberAdminScreen(
+    member: UserProfile,
+    vm: AdminViewModel,
+    onBack: () -> Unit,
+    permissions: AdminPermissionSet,
+    onOpenMemberBooks: (UserProfile) -> Unit,
+    modifier: Modifier
+) {
     var current by remember(member) { mutableStateOf(member) }
     var page by remember { mutableStateOf<String?>(null) }
 
@@ -446,13 +727,13 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
         return
     }
 
-    Surface(modifier.fillMaxSize(), color = Color.White) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
                 Column {
                     Text(current.displayName, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                    Text("@" + current.username, color = Color.Gray)
+                    Text("@" + current.username, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -464,15 +745,31 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
                 "Kozmetik rol" to permissions.manageCosmetics,
                 "Kullanıcıya geri bildirim / DM" to permissions.sendFeedback
             ).filter { it.second }.forEach { (title, _) ->
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                        .background(Color(0xFFF7F7F7), RoundedCornerShape(18.dp))
-                        .clickable { page = title }
-                        .padding(18.dp),
-                    Arrangement.SpaceBetween, Alignment.CenterVertically
+                val shape = RoundedCornerShape(18.dp)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clip(shape)
+                        .appleBouncy(pressedScale = 0.97f, onClick = {
+                            if (title == "Kitap işlemleri") {
+                                onOpenMemberBooks(current)
+                            } else {
+                                page = title
+                            }
+                        }),
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    Text(title, fontWeight = FontWeight.SemiBold)
-                    Icon(Icons.Default.Settings, null, tint = Color.Gray)
+                    Row(
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        Arrangement.SpaceBetween,
+                        Alignment.CenterVertically
+                    ) {
+                        Text(title, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -480,7 +777,6 @@ private fun UpdateSettingsPage(vm: AdminViewModel, onBack: () -> Unit, modifier:
 
     when (page) {
         "Hesap ve üyelik işlemleri" -> ProfileDialog(current, { page = null }) { current = it; vm.saveProfile(it) }
-        "Kitap işlemleri" -> InfoDialog("Kitap işlemleri", "Yakında... Kitap mekaniği hazır olduğunda bağlanacak.", { page = null })
         "Kullanıcıya geri bildirim / DM" -> ContactDialog(current, { page = null })
     }
 }
@@ -491,12 +787,18 @@ private fun ModerationPage(member: UserProfile, onBack: () -> Unit, onSave: (Use
     var reason by remember(member.uid) { mutableStateOf(member.moderation.banReason) }
     var duration by remember(member.uid) { mutableStateOf("Kalıcı") }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .padding(16.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
             Column {
                 Text("Ban ve erişim işlemleri", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text(member.displayName.ifBlank { "Üye" }, color = Color.Gray)
+                Text(member.displayName.ifBlank { "Üye" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -589,7 +891,7 @@ private fun ProfileDialog(p: UserProfile, dismiss: () -> Unit, save: (UserProfil
                         model = selectedUri ?: photoPreview,
                         contentDescription = "Profil fotoğrafı",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(100.dp).clip(CircleShape).background(Color(0xFFF1F1F1))
+                        modifier = Modifier.size(100.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
                     )
                     IconButton(
                         onClick = { picker.launch("image/*") },
@@ -690,10 +992,10 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
         "Geri bildirim / DM" to Triple("Yönetim bildirimi ve doğrudan mesaj gönderme.", perms.sendFeedback, { v: Boolean -> perms = perms.copy(sendFeedback = v) }),
         "Uygulama güncellemeleri" to Triple("Yeni APK yayınlama ve aktif sürüm yönetimi.", perms.manageUpdates, { v: Boolean -> perms = perms.copy(manageUpdates = v) })
     )
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = dismiss) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Column { Text("Yönetici rolü", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)); Text(if (role == null) "Yeni yönetici rolü oluştur" else "Mevcut rolü düzenle", color = Color.Gray) }
+            Column { Text("Yönetici rolü", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)); Text(if (role == null) "Yeni yönetici rolü oluştur" else "Mevcut rolü düzenle", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
@@ -704,9 +1006,14 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
             item { Text("Yetkiler", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) }
             items(permissionItems.size) { index ->
                 val item = permissionItems[index]
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F7F7))) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(item.first, fontWeight = FontWeight.SemiBold); Text(item.second.first, color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(item.first, fontWeight = FontWeight.SemiBold); Text(item.second.first, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
                         Switch(item.second.second, item.second.third)
                     }
                 }
@@ -720,19 +1027,27 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
     var assignedIds by remember(p.uid) { mutableStateOf(p.cosmeticRoleIds.toSet()) }
     var creating by remember { mutableStateOf(false) }
     if (creating) { CosmeticCreatePage(vm, { creating = false }); return }
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = dismiss) { Icon(Icons.Default.ArrowBack, "Geri") }; Text("Kozmetik roller", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
         Spacer(Modifier.height(12.dp))
         Button(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("Yeni kozmetik rol / rozet oluştur") }
+        Spacer(Modifier.height(8.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(roles, key = { it.id }) { role ->
-            Row(Modifier.fillMaxWidth().background(Color(0xFFF7F7F7), RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (role.imageUrl.isNotBlank()) {
-                    var roleImage by remember(role.id) { mutableStateOf<String?>(null) }
-                    LaunchedEffect(role.id, role.imageUrl) { roleImage = ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }
-                    AsyncImage(model = roleImage, contentDescription = role.name, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                } else Text(role.icon, modifier = Modifier.size(44.dp))
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(role.name, fontWeight = FontWeight.SemiBold); if (role.description.isNotBlank()) Text(role.description, color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
-                Switch(checked = role.id in assignedIds, onCheckedChange = { checked -> assignedIds = if (checked) assignedIds + role.id else assignedIds - role.id; vm.assignCosmetic(p.uid, role.id, checked) })
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (role.imageUrl.isNotBlank()) {
+                        var roleImage by remember(role.id) { mutableStateOf<String?>(null) }
+                        LaunchedEffect(role.id, role.imageUrl) { roleImage = ServiceLocator.storageRepository.getSignedMediaUrl(role.imageUrl) }
+                        AsyncImage(model = roleImage, contentDescription = role.name, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    } else Text(role.icon, modifier = Modifier.size(44.dp))
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(role.name, fontWeight = FontWeight.SemiBold); if (role.description.isNotBlank()) Text(role.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                    Switch(checked = role.id in assignedIds, onCheckedChange = { checked -> assignedIds = if (checked) assignedIds + role.id else assignedIds - role.id; vm.assignCosmetic(p.uid, role.id, checked) })
+                }
             }
         } }
     }
@@ -743,7 +1058,7 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }; var icon by remember { mutableStateOf("✦") }; var description by remember { mutableStateOf("") }; var selectedImage by remember { mutableStateOf<android.net.Uri?>(null) }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { if (it != null) selectedImage = it }
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.Default.ArrowBack, "Geri") }; Text("Yeni kozmetik rol", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
         Spacer(Modifier.height(16.dp))
         Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) { if (selectedImage != null) AsyncImage(model = selectedImage, contentDescription = "Rol görseli", modifier = Modifier.size(110.dp).clip(CircleShape), contentScale = ContentScale.Crop) else Text(icon, style = MaterialTheme.typography.displaySmall) }
@@ -798,8 +1113,4 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
             status=if(r is AppResult.Success)"DM gönderildi." else "DM gönderilemedi."
         }}) { Text("DM gönder") }
     }},dismissButton={TextButton(dismiss){Text("Kapat")}})
-}
-
-@Composable private fun InfoDialog(title:String,message:String,dismiss:()->Unit){
-    AlertDialog(onDismissRequest=dismiss,title={Text(title)},text={Text(message)},confirmButton={TextButton(dismiss){Text("Tamam")}})
 }

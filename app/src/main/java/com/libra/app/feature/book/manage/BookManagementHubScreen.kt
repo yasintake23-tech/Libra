@@ -374,11 +374,36 @@ fun BookManagementHubScreen(
             item {
                 MenuActionCard(
                     title = "5. Kitap İstatistikleri",
-                    description = "Okuma analitiği, okur yorumları (${state.comments.size}), etkileşimler ve süreler.",
+                    description = "Okuma analitiği, kelime sayıları, etkileşimler ve tahmini okuma süreleri.",
                     icon = Icons.Default.Analytics,
                     iconBgColor = Color(0xFFFCE4EC),
                     iconTint = Color(0xFFC2185B),
                     onClick = { viewModel.navigateToSubPage(ManagementSubPage.ANALYTICS) }
+                )
+            }
+
+            // 6. Okur Yorumları
+            item {
+                MenuActionCard(
+                    title = "6. Okur Yorumları",
+                    description = "Okur yorumlarını incele, profilleri gör ve uygunsuz yorumları kaldır.",
+                    badge = "${state.comments.size}",
+                    icon = Icons.Default.Message,
+                    iconBgColor = Color(0xFFE0F2F1),
+                    iconTint = Color(0xFF00695C),
+                    onClick = { viewModel.navigateToSubPage(ManagementSubPage.COMMENTS) }
+                )
+            }
+
+            // 7. Taslaklar ve Senkronizasyon
+            item {
+                MenuActionCard(
+                    title = "7. Taslaklar & Senkronizasyon",
+                    description = "Bulut kayıt durumu, son güncelleme zamanı ve otomatik kayıt bilgileri.",
+                    icon = Icons.Default.History,
+                    iconBgColor = Color(0xFFE3F2FD),
+                    iconTint = Color(0xFF1565C0),
+                    onClick = { viewModel.navigateToSubPage(ManagementSubPage.DRAFTS) }
                 )
             }
 
