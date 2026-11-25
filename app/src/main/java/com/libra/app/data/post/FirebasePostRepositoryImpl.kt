@@ -108,6 +108,81 @@ class FirebasePostRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
+    override fun observeUserPosts(
+        userId: String,
+        currentUserId: String,
+        limit: Long
+    ): Flow<AppResult<List<Post>>> = callbackFlow {
+        if (userId.isBlank()) {
+            trySend(AppResult.Success(emptyList()))
+            close()
+            return@callbackFlow
+        }
+
+        val safeLimit = limit.coerceIn(1L, 100L)
+        val viewerId = currentUserId.ifBlank { userId }
+        val registration = postsRef
+            .whereEqualTo("authorId", userId)
+            .limit(safeLimit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Kullanıcı gönderileri yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+
+                launch {
+                    try {
+                        val likedIds = runCatching {
+                            firestore.collectionGroup("likes")
+                                .whereEqualTo("userId", viewerId)
+                                .get()
+                                .await()
+                                .documents
+                                .mapNotNull { it.reference.parent.parent?.id }
+                                .toSet()
+                        }.getOrDefault(emptySet())
+
+                        val savedIds = runCatching {
+                            firestore.collection("savedPosts")
+                                .document(viewerId)
+                                .collection("posts")
+                                .get()
+                                .await()
+                                .documents
+                                .mapNotNull { it.getString("postId") ?: it.id }
+                                .toSet()
+                        }.getOrDefault(emptySet())
+
+                        val posts = snapshot?.documents.orEmpty().mapNotNull { document ->
+                            val data = document.data ?: return@mapNotNull null
+                            Post(
+                                id = document.id,
+                                authorId = data["authorId"] as? String ?: "",
+                                authorName = data["authorName"] as? String ?: "",
+                                authorUsername = data["authorUsername"] as? String ?: "",
+                                authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
+                                title = data["title"] as? String ?: "",
+                                text = data["text"] as? String ?: "",
+                                mediaUrl = data["mediaUrl"] as? String ?: "",
+                                mediaType = data["mediaType"] as? String ?: "",
+                                tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                                likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                                likedByCurrentUser = document.id in likedIds,
+                                savedByCurrentUser = document.id in savedIds,
+                                createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
+                            )
+                        }.sortedByDescending { it.createdAt }
+                        trySend(AppResult.Success(posts))
+                    } catch (e: Exception) {
+                        trySend(AppResult.Error(AppError.Database("Kullanıcı gönderileri çözümlenemedi.", e)))
+                    }
+                }
+            }
+
+        awaitClose { registration.remove() }
+    }
+
     override suspend fun createPost(
         authorId: String,
         text: String,

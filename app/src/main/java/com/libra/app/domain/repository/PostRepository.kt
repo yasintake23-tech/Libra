@@ -24,4 +24,6 @@ interface PostRepository {
     suspend fun deleteComment(postId: String, commentId: String, userId: String): AppResult<Unit>
     suspend fun toggleSave(postId: String, userId: String): AppResult<Boolean>
     fun observeSavedPosts(userId: String, limit: Long = 100): Flow<AppResult<List<Post>>>
+    fun observeUserPosts(userId: String, currentUserId: String = userId, limit: Long = 60): Flow<AppResult<List<Post>>> =
+        kotlinx.coroutines.flow.flowOf(AppResult.Success(emptyList()))
 }

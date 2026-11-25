@@ -136,6 +136,7 @@ fun AppNavHost(
     val writeVm: WriteViewModel = viewModel()
     val homeVm: HomeViewModel = viewModel()
     val libraryVm: LibraryViewModel = viewModel()
+    val profileVm: ProfileViewModel = viewModel()
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
 
@@ -217,18 +218,18 @@ fun AppNavHost(
     // must unwind those states explicitly instead of finishing the Activity.
     BackHandler {
         when {
+            showProfileEdit -> showProfileEdit = false
+            showSettings -> showSettings = false
+            showAdminPanel -> showAdminPanel = false
+            createContentMode != null -> createContentMode = null
             showCreateBook -> showCreateBook = false
             readerBook != null -> readerBook = null
             selectedBook != null -> selectedBook = null
-            createContentMode != null -> createContentMode = null
             selectedWritingBook != null -> selectedWritingBook = null
             selectedPublicProfile != null -> selectedPublicProfile = null
-            showNotifications -> showNotifications = false
-            showCommunityServers -> showCommunityServers = false
             showGlobalChat -> showGlobalChat = false
-            showAdminPanel -> showAdminPanel = false
-            showProfileEdit -> showProfileEdit = false
-            showSettings -> showSettings = false
+            showCommunityServers -> showCommunityServers = false
+            showNotifications -> showNotifications = false
             selectedDirectUser != null -> selectedDirectUser = null
             selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
             else -> {
@@ -430,16 +431,27 @@ fun AppNavHost(
                             )
                         }
                         BottomNavTab.PROFILE -> {
-                            val vm: ProfileViewModel = viewModel()
-                            val state by vm.uiState.collectAsState()
+                            val state by profileVm.uiState.collectAsState()
+                            val contentState by profileVm.contentState.collectAsState()
                             ProfileScreen(
                                 uiState = state,
                                 onSignOutClick = { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
-                                onRetry = vm::loadProfile,
+                                onRetry = profileVm::loadProfile,
                                 onSettingsClick = { showSettings = true },
-                                onAdminClick = if (hasAdminAccess) { { showAdminPanel = true } } else null,
+                                onEditProfileClick = { showProfileEdit = true },
+                                onCreatePostClick = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                                onCreateStoryClick = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                                onCreateBookClick = { showCreateBook = true },
+                                onOpenBook = { book -> selectedBook = book },
+                                onManageBook = { book -> selectedWritingBook = book },
                                 onMyBooksClick = { selectedTab = BottomNavTab.LIBRARY },
-                                onOpenProfile = ::openPublicProfile
+                                onOpenProfile = ::openPublicProfile,
+                                contentState = contentState,
+                                onRefresh = profileVm::refreshProfile,
+                                onTogglePostLike = profileVm::togglePostLike,
+                                onTogglePostSave = profileVm::togglePostSave,
+                                onDeletePost = profileVm::deletePost,
+                                onToggleStoryLike = profileVm::toggleStoryLike
                             )
                         }
                     }
@@ -448,167 +460,6 @@ fun AppNavHost(
         }
 
         // --- Animated Modal Presentation Overlays (Apple Sheet / Full-Screen Spring Physics) ---
-        AnimatedVisibility(
-            visible = showCreateBook,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                CreateBookScreen(
-                    onBack = { showCreateBook = false },
-                    onBookCreated = { newBook ->
-                        showCreateBook = false
-                        selectedWritingBook = newBook
-                        writeVm.loadMyBooks()
-                        homeVm.loadHomeData()
-                        libraryVm.retryCurrentShelf()
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-
-        AnimatedVisibility(
-            visible = createContentMode != null,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                lastCreateContentMode?.let { mode ->
-                    val vm: HomeViewModel = viewModel()
-                    CreateContentScreen(
-                        mode = mode,
-                        user = profile,
-                        isPosting = vm.isPosting.collectAsState().value,
-                        error = vm.postError.collectAsState().value,
-                        onPublishPost = { title, text, tags, mediaUrl, mediaType ->
-                            vm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
-                                if (success && mode == CreateContentMode.POST) {
-                                    createContentMode = null
-                                    selectedTab = BottomNavTab.HOME
-                                }
-                            }
-                        },
-                        onPublishStory = { text, mediaUrl, mediaType ->
-                            vm.createStory(text, mediaUrl, mediaType) { success ->
-                                if (success) {
-                                    createContentMode = null
-                                    selectedTab = BottomNavTab.HOME
-                                }
-                            }
-                        },
-                        onBack = { createContentMode = null },
-                        onClearError = vm::clearPostError,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = selectedBook != null && readerBook == null,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                lastSelectedBook?.let { book ->
-                    BookDetailScreen(
-                        book = book,
-                        userId = profile.uid,
-                        onBack = { selectedBook = null },
-                        onRead = { selected, chapter ->
-                            readerBook = selected
-                            readerChapterId = chapter?.id
-                        },
-                        onOpenChapter = { selected, chapter ->
-                            readerBook = selected
-                            readerChapterId = chapter.id
-                        },
-                        onOpenAuthor = ::openPublicProfile,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = readerBook != null,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                lastReaderBook?.let { book ->
-                    BookReaderScreen(
-                        book = book,
-                        userId = profile.uid,
-                        initialChapterId = lastReaderChapterId,
-                        onBack = {
-                            readerBook = null
-                            readerChapterId = null
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = selectedWritingBook != null,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                lastSelectedWritingBook?.let { book ->
-                    BookManagementRootScreen(
-                        book = book,
-                        onBack = {
-                            selectedWritingBook = null
-                            writeVm.loadMyBooks()
-                        },
-                        onPreviewBook = { target ->
-                            selectedBook = target
-                        },
-                        onDeleteBook = { target ->
-                            writeVm.deleteBook(target.id)
-                            selectedWritingBook = null
-                        },
-                        onOpenProfile = ::openPublicProfile,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = selectedPublicProfile != null,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                lastSelectedPublicProfile?.let { publicProfile ->
-                    PublicProfileScreen(
-                        profile = publicProfile,
-                        isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
-                        onBack = { selectedPublicProfile = null },
-                        onFollow = { friendsVm.toggleFollowUser(publicProfile) },
-                        onMessage = {
-                            selectedPublicProfile = null
-                            selectedDirectUser = publicProfile
-                            selectedTab = BottomNavTab.DM
-                        },
-                        onOpenProfile = ::openPublicProfile,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-
         AnimatedVisibility(
             visible = showNotifications,
             enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
@@ -666,6 +517,176 @@ fun AppNavHost(
         }
 
         AnimatedVisibility(
+            visible = selectedPublicProfile != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedPublicProfile?.let { publicProfile ->
+                    PublicProfileScreen(
+                        profile = publicProfile,
+                        isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+                        onBack = { selectedPublicProfile = null },
+                        onFollow = { friendsVm.toggleFollowUser(publicProfile) },
+                        onMessage = {
+                            selectedPublicProfile = null
+                            selectedDirectUser = publicProfile
+                            selectedTab = BottomNavTab.DM
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        onOpenBook = { book -> selectedBook = book },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedWritingBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedWritingBook?.let { book ->
+                    BookManagementRootScreen(
+                        book = book,
+                        onBack = {
+                            selectedWritingBook = null
+                            writeVm.loadMyBooks()
+                        },
+                        onPreviewBook = { target ->
+                            selectedBook = target
+                        },
+                        onDeleteBook = { target ->
+                            writeVm.deleteBook(target.id)
+                            selectedWritingBook = null
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedBook != null && readerBook == null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedBook?.let { book ->
+                    BookDetailScreen(
+                        book = book,
+                        userId = profile.uid,
+                        onBack = { selectedBook = null },
+                        onRead = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter?.id
+                        },
+                        onOpenChapter = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter.id
+                        },
+                        onOpenAuthor = { authorUid ->
+                            selectedBook = null
+                            openPublicProfile(authorUid)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = readerBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastReaderBook?.let { book ->
+                    BookReaderScreen(
+                        book = book,
+                        userId = profile.uid,
+                        initialChapterId = lastReaderChapterId,
+                        onBack = {
+                            readerBook = null
+                            readerChapterId = null
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showCreateBook,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                CreateBookScreen(
+                    onBack = { showCreateBook = false },
+                    onBookCreated = { newBook ->
+                        showCreateBook = false
+                        selectedWritingBook = newBook
+                        writeVm.loadMyBooks()
+                        homeVm.loadHomeData()
+                        libraryVm.retryCurrentShelf()
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = createContentMode != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastCreateContentMode?.let { mode ->
+                    CreateContentScreen(
+                        mode = mode,
+                        user = profile,
+                        isPosting = homeVm.isPosting.collectAsState().value,
+                        error = homeVm.postError.collectAsState().value,
+                        onPublishPost = { title, text, tags, mediaUrl, mediaType ->
+                            homeVm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
+                                if (success && mode == CreateContentMode.POST) {
+                                    createContentMode = null
+                                    profileVm.refreshProfile()
+                                    if (selectedTab != BottomNavTab.PROFILE) {
+                                        selectedTab = BottomNavTab.HOME
+                                    }
+                                }
+                            }
+                        },
+                        onPublishStory = { text, mediaUrl, mediaType ->
+                            homeVm.createStory(text, mediaUrl, mediaType) { success ->
+                                if (success) {
+                                    createContentMode = null
+                                    profileVm.refreshProfile()
+                                    if (selectedTab != BottomNavTab.PROFILE) {
+                                        selectedTab = BottomNavTab.HOME
+                                    }
+                                }
+                            }
+                        },
+                        onBack = { createContentMode = null },
+                        onClearError = homeVm::clearPostError,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
             visible = showAdminPanel && hasAdminAccess,
             enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
@@ -675,22 +696,6 @@ fun AppNavHost(
                 AdminPanelScreen(
                     onBack = { showAdminPanel = false },
                     permissions = adminPermissions,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-
-        AnimatedVisibility(
-            visible = showProfileEdit,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                ProfileEditScreen(
-                    profile = profile,
-                    onSaved = { showProfileEdit = false; authViewModel.checkSession() },
-                    onBack = { showProfileEdit = false },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -710,6 +715,32 @@ fun AppNavHost(
                     onEditProfile = { showProfileEdit = true },
                     onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
                     onBack = { showSettings = false },
+                    hasAdminAccess = hasAdminAccess,
+                    onOpenAdminPanel = { showSettings = false; showAdminPanel = true },
+                    onOpenWriteStudio = { showSettings = false; selectedTab = BottomNavTab.WRITE },
+                    onOpenLibrary = { showSettings = false; selectedTab = BottomNavTab.LIBRARY },
+                    onOpenServers = { showSettings = false; showCommunityServers = true },
+                    onOpenNotifications = { showSettings = false; showNotifications = true },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showProfileEdit,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                ProfileEditScreen(
+                    profile = profile,
+                    onSaved = {
+                        showProfileEdit = false
+                        authViewModel.checkSession()
+                        profileVm.refreshProfile()
+                    },
+                    onBack = { showProfileEdit = false },
                     modifier = Modifier.fillMaxSize()
                 )
             }

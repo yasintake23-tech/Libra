@@ -1,483 +1,659 @@
 package com.libra.app.feature.profile
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.AddBox
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import com.libra.app.ui.animation.appleBouncy
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.libra.app.core.state.UiState
-import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.CosmeticRole
 import com.libra.app.domain.model.Post
-import com.libra.app.ui.components.UserAvatar
-import com.libra.app.ui.components.CosmeticRoleBadge
+import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.UserProfile
+import com.libra.app.feature.home.StoryViewer
+import com.libra.app.feature.share.ShareSheet
+import com.libra.app.feature.share.sharedContentUrl
+import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.CosmeticRoleReveal
-import com.libra.app.core.di.ServiceLocator
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
+import com.libra.app.ui.components.LoadingView
+
+private enum class SavedFilterType { POSTS, BOOKS }
 
 @Composable
 fun ProfileScreen(
     uiState: UiState<UserProfile>,
-    onSignOutClick: () -> Unit,
+    onSignOutClick: () -> Unit = {},
     onRetry: () -> Unit,
     onSettingsClick: () -> Unit = {},
-    onAdminClick: (() -> Unit)? = null,
+    onEditProfileClick: () -> Unit = {},
+    onCreatePostClick: () -> Unit = {},
+    onCreateStoryClick: () -> Unit = {},
+    onCreateBookClick: () -> Unit = {},
+    onOpenBook: (Book) -> Unit = {},
+    onManageBook: (Book) -> Unit = {},
     onMyBooksClick: () -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
+    contentState: ProfileContentState = ProfileContentState(),
+    onRefresh: () -> Unit = onRetry,
+    onTogglePostLike: (Post) -> Unit = {},
+    onTogglePostSave: (Post) -> Unit = {},
+    onDeletePost: (Post) -> Unit = {},
+    onToggleStoryLike: (com.libra.app.domain.model.Story) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
-        is UiState.Loading -> Text(
-            "Profil yükleniyor…",
-            modifier = Modifier.padding(20.dp)
-        )
+        is UiState.Loading -> LoadingView(message = "Profil yükleniyor…", modifier = modifier)
         is UiState.Error -> Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Text(uiState.error.message, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(8.dp))
             TextButton(onClick = onRetry) { Text("Tekrar dene") }
         }
-        is UiState.Empty -> Text(
-            "Profil bulunamadı",
-            modifier = Modifier.padding(20.dp)
-        )
+        is UiState.Empty -> Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("Profil bulunamadı", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onRetry) { Text("Yenile") }
+        }
         is UiState.Success -> ProfileContent(
             profile = uiState.data,
-            onSignOut = onSignOutClick,
+            contentState = contentState,
             onSettingsClick = onSettingsClick,
-            onAdminClick = onAdminClick,
+            onEditProfileClick = onEditProfileClick,
+            onCreatePostClick = onCreatePostClick,
+            onCreateStoryClick = onCreateStoryClick,
+            onCreateBookClick = onCreateBookClick,
+            onOpenBook = onOpenBook,
+            onManageBook = onManageBook,
             onMyBooksClick = onMyBooksClick,
             onOpenProfile = onOpenProfile,
+            onRefresh = onRefresh,
+            onTogglePostLike = onTogglePostLike,
+            onTogglePostSave = onTogglePostSave,
+            onDeletePost = onDeletePost,
+            onToggleStoryLike = onToggleStoryLike,
             modifier = modifier
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileContent(
     profile: UserProfile,
-    onSignOut: () -> Unit,
+    contentState: ProfileContentState,
     onSettingsClick: () -> Unit,
-    onAdminClick: (() -> Unit)?,
-    onMyBooksClick: () -> Unit = {},
-    onOpenProfile: (String) -> Unit = {},
-    modifier: Modifier
+    onEditProfileClick: () -> Unit,
+    onCreatePostClick: () -> Unit,
+    onCreateStoryClick: () -> Unit,
+    onCreateBookClick: () -> Unit,
+    onOpenBook: (Book) -> Unit,
+    onManageBook: (Book) -> Unit,
+    onMyBooksClick: () -> Unit,
+    onOpenProfile: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onTogglePostLike: (Post) -> Unit,
+    onTogglePostSave: (Post) -> Unit,
+    onDeletePost: (Post) -> Unit,
+    onToggleStoryLike: (com.libra.app.domain.model.Story) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var socialDialog by remember { mutableStateOf<OwnSocialListType?>(null) }
-    var showSavedPosts by remember { mutableStateOf(false) }
-    var followers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
-    var following by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
-    var cosmeticRoles by remember { mutableStateOf<List<com.libra.app.domain.model.CosmeticRole>>(emptyList()) }
-    var selectedCosmetic by remember { mutableStateOf<com.libra.app.domain.model.CosmeticRole?>(null) }
-    var adminRole by remember { mutableStateOf<com.libra.app.domain.model.AdminRole?>(null) }
+    var selectedTab by remember { mutableStateOf(ProfileContentTab.POSTS) }
+    var savedFilter by remember { mutableStateOf(SavedFilterType.POSTS) }
+    var socialDialog by remember { mutableStateOf<ProfileSocialListType?>(null) }
+    var selectedPostId by remember { mutableStateOf<String?>(null) }
+    var showCreateSheet by remember { mutableStateOf(false) }
+    var showStoryViewer by remember { mutableStateOf(false) }
+    var shareContent by remember { mutableStateOf<SharedContent?>(null) }
+    var selectedCosmetic by remember { mutableStateOf<CosmeticRole?>(null) }
 
-    LaunchedEffect(profile.uid) {
-        launch {
-            ServiceLocator.userRepository.getFollowers(profile.uid).let {
-                if (it is com.libra.app.core.result.AppResult.Success) followers = it.data
+    val selectedPost = remember(selectedPostId, contentState.posts, contentState.savedPosts) {
+        selectedPostId?.let { id ->
+            contentState.posts.firstOrNull { it.id == id }
+                ?: contentState.savedPosts.firstOrNull { it.id == id }
+        }
+    }
+
+    val booksCount = maxOf(profile.booksWrittenCount, contentState.writtenBooks.size)
+    val followersCount = maxOf(profile.followersCount, contentState.followers.size)
+    val followingCount = maxOf(profile.followingCount, contentState.following.size)
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Instagram-style Top App Bar: @username on left, Create (+) and single Settings Menu on right
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = profile.handle,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (contentState.adminRole != null) {
+                        Icon(
+                            imageVector = Icons.Default.Verified,
+                            contentDescription = "Yetkili hesap",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    IconButton(
+                        onClick = { showCreateSheet = true },
+                        modifier = Modifier
+                            .appleBouncy(pressedScale = 0.86f, onClick = { showCreateSheet = true })
+                            .testTag("profile_create_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddBox,
+                            contentDescription = "Oluştur",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .appleBouncy(pressedScale = 0.86f, onClick = onSettingsClick)
+                            .testTag("profile_settings_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Ayarlar ve hareketler",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+            }
+
+            PullToRefreshBox(
+                isRefreshing = contentState.isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 96.dp)
+                ) {
+                    item(key = "profile-header") {
+                        InstagramProfileHeader(
+                            profile = profile,
+                            postsCount = contentState.posts.size,
+                            booksCount = booksCount,
+                            followersCount = followersCount,
+                            followingCount = followingCount,
+                            hasActiveStory = contentState.activeStories.isNotEmpty(),
+                            showAddStoryBadge = profile.moderation.canStory,
+                            onAvatarClick = {
+                                if (contentState.activeStories.isNotEmpty()) {
+                                    showStoryViewer = true
+                                } else if (profile.moderation.canStory) {
+                                    onCreateStoryClick()
+                                }
+                            },
+                            onAddStoryClick = {
+                                if (profile.moderation.canStory) onCreateStoryClick()
+                            },
+                            onPostsStatClick = { selectedTab = ProfileContentTab.POSTS },
+                            onBooksStatClick = { selectedTab = ProfileContentTab.BOOKS },
+                            onFollowersClick = { socialDialog = ProfileSocialListType.FOLLOWERS },
+                            onFollowingClick = { socialDialog = ProfileSocialListType.FOLLOWING }
+                        )
+                    }
+
+                    item(key = "profile-bio") {
+                        Spacer(Modifier.height(4.dp))
+                        InstagramProfileBioSection(
+                            profile = profile,
+                            booksCount = booksCount,
+                            adminRole = contentState.adminRole,
+                            cosmeticRoles = contentState.cosmeticRoles,
+                            isOwnProfile = true,
+                            onCosmeticClick = { selectedCosmetic = it },
+                            onEmptyBioClick = onEditProfileClick
+                        )
+                    }
+
+                    item(key = "profile-actions") {
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            InstagramProfileSecondaryButton(
+                                text = "Profili Düzenle",
+                                onClick = onEditProfileClick,
+                                leadingIcon = Icons.Default.Edit,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("profile_edit_button")
+                            )
+                            InstagramProfileSecondaryButton(
+                                text = "Profili Paylaş",
+                                onClick = {
+                                    shareContent = SharedContent(
+                                        type = "profile",
+                                        id = profile.uid,
+                                        title = "${profile.displayName} (${profile.handle})",
+                                        text = profile.bio.ifBlank { "Libra'daki profilimi keşfet!" },
+                                        authorId = profile.uid,
+                                        authorName = profile.displayName,
+                                        mediaUrl = profile.profileImageUrl,
+                                        url = sharedContentUrl("profile", profile.uid)
+                                    )
+                                },
+                                leadingIcon = Icons.Default.Share,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("profile_share_button")
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                    }
+
+                    item(key = "profile-tabs") {
+                        InstagramProfileTabBar(
+                            selectedTab = selectedTab,
+                            includeSavedTab = true,
+                            onTabSelected = { selectedTab = it }
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+
+                    when (selectedTab) {
+                        ProfileContentTab.POSTS -> {
+                            if (contentState.posts.isEmpty()) {
+                                item(key = "empty-posts") {
+                                    ProfileEmptyTabCard(
+                                        icon = Icons.Default.GridOn,
+                                        title = "Henüz gönderin yok",
+                                        subtitle = "Düşüncelerini, alıntılarını veya kitap görsellerini toplulukla paylaş.",
+                                        actionLabel = if (profile.moderation.canPost) "Gönderi Paylaş" else null,
+                                        onActionClick = if (profile.moderation.canPost) onCreatePostClick else null
+                                    )
+                                }
+                            } else {
+                                instagramPostsGridItems(
+                                    posts = contentState.posts,
+                                    keyPrefix = "own-post",
+                                    onPostClick = { selectedPostId = it.id }
+                                )
+                            }
+                        }
+
+                        ProfileContentTab.BOOKS -> {
+                            if (contentState.writtenBooks.isEmpty()) {
+                                item(key = "empty-books") {
+                                    ProfileEmptyTabCard(
+                                        icon = Icons.Default.MenuBook,
+                                        title = "Henüz yazdığın bir kitap yok",
+                                        subtitle = "İlk kitabını oluşturup Libra okurlarıyla buluşturabilirsin.",
+                                        actionLabel = if (profile.moderation.canPublishBook) "Yeni Kitap Oluştur" else null,
+                                        onActionClick = if (profile.moderation.canPublishBook) onCreateBookClick else null
+                                    )
+                                }
+                            } else {
+                                instagramBooksGridItems(
+                                    books = contentState.writtenBooks,
+                                    keyPrefix = "own-book",
+                                    showStatusBadge = true,
+                                    onBookClick = onManageBook
+                                )
+                            }
+                        }
+
+                        ProfileContentTab.SAVED -> {
+                            item(key = "saved-filter") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SavedFilterChip(
+                                        label = "Gönderiler (${contentState.savedPosts.size})",
+                                        selected = savedFilter == SavedFilterType.POSTS,
+                                        onClick = { savedFilter = SavedFilterType.POSTS },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    SavedFilterChip(
+                                        label = "Kitaplar (${contentState.savedBooks.size})",
+                                        selected = savedFilter == SavedFilterType.BOOKS,
+                                        onClick = { savedFilter = SavedFilterType.BOOKS },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+
+                            if (savedFilter == SavedFilterType.POSTS) {
+                                if (contentState.savedPosts.isEmpty()) {
+                                    item(key = "empty-saved-posts") {
+                                        ProfileEmptyTabCard(
+                                            icon = Icons.Default.BookmarkBorder,
+                                            title = "Kaydedilen gönderin yok",
+                                            subtitle = "Ana akışta beğendiğin gönderileri yer imine ekleyerek burada saklayabilirsin."
+                                        )
+                                    }
+                                } else {
+                                    instagramPostsGridItems(
+                                        posts = contentState.savedPosts,
+                                        keyPrefix = "saved-post",
+                                        onPostClick = { selectedPostId = it.id }
+                                    )
+                                }
+                            } else {
+                                if (contentState.savedBooks.isEmpty()) {
+                                    item(key = "empty-saved-books") {
+                                        ProfileEmptyTabCard(
+                                            icon = Icons.Default.AutoStories,
+                                            title = "Kaydedilen kitabın yok",
+                                            subtitle = "Kütüphanene eklediğin kitaplar burada görünür.",
+                                            actionLabel = "Kütüphaneye Git",
+                                            onActionClick = onMyBooksClick
+                                        )
+                                    }
+                                } else {
+                                    instagramBooksGridItems(
+                                        books = contentState.savedBooks.map { it.book },
+                                        keyPrefix = "saved-book",
+                                        showStatusBadge = false,
+                                        onBookClick = onOpenBook
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        launch {
-            ServiceLocator.adminRepository.observeCosmeticRoles().first().let { result ->
-                if (result is com.libra.app.core.result.AppResult.Success) cosmeticRoles = result.data
-            }
+
+        if (showStoryViewer && contentState.activeStories.isNotEmpty()) {
+            StoryViewer(
+                stories = contentState.activeStories,
+                initialIndex = 0,
+                currentUserId = profile.uid,
+                onDismiss = { showStoryViewer = false },
+                onReply = { showStoryViewer = false },
+                onLike = onToggleStoryLike,
+                onOpenProfile = {
+                    showStoryViewer = false
+                },
+                onShare = { story ->
+                    showStoryViewer = false
+                    shareContent = SharedContent(
+                        type = "story",
+                        id = story.id,
+                        title = story.text.ifBlank { "Hikâye" }.take(80),
+                        text = story.text,
+                        authorId = story.authorId,
+                        authorName = story.authorName,
+                        mediaUrl = story.mediaUrl,
+                        url = sharedContentUrl("story", story.id)
+                    )
+                }
+            )
         }
-        launch {
-            adminRole = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
-        }
-        launch {
-            ServiceLocator.userRepository.getFollowing(profile.uid).let {
-                if (it is com.libra.app.core.result.AppResult.Success) following = it.data
+    }
+
+    if (showCreateSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCreateSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Oluştur",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                CreateSheetRow(
+                    icon = Icons.Default.Edit,
+                    title = "Gönderi",
+                    subtitle = "Görsel veya yazı paylaş",
+                    enabled = profile.moderation.canPost,
+                    onClick = {
+                        showCreateSheet = false
+                        onCreatePostClick()
+                    }
+                )
+                CreateSheetRow(
+                    icon = Icons.Default.AutoStories,
+                    title = "Hikâye",
+                    subtitle = "24 saatlik hikâye ekle",
+                    enabled = profile.moderation.canStory,
+                    onClick = {
+                        showCreateSheet = false
+                        onCreateStoryClick()
+                    }
+                )
+                CreateSheetRow(
+                    icon = Icons.Default.MenuBook,
+                    title = "Kitap Yaz",
+                    subtitle = "Yeni bir Libra kitabı başlat",
+                    enabled = profile.moderation.canPublishBook,
+                    onClick = {
+                        showCreateSheet = false
+                        onCreateBookClick()
+                    }
+                )
+                Spacer(Modifier.height(10.dp))
             }
         }
     }
 
-    Column(
+    selectedPost?.let { post ->
+        ProfilePostDetailDialog(
+            post = post,
+            isOwnPost = post.authorId == profile.uid,
+            onDismiss = { selectedPostId = null },
+            onToggleLike = { onTogglePostLike(post) },
+            onToggleSave = { onTogglePostSave(post) },
+            onShare = {
+                selectedPostId = null
+                shareContent = SharedContent(
+                    type = "post",
+                    id = post.id,
+                    title = post.title.ifBlank { "Gönderi" },
+                    text = post.text,
+                    authorId = post.authorId,
+                    authorName = post.authorName,
+                    mediaUrl = post.mediaUrl,
+                    url = sharedContentUrl("post", post.id)
+                )
+            },
+            onOpenAuthor = onOpenProfile,
+            onDelete = if (post.authorId == profile.uid) {
+                {
+                    selectedPostId = null
+                    onDeletePost(post)
+                }
+            } else null
+        )
+    }
+
+    socialDialog?.let { type ->
+        ProfileSocialListDialog(
+            title = if (type == ProfileSocialListType.FOLLOWERS) "Takipçiler" else "Takip Edilenler",
+            emptyMessage = if (type == ProfileSocialListType.FOLLOWERS) {
+                "Henüz takipçin yok."
+            } else {
+                "Henüz kimseyi takip etmiyorsun."
+            },
+            users = if (type == ProfileSocialListType.FOLLOWERS) contentState.followers else contentState.following,
+            onDismiss = { socialDialog = null },
+            onOpenProfile = onOpenProfile
+        )
+    }
+
+    shareContent?.let { content ->
+        ShareSheet(
+            content = content,
+            onDismiss = { shareContent = null }
+        )
+    }
+
+    selectedCosmetic?.let { role ->
+        CosmeticRoleReveal(
+            role = role,
+            onDismiss = { selectedCosmetic = null }
+        )
+    }
+}
+
+@Composable
+private fun SavedFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Surface(
         modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .clip(shape)
+            .appleBouncy(pressedScale = 0.95f, onClick = onClick),
+        shape = shape,
+        color = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Box(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateSheetRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .appleBouncy(enabled = enabled, pressedScale = 0.96f, onClick = onClick),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "Profil",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.Bold
-                )
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (onAdminClick != null) {
-                    androidx.compose.material3.Button(
-                        onClick = onAdminClick,
-                        modifier = Modifier.appleBouncy(pressedScale = 0.92f, onClick = onAdminClick),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 14.dp,
-                            vertical = 8.dp
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            "Yönetim",
-                            modifier = Modifier.padding(start = 6.dp),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                androidx.compose.material3.IconButton(
-                    onClick = onSettingsClick,
-                    modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onSettingsClick)
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = "Ayarlar",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            UserAvatar(
-                profile.profileImageUrl,
-                profile.initials,
-                size = 84.dp
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(profile.displayName, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-                adminRole?.let { role ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Text(role.name, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
-                }
-                cosmeticRoles.filter { it.id in profile.cosmeticRoleIds }.forEach { role ->
-                    CosmeticRoleBadge(role) { selectedCosmetic = role }
-                }
-            }
-
-            Text(
-                profile.handle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (profile.bio.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    profile.bio,
-                    style = MaterialTheme.typography.bodyMedium
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                Spacer(Modifier.height(8.dp))
                 Text(
-                    "Henüz bir hakkında yazısı yok.",
+                    text = if (enabled) subtitle else "Bu işlem geçici olarak kısıtlandı",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-
-        Spacer(Modifier.height(24.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Stat(profile.booksWrittenCount.toString(), "Kitap")
-            Stat(following.size.toString(), "Takip", Modifier.clickable { socialDialog = OwnSocialListType.FOLLOWING })
-            Stat(followers.size.toString(), "Takipçi", Modifier.clickable { socialDialog = OwnSocialListType.FOLLOWERS })
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(modifier = Modifier.padding(4.dp)) {
-                ProfileAction(
-                    icon = Icons.Default.Book,
-                    label = "Kitaplarım",
-                    onClick = onMyBooksClick
-                )
-                ProfileAction(
-                    icon = Icons.Default.BookmarkBorder,
-                    label = "Kaydedilen gönderiler",
-                    onClick = { showSavedPosts = true }
-                )
-                ProfileAction(
-                    icon = Icons.Default.People,
-                    label = "Takip ettiklerim",
-                    onClick = { socialDialog = OwnSocialListType.FOLLOWING }
-                )
-                ProfileAction(Icons.Default.Settings, "Ayarlar", onSettingsClick)
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        if (socialDialog != null) {
-            SocialListDialog(
-                type = socialDialog!!,
-                users = if (socialDialog == OwnSocialListType.FOLLOWERS) followers else following,
-                onDismiss = { socialDialog = null },
-                onOpenProfile = onOpenProfile
-            )
-        }
-
-        if (showSavedPosts) {
-            SavedPostsDialog(
-                userId = profile.uid,
-                onDismiss = { showSavedPosts = false },
-                onOpenProfile = onOpenProfile
-            )
-        }
-
-        selectedCosmetic?.let { role ->
-            CosmeticRoleReveal(
-                role = role,
-                onDismiss = { selectedCosmetic = null }
-            )
-        }
-
-        TextButton(
-            onClick = onSignOut,
-            modifier = Modifier
-                .fillMaxWidth()
-                .appleBouncy(pressedScale = 0.94f, onClick = onSignOut)
-        ) {
-            Icon(Icons.Default.ExitToApp, contentDescription = null)
-            Text("  Çıkış yap")
-        }
     }
-}
-
-
-@Composable
-private fun ProfileAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .appleBouncy(pressedScale = 0.97f, onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = null)
-        Text("  " + label)
-    }
-}
-
-private enum class OwnSocialListType { FOLLOWERS, FOLLOWING }
-
-
-@Composable
-private fun SavedPostsDialog(
-    userId: String,
-    onDismiss: () -> Unit,
-    onOpenProfile: (String) -> Unit = {}
-) {
-    var posts by remember(userId) { mutableStateOf<List<Post>>(emptyList()) }
-    var error by remember(userId) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(userId) {
-        ServiceLocator.postRepository.observeSavedPosts(userId).collect { result ->
-            when (result) {
-                is com.libra.app.core.result.AppResult.Success -> posts = result.data
-                is com.libra.app.core.result.AppResult.Error -> error = result.error.message
-            }
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Kaydedilen gönderiler") },
-        text = {
-            when {
-                error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
-                posts.isEmpty() -> Text("Henüz kaydettiğin bir gönderi yok.")
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(posts, key = { it.id }) { post ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onDismiss()
-                                    onOpenProfile(post.authorId)
-                                }
-                        ) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(
-                                    post.authorName.ifBlank { post.authorUsername },
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                if (post.authorUsername.isNotBlank()) {
-                                    Text(
-                                        "@${post.authorUsername}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Text(post.text)
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Kapat") }
-        }
-    )
-}
-
-@Composable
-private fun Stat(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.padding(horizontal = 12.dp)
-    ) {
-        Text(
-            value,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SocialListDialog(
-    type: OwnSocialListType,
-    users: List<UserProfile>,
-    onDismiss: () -> Unit,
-    onOpenProfile: (String) -> Unit = {}
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(if (type == OwnSocialListType.FOLLOWERS) "Takipçiler" else "Takip ettiklerin")
-        },
-        text = {
-            if (users.isEmpty()) {
-                Text(
-                    if (type == OwnSocialListType.FOLLOWERS)
-                        "Henüz takipçin yok."
-                    else
-                        "Henüz kimseyi takip etmiyorsun."
-                )
-            } else {
-                LazyColumn {
-                    items(users, key = { it.uid }) { user ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onDismiss()
-                                    onOpenProfile(user.uid)
-                                }
-                                .padding(vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            UserAvatar(
-                                photoUrl = user.profileImageUrl,
-                                initials = user.initials,
-                                size = 42.dp,
-                                onClick = {
-                                    onDismiss()
-                                    onOpenProfile(user.uid)
-                                }
-                            )
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 10.dp)
-                            ) {
-                                Text(user.displayName, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    user.handle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Kapat") }
-        }
-    )
 }
