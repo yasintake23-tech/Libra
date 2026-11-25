@@ -100,17 +100,18 @@ fun filterAndSortAdminPosts(
     tagFilter: String? = null,
     sortOption: AdminPostSortOption = AdminPostSortOption.NEWEST
 ): List<Post> {
-    val q = query.trim().lowercase()
+    val trLocale = java.util.Locale.forLanguageTag("tr")
+    val q = query.trim().lowercase(trLocale)
     val cleanTagFilter = tagFilter?.trim()?.removePrefix("#").orEmpty()
     val filtered = posts.filter { post ->
         val matchesOwner = ownerFilterUid.isNullOrBlank() || post.authorId == ownerFilterUid
         val matchesQuery = q.isBlank() ||
-            post.title.lowercase().contains(q) ||
-            post.text.lowercase().contains(q) ||
-            post.authorName.lowercase().contains(q) ||
-            post.authorUsername.lowercase().contains(q) ||
-            post.id.lowercase().contains(q) ||
-            post.tags.any { it.removePrefix("#").lowercase().contains(q) }
+            post.title.lowercase(trLocale).contains(q) ||
+            post.text.lowercase(trLocale).contains(q) ||
+            post.authorName.lowercase(trLocale).contains(q) ||
+            post.authorUsername.lowercase(trLocale).contains(q) ||
+            post.id.lowercase(trLocale).contains(q) ||
+            post.tags.any { it.removePrefix("#").lowercase(trLocale).contains(q) }
         val matchesFilter = when (filter) {
             AdminPostFilter.ALL -> true
             AdminPostFilter.WITH_MEDIA -> post.mediaUrl.isNotBlank()
@@ -118,7 +119,7 @@ fun filterAndSortAdminPosts(
             AdminPostFilter.TAGGED -> post.tags.any { it.removePrefix("#").isNotBlank() }
         }
         val matchesTag = cleanTagFilter.isBlank() ||
-            post.tags.any { it.removePrefix("#").equals(cleanTagFilter, ignoreCase = true) }
+            post.tags.any { it.removePrefix("#").lowercase(trLocale) == cleanTagFilter.lowercase(trLocale) }
 
         matchesOwner && matchesQuery && matchesFilter && matchesTag
     }
@@ -136,14 +137,15 @@ fun filterAndSortAdminPosts(
 }
 
 fun summarizeAdminPostTags(posts: List<Post>): List<AdminPostTagSummary> {
+    val trLocale = java.util.Locale.forLanguageTag("tr")
     val buckets = linkedMapOf<String, MutableList<Post>>()
     posts.forEach { post ->
         post.tags
             .map { it.trim().removePrefix("#") }
             .filter { it.isNotBlank() }
-            .distinctBy { it.lowercase() }
+            .distinctBy { it.lowercase(trLocale) }
             .forEach { cleanTag ->
-                val key = cleanTag.lowercase()
+                val key = cleanTag.lowercase(trLocale)
                 buckets.getOrPut(key) { mutableListOf() }.add(post)
             }
     }
@@ -743,8 +745,13 @@ class AdminViewModel(
         onDone: (Boolean) -> Unit = {}
     ) = viewModelScope.launch {
         _postActionBusy.value = true
+        val trLocale = java.util.Locale.forLanguageTag("tr")
         val cleanTitle = title.trim().take(120)
-        val cleanTags = tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.distinct().take(10)
+        val cleanTags = tags
+            .map { it.trim().removePrefix("#") }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(trLocale) }
+            .take(10)
         when (val res = postRepo.updatePostCategorization(post.id, cleanTitle, cleanTags)) {
             is AppResult.Success -> {
                 replacePostInList(res.data)
@@ -813,6 +820,7 @@ class AdminViewModel(
     ) = viewModelScope.launch {
         val cleanTag = tag.trim().removePrefix("#")
         if (postIds.isEmpty() || cleanTag.isBlank()) return@launch
+        val trLocale = java.util.Locale.forLanguageTag("tr")
         _postActionBusy.value = true
         var updatedCount = 0
         var lastError: String? = null
@@ -820,7 +828,7 @@ class AdminViewModel(
             val mergedTags = (post.tags + cleanTag)
                 .map { it.trim().removePrefix("#") }
                 .filter { it.isNotBlank() }
-                .distinctBy { it.lowercase() }
+                .distinctBy { it.lowercase(trLocale) }
                 .take(10)
             when (val res = postRepo.updatePostCategorization(post.id, post.title, mergedTags)) {
                 is AppResult.Success -> {
@@ -846,13 +854,17 @@ class AdminViewModel(
         onDone: (Boolean) -> Unit = {}
     ) = viewModelScope.launch {
         _postActionBusy.value = true
+        val previousCount = _posts.value.firstOrNull { it.id == postId }?.commentsCount
         when (val res = postRepo.deleteComment(postId, commentId, actorUid)) {
             is AppResult.Success -> {
-                _posts.value = _posts.value.map { post ->
-                    if (post.id == postId) {
-                        post.copy(commentsCount = (post.commentsCount - 1).coerceAtLeast(0))
-                    } else {
-                        post
+                val currentCount = _posts.value.firstOrNull { it.id == postId }?.commentsCount
+                if (previousCount != null && currentCount == previousCount) {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) {
+                            post.copy(commentsCount = (post.commentsCount - 1).coerceAtLeast(0))
+                        } else {
+                            post
+                        }
                     }
                 }
                 _postActionMessage.value = "Yorum silindi."

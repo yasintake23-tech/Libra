@@ -330,9 +330,10 @@ class AdminPostManagementTest {
         override suspend fun updatePostCategorization(postId: String, title: String, tags: List<String>): AppResult<Post> {
             val target = currentPosts().firstOrNull { it.id == postId }
                 ?: return AppResult.Error(AppError.NotFound("Bulunamadı"))
+            val trLocale = java.util.Locale.forLanguageTag("tr")
             val updated = target.copy(
                 title = title.trim().take(120),
-                tags = tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.take(10)
+                tags = tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.distinctBy { it.lowercase(trLocale) }.take(10)
             )
             postsFlow.value = AppResult.Success(currentPosts().map { if (it.id == postId) updated else it })
             return AppResult.Success(updated)

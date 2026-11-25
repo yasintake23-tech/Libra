@@ -668,11 +668,12 @@ class FirebasePostRepositoryImpl(
             if (!hasPostManagePermission(snapshot.getString("authorId"), uid)) {
                 return AppResult.Error(AppError.Auth("Bu gönderiyi düzenleme yetkin yok."))
             }
+            val trLocale = java.util.Locale.forLanguageTag("tr")
             val cleanTitle = title.trim().take(120)
             val cleanTags = tags
                 .map { it.trim().removePrefix("#") }
                 .filter { it.isNotBlank() }
-                .distinctBy { it.lowercase() }
+                .distinctBy { it.lowercase(trLocale) }
                 .take(10)
             ref.update(
                 mapOf(
