@@ -267,20 +267,14 @@ class ProfileAndSettingsTest {
     }
 
     @Test
-    fun settingsPreferences_persistReaderAndPrivacyChoices() {
+    fun settingsPreferences_persistThemeAndReaderChoices() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = context.getSharedPreferences("libra_settings", Context.MODE_PRIVATE)
         prefs.edit()
             .putBoolean("dark_theme", false)
-            .putBoolean("notifications_enabled", false)
-            .putBoolean("online_status_enabled", false)
-            .putString("dm_privacy_scope", "FOLLOWING")
             .commit()
 
         assertFalse(prefs.getBoolean("dark_theme", true))
-        assertFalse(prefs.getBoolean("notifications_enabled", true))
-        assertFalse(prefs.getBoolean("online_status_enabled", true))
-        assertEquals("FOLLOWING", prefs.getString("dm_privacy_scope", "EVERYONE"))
 
         val readerStore = ReaderPreferencesStore(context)
         readerStore.save(

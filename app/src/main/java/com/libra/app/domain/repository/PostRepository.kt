@@ -26,4 +26,8 @@ interface PostRepository {
     fun observeSavedPosts(userId: String, limit: Long = 100): Flow<AppResult<List<Post>>>
     fun observeUserPosts(userId: String, currentUserId: String = userId, limit: Long = 60): Flow<AppResult<List<Post>>> =
         kotlinx.coroutines.flow.flowOf(AppResult.Success(emptyList()))
+    fun observeAllPostsForAdmin(limit: Long = 200): Flow<AppResult<List<Post>>> =
+        observeFeed(currentUserId = "", limit = limit)
+    suspend fun updatePostCategorization(postId: String, title: String, tags: List<String>): AppResult<Post> =
+        AppResult.Error(com.libra.app.core.result.AppError.Database("Desteklenmiyor."))
 }

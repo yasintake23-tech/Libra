@@ -1525,10 +1525,14 @@ fun QuickCategorizeSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("ALL" to "Genel Okur", "YA" to "Genç Yetişkin", "ADULT" to "Yetişkin (18+)").forEach { (code, label) ->
+                listOf(
+                    Triple("Herkes İçin", listOf("ALL", "Genel Okur", "Herkes İçin"), "Herkes İçin"),
+                    Triple("Genç Yetişkin (13+)", listOf("YA", "Genç Yetişkin", "Genç Yetişkin (13+)"), "Genç Yetişkin (13+)"),
+                    Triple("Yetişkin (18+)", listOf("ADULT", "Yetişkin", "Yetişkin (18+)"), "Yetişkin (18+)")
+                ).forEach { (value, aliases, label) ->
                     FilterChip(
-                        selected = audience.equals(code, ignoreCase = true),
-                        onClick = { audience = code },
+                        selected = aliases.any { it.equals(audience, ignoreCase = true) },
+                        onClick = { audience = value },
                         label = { Text(label) }
                     )
                 }
@@ -1539,10 +1543,18 @@ fun QuickCategorizeSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("tr" to "Türkçe", "en" to "İngilizce", "de" to "Almanca", "fr" to "Fransızca").forEach { (code, label) ->
+                listOf(
+                    Triple("Türkçe", "tr", "Türkçe"),
+                    Triple("English", "en", "English"),
+                    Triple("Deutsch", "de", "Deutsch"),
+                    Triple("Français", "fr", "Français"),
+                    Triple("Español", "es", "Español"),
+                    Triple("Diğer", "other", "Diğer")
+                ).forEach { (value, legacyCode, label) ->
                     FilterChip(
-                        selected = language.equals(code, ignoreCase = true),
-                        onClick = { language = code },
+                        selected = language.equals(value, ignoreCase = true) ||
+                            language.equals(legacyCode, ignoreCase = true),
+                        onClick = { language = value },
                         label = { Text(label) }
                     )
                 }
@@ -1815,10 +1827,18 @@ fun AdminBookControlCenter(
                 // Category 1: Metadata & Categorization
                 item(key = "cat-metadata") {
                     ControlModuleSection(title = "Temel Bilgiler ve Kategorizasyon") {
+                        val audienceLabel = when {
+                            currentBook.targetAudience.isBlank() ||
+                                currentBook.targetAudience.equals("ALL", ignoreCase = true) ||
+                                currentBook.targetAudience.equals("Genel Okur", ignoreCase = true) -> "Herkes İçin"
+                            currentBook.targetAudience.equals("YA", ignoreCase = true) -> "Genç Yetişkin (13+)"
+                            currentBook.targetAudience.equals("ADULT", ignoreCase = true) -> "Yetişkin (18+)"
+                            else -> currentBook.targetAudience
+                        }
                         ControlModuleRow(
                             icon = Icons.Default.Category,
                             title = "Hızlı Kategorize Et & Etiketle",
-                            subtitle = "${currentBook.category.displayName} • Hedef: ${currentBook.targetAudience.ifBlank { "ALL" }}",
+                            subtitle = "${currentBook.category.displayName} • Hedef: $audienceLabel",
                             onClick = { showCategorizeSheet = true }
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

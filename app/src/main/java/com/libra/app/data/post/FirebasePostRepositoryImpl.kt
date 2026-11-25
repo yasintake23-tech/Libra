@@ -32,6 +32,51 @@ class FirebasePostRepositoryImpl(
     private val firestore = FirebaseFirestore.getInstance()
     private val postsRef get() = firestore.collection("posts")
 
+    private suspend fun isPostAdmin(uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (uid == LIBRA_POST_ADMIN_UID) return true
+        return runCatching {
+            firestore.collection("adminRoles")
+                .document(uid)
+                .get()
+                .await()
+                .get("permissions.managePosts") == true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun hasPostManagePermission(authorId: String?, userId: String): Boolean {
+        if (userId.isBlank()) return false
+        if (!authorId.isNullOrBlank() && authorId == userId) return true
+        return isPostAdmin(userId)
+    }
+
+    private suspend fun mapDocumentToPost(
+        document: com.google.firebase.firestore.DocumentSnapshot,
+        likedIds: Set<String> = emptySet(),
+        savedIds: Set<String> = emptySet()
+    ): Post? {
+        val data = document.data ?: return null
+        return Post(
+            id = document.id,
+            authorId = data["authorId"] as? String ?: "",
+            authorName = data["authorName"] as? String ?: "",
+            authorUsername = data["authorUsername"] as? String ?: "",
+            authorPhotoUrl = data["authorPhotoUrl"] as? String ?: "",
+            title = data["title"] as? String ?: "",
+            text = data["text"] as? String ?: "",
+            mediaUrl = data["mediaUrl"] as? String ?: "",
+            mediaType = data["mediaType"] as? String ?: "",
+            tags = (data["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+            likesCount = (data["likesCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+            commentsCount = (data["commentsCount"] as? Number)?.toInt()?.coerceAtLeast(0) ?: runCatching {
+                document.reference.collection("comments").count().get(AggregateSource.SERVER).await().count.toInt()
+            }.getOrDefault(0),
+            likedByCurrentUser = document.id in likedIds,
+            savedByCurrentUser = document.id in savedIds,
+            createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
+        )
+    }
+
     override fun observeFeed(currentUserId: String, limit: Long): Flow<AppResult<List<Post>>> = callbackFlow {
         if (currentUserId.isBlank()) {
             trySend(AppResult.Error(AppError.Auth("Oturum bulunamadı.")))
@@ -359,7 +404,7 @@ class FirebasePostRepositoryImpl(
             val ref = postsRef.document(postId)
             val snapshot = ref.get().await()
             if (!snapshot.exists()) return AppResult.Success(Unit)
-            if (snapshot.getString("authorId") != userId) {
+            if (!hasPostManagePermission(snapshot.getString("authorId"), userId)) {
                 return AppResult.Error(AppError.Auth("Bu gönderiyi silme yetkin yok."))
             }
             ref.delete().await()
@@ -471,17 +516,21 @@ class FirebasePostRepositoryImpl(
     override suspend fun deleteComment(postId: String, commentId: String, userId: String): AppResult<Unit> {
         if (postId.isBlank() || commentId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
         return try {
-            val ref = postsRef.document(postId).collection("comments").document(commentId)
+            val postRef = postsRef.document(postId)
+            val ref = postRef.collection("comments").document(commentId)
             val snapshot = ref.get().await()
             if (!snapshot.exists()) return AppResult.Success(Unit)
-            if (snapshot.getString("authorId") != userId) {
+            if (!hasPostManagePermission(snapshot.getString("authorId"), userId)) {
                 return AppResult.Error(AppError.Auth("Bu yorumu silme yetkin yok."))
             }
             ref.delete().await()
-            postsRef.document(postId).update(
-                "commentsCount",
-                com.google.firebase.firestore.FieldValue.increment(-1)
-            ).await()
+            runCatching {
+                val postSnap = postRef.get().await()
+                if (postSnap.exists()) {
+                    val currentCount = (postSnap.getLong("commentsCount") ?: 1L).coerceAtLeast(1L)
+                    postRef.update("commentsCount", (currentCount - 1L).coerceAtLeast(0L)).await()
+                }
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum silinemedi.", e))
@@ -554,4 +603,91 @@ class FirebasePostRepositoryImpl(
         awaitClose { registration.remove() }
     }
 
+    override fun observeAllPostsForAdmin(limit: Long): Flow<AppResult<List<Post>>> = callbackFlow {
+        val safeLimit = limit.coerceIn(1L, 300L)
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        val registration = postsRef
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(safeLimit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Gönderiler yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                launch {
+                    try {
+                        val likedIds = if (currentUserId.isNotBlank()) {
+                            runCatching {
+                                firestore.collectionGroup("likes")
+                                    .whereEqualTo("userId", currentUserId)
+                                    .get()
+                                    .await()
+                                    .documents
+                                    .mapNotNull { it.reference.parent.parent?.id }
+                                    .toSet()
+                            }.getOrDefault(emptySet())
+                        } else emptySet()
+
+                        val savedIds = if (currentUserId.isNotBlank()) {
+                            runCatching {
+                                firestore.collection("savedPosts")
+                                    .document(currentUserId)
+                                    .collection("posts")
+                                    .get()
+                                    .await()
+                                    .documents
+                                    .mapNotNull { it.getString("postId") ?: it.id }
+                                    .toSet()
+                            }.getOrDefault(emptySet())
+                        } else emptySet()
+
+                        val posts = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                            mapDocumentToPost(doc, likedIds = likedIds, savedIds = savedIds)
+                        }
+                        trySend(AppResult.Success(posts))
+                    } catch (e: Exception) {
+                        trySend(AppResult.Error(AppError.Database("Gönderiler işlenemedi.", e)))
+                    }
+                }
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun updatePostCategorization(
+        postId: String,
+        title: String,
+        tags: List<String>
+    ): AppResult<Post> {
+        if (postId.isBlank()) return AppResult.Error(AppError.Validation("Gönderi bulunamadı."))
+        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        if (uid.isBlank()) return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        return try {
+            val ref = postsRef.document(postId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Error(AppError.NotFound("Gönderi bulunamadı."))
+            if (!hasPostManagePermission(snapshot.getString("authorId"), uid)) {
+                return AppResult.Error(AppError.Auth("Bu gönderiyi düzenleme yetkin yok."))
+            }
+            val cleanTitle = title.trim().take(120)
+            val cleanTags = tags
+                .map { it.trim().removePrefix("#") }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase() }
+                .take(10)
+            ref.update(
+                mapOf(
+                    "title" to cleanTitle,
+                    "tags" to cleanTags
+                )
+            ).await()
+            val refreshed = ref.get().await()
+            val updated = mapDocumentToPost(refreshed)
+                ?: return AppResult.Error(AppError.Database("Gönderi okunamadı."))
+            AppResult.Success(updated)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Gönderi güncellenemedi.", e))
+        }
+    }
 }
+
+private const val LIBRA_POST_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"

@@ -95,10 +95,12 @@ fun AdminPanelScreen(
         }
         val members by vm.members.collectAsState()
         val books by vm.books.collectAsState()
+        val posts by vm.posts.collectAsState()
 
         var section by remember { mutableStateOf<String?>(null) }
         var member by remember { mutableStateOf<UserProfile?>(null) }
         var booksOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
+        var postsOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
         var controlBook by remember { mutableStateOf<Book?>(null) }
         var bookSubModule by remember { mutableStateOf<ManagementSubPage?>(null) }
         var previewBook by remember { mutableStateOf<Book?>(null) }
@@ -119,6 +121,10 @@ fun AdminPanelScreen(
                 section == "Kitap işlemleri" -> {
                     section = null
                     booksOwnerFilter = null
+                }
+                section == "Gönderi işlemleri" -> {
+                    section = null
+                    postsOwnerFilter = null
                 }
                 section == "Güncelleme ayarları" -> section = null
                 member != null -> member = null
@@ -240,6 +246,23 @@ fun AdminPanelScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            section == "Gönderi işlemleri" -> {
+                AdminPostsScreen(
+                    vm = vm,
+                    permissions = permissions,
+                    initialOwnerFilter = postsOwnerFilter,
+                    onBack = {
+                        section = null
+                        postsOwnerFilter = null
+                    },
+                    onOpenMemberAdmin = { author ->
+                        section = null
+                        postsOwnerFilter = null
+                        member = author
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             section == "Güncelleme ayarları" -> {
                 UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
             }
@@ -252,6 +275,10 @@ fun AdminPanelScreen(
                     onOpenMemberBooks = { target ->
                         booksOwnerFilter = target
                         section = "Kitap işlemleri"
+                    },
+                    onOpenMemberPosts = { target ->
+                        postsOwnerFilter = target
+                        section = "Gönderi işlemleri"
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -304,7 +331,7 @@ fun AdminPanelScreen(
                         val (subtitle, icon) = when (title) {
                             "Üye işlemleri" -> "${members.size} üye • Ban, rol, profil ve kitap yetkileri" to Icons.Default.People
                             "Kitap işlemleri" -> "${books.size} kitap • Kategorizasyon, yayın, bölüm ve moderasyon" to Icons.AutoMirrored.Filled.MenuBook
-                            "Gönderi işlemleri" -> "Gönderi akışı moderasyonu (sıradaki modül)" to Icons.Default.Edit
+                            "Gönderi işlemleri" -> "${posts.size} gönderi • Akış, etiket, yorum ve üye yetkileri" to Icons.Default.Edit
                             "Hikâye işlemleri" -> "Hikâye denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
                             "Sunucu işlemleri" -> "Topluluk sunucu denetimi (sıradaki modül)" to Icons.Default.Groups
                             "Genel chat işlemleri" -> "Genel sohbet denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
@@ -320,6 +347,7 @@ fun AdminPanelScreen(
                                 .appleBouncy(enabled = enabled, pressedScale = 0.97f, onClick = {
                                     if (enabled) {
                                         booksOwnerFilter = null
+                                        postsOwnerFilter = null
                                         section = title
                                     }
                                 }),
@@ -705,6 +733,7 @@ private fun MemberAdminScreen(
     onBack: () -> Unit,
     permissions: AdminPermissionSet,
     onOpenMemberBooks: (UserProfile) -> Unit,
+    onOpenMemberPosts: (UserProfile) -> Unit,
     modifier: Modifier
 ) {
     var current by remember(member) { mutableStateOf(member) }
@@ -741,6 +770,7 @@ private fun MemberAdminScreen(
                 "Ban ve erişim işlemleri" to permissions.manageBans,
                 "Hesap ve üyelik işlemleri" to permissions.editProfiles,
                 "Kitap işlemleri" to permissions.manageBooks,
+                "Gönderi işlemleri" to permissions.managePosts,
                 "Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,
                 "Kozmetik rol" to permissions.manageCosmetics,
                 "Kullanıcıya geri bildirim / DM" to permissions.sendFeedback
@@ -752,10 +782,10 @@ private fun MemberAdminScreen(
                         .padding(bottom = 10.dp)
                         .clip(shape)
                         .appleBouncy(pressedScale = 0.97f, onClick = {
-                            if (title == "Kitap işlemleri") {
-                                onOpenMemberBooks(current)
-                            } else {
-                                page = title
+                            when (title) {
+                                "Kitap işlemleri" -> onOpenMemberBooks(current)
+                                "Gönderi işlemleri" -> onOpenMemberPosts(current)
+                                else -> page = title
                             }
                         }),
                     shape = shape,

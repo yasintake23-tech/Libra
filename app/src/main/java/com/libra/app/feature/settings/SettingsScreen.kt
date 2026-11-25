@@ -1,6 +1,5 @@
 package com.libra.app.feature.settings
 
-import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,12 +28,10 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import java.util.Locale
 import androidx.compose.material3.AlertDialog
@@ -48,7 +45,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -78,17 +74,6 @@ import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.UserAvatar
 import kotlin.math.roundToInt
 
-private enum class PrivacyScope(val key: String, val label: String) {
-    EVERYONE("EVERYONE", "Herkes"),
-    FOLLOWING("FOLLOWING", "Takip Ettiklerim"),
-    NOBODY("NOBODY", "Kimse");
-
-    companion object {
-        fun fromKey(key: String?): PrivacyScope =
-            entries.firstOrNull { it.key == key } ?: EVERYONE
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -107,25 +92,12 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences("libra_settings", Context.MODE_PRIVATE)
-    }
     val readerStore = remember { ReaderPreferencesStore(context) }
 
     var searchQuery by remember { mutableStateOf("") }
-    var notificationsEnabled by remember {
-        mutableStateOf(prefs.getBoolean("notifications_enabled", true))
-    }
-    var onlineStatusEnabled by remember {
-        mutableStateOf(prefs.getBoolean("online_status_enabled", true))
-    }
-    var dmPrivacy by remember {
-        mutableStateOf(PrivacyScope.fromKey(prefs.getString("dm_privacy_scope", PrivacyScope.EVERYONE.key)))
-    }
     var readerPrefs by remember { mutableStateOf(readerStore.read()) }
 
     var showReaderPrefsSheet by remember { mutableStateOf(false) }
-    var showPrivacyDialog by remember { mutableStateOf(false) }
     var showAccountStatusDialog by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
 
@@ -142,7 +114,7 @@ fun SettingsScreen(
         "görünüm", "tema", "koyu", "açık", "bildirim", "okuma", "okuyucu", "yazı", "sepya", "tercih"
     )
     val showCommunityGroup = matches(
-        "topluluk", "sunucu", "gizlilik", "çevrimiçi", "mesaj", "hesap durumu", "moderasyon", "izin"
+        "topluluk", "sunucu", "hesap durumu", "moderasyon", "izin", "güvenlik"
     )
     val showSessionGroup = matches("çıkış", "oturum", "güvenli", "sürüm", "libra")
 
@@ -305,17 +277,6 @@ fun SettingsScreen(
                             if (matches("bildirim", "hareket")) {
                                 if (!first) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 first = false
-                                InstagramSettingsSwitchRow(
-                                    icon = Icons.Default.NotificationsNone,
-                                    title = "Bildirimler",
-                                    subtitle = "DM, yorum, beğeni ve arkadaşlık hareketleri",
-                                    checked = notificationsEnabled,
-                                    onCheckedChange = {
-                                        notificationsEnabled = it
-                                        prefs.edit().putBoolean("notifications_enabled", it).apply()
-                                    }
-                                )
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 InstagramSettingsRow(
                                     icon = Icons.Default.NotificationsNone,
                                     title = "Bildirim Merkezi",
@@ -343,10 +304,10 @@ fun SettingsScreen(
                     }
                 }
 
-                // 3. Topluluk & Gizlilik
+                // 3. Topluluk & Güvenlik
                 if (showCommunityGroup) {
                     item(key = "group-community") {
-                        InstagramSettingsGroup(title = "Topluluk ve Gizlilik") {
+                        InstagramSettingsGroup(title = "Topluluk ve Güvenlik") {
                             var first = true
                             if (matches("sunucu", "topluluk", "sohbet")) {
                                 first = false
@@ -358,33 +319,7 @@ fun SettingsScreen(
                                 )
                             }
 
-                            if (matches("çevrimiçi", "durum", "gizlilik")) {
-                                if (!first) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                first = false
-                                InstagramSettingsSwitchRow(
-                                    icon = Icons.Default.Visibility,
-                                    title = "Çevrimiçi durumu göster",
-                                    subtitle = "Arkadaşların aktif olduğunu görebilsin",
-                                    checked = onlineStatusEnabled,
-                                    onCheckedChange = {
-                                        onlineStatusEnabled = it
-                                        prefs.edit().putBoolean("online_status_enabled", it).apply()
-                                    }
-                                )
-                            }
-
-                            if (matches("gizlilik", "mesaj", "arkadaşlık", "erişim")) {
-                                if (!first) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                first = false
-                                InstagramSettingsRow(
-                                    icon = Icons.Default.Lock,
-                                    title = "Mesaj ve Etkileşim Gizliliği",
-                                    subtitle = "Sana ulaşabilecek kişiler: ${dmPrivacy.label}",
-                                    onClick = { showPrivacyDialog = true }
-                                )
-                            }
-
-                            if (matches("hesap durumu", "moderasyon", "izin", "durum")) {
+                            if (matches("hesap durumu", "moderasyon", "izin", "durum", "güvenlik")) {
                                 if (!first) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 InstagramSettingsRow(
                                     icon = Icons.Default.VerifiedUser,
@@ -636,49 +571,6 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
             }
         }
-    }
-
-    if (showPrivacyDialog) {
-        AlertDialog(
-            onDismissRequest = { showPrivacyDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Mesaj ve Etkileşim Gizliliği", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "Kimlerin sana doğrudan mesaj gönderebileceğini seç:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    PrivacyScope.entries.forEach { scopeOption ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .appleBouncy(pressedScale = 0.97f, onClick = {
-                                    dmPrivacy = scopeOption
-                                    prefs.edit().putString("dm_privacy_scope", scopeOption.key).apply()
-                                })
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = dmPrivacy == scopeOption,
-                                onClick = {
-                                    dmPrivacy = scopeOption
-                                    prefs.edit().putString("dm_privacy_scope", scopeOption.key).apply()
-                                }
-                            )
-                            Text(scopeOption.label, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showPrivacyDialog = false }) { Text("Kaydet") }
-            }
-        )
     }
 
     if (showAccountStatusDialog) {

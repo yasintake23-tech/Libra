@@ -12,6 +12,8 @@ import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.BookStatus
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.CosmeticRole
+import com.libra.app.domain.model.Post
+import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserModeration
 import com.libra.app.domain.model.UserProfile
@@ -20,6 +22,7 @@ import com.libra.app.domain.repository.AdminRepository
 import com.libra.app.domain.repository.AppReleaseStorageRepository
 import com.libra.app.domain.repository.BookRepository
 import com.libra.app.domain.repository.NotificationRepository
+import com.libra.app.domain.repository.PostRepository
 import com.libra.app.domain.repository.UpdateRepository
 import com.libra.app.feature.admin.AdminBookAudienceFilter
 import com.libra.app.feature.admin.AdminBookSortOption
@@ -121,6 +124,7 @@ class AdminBookManagementTest {
 
     private lateinit var fakeAdminRepo: FakeAdminRepo
     private lateinit var fakeBookRepo: FakeAdminBookRepo
+    private lateinit var fakePostRepo: FakeAdminPostRepo
     private lateinit var fakeUpdateRepo: FakeUpdateRepo
     private lateinit var fakeReleaseStorageRepo: FakeReleaseStorageRepo
     private lateinit var fakeNotificationRepo: FakeNotificationRepo
@@ -130,6 +134,7 @@ class AdminBookManagementTest {
         Dispatchers.setMain(testDispatcher)
         fakeAdminRepo = FakeAdminRepo(listOf(author1, author2))
         fakeBookRepo = FakeAdminBookRepo(listOf(book1, book2, book3))
+        fakePostRepo = FakeAdminPostRepo()
         fakeUpdateRepo = FakeUpdateRepo()
         fakeReleaseStorageRepo = FakeReleaseStorageRepo()
         fakeNotificationRepo = FakeNotificationRepo()
@@ -143,6 +148,7 @@ class AdminBookManagementTest {
     private fun createVm() = AdminViewModel(
         repo = fakeAdminRepo,
         bookRepo = fakeBookRepo,
+        postRepo = fakePostRepo,
         updateRepo = fakeUpdateRepo,
         releaseStorageRepo = fakeReleaseStorageRepo,
         notificationRepo = fakeNotificationRepo
@@ -160,6 +166,13 @@ class AdminBookManagementTest {
         assertEquals(listOf("bk_2"), filterAndSortAdminBooks(all, categoryFilter = BookCategory.FICTION).map { it.id })
         assertEquals(listOf("bk_3"), filterAndSortAdminBooks(all, visibilityFilter = AdminBookVisibilityFilter.UNLISTED).map { it.id })
         assertEquals(listOf("bk_2"), filterAndSortAdminBooks(all, audienceFilter = AdminBookAudienceFilter.YA).map { it.id })
+        assertEquals(
+            listOf("bk_tr"),
+            filterAndSortAdminBooks(
+                listOf(book1.copy(id = "bk_tr", targetAudience = "Genç Yetişkin (13+)")),
+                audienceFilter = AdminBookAudienceFilter.YA
+            ).map { it.id }
+        )
         assertEquals(listOf("bk_1", "bk_3"), filterAndSortAdminBooks(all, ownerFilterUid = "uid_author_1").map { it.id })
 
         // Search by tag, seriesName, and subGenre
@@ -404,5 +417,31 @@ class AdminBookManagementTest {
         }
         override suspend fun markRead(notificationId: String): AppResult<Unit> = AppResult.Success(Unit)
         override suspend fun markAllRead(uid: String): AppResult<Unit> = AppResult.Success(Unit)
+    }
+
+    private class FakeAdminPostRepo : PostRepository {
+        override fun observeFeed(currentUserId: String, limit: Long): Flow<AppResult<List<Post>>> =
+            flowOf(AppResult.Success(emptyList()))
+        override fun observeAllPostsForAdmin(limit: Long): Flow<AppResult<List<Post>>> =
+            flowOf(AppResult.Success(emptyList()))
+        override suspend fun createPost(
+            authorId: String,
+            text: String,
+            title: String,
+            mediaUrl: String,
+            mediaType: String,
+            tags: List<String>
+        ): AppResult<Post> = AppResult.Error(AppError.Database("N/A"))
+        override suspend fun toggleLike(postId: String, userId: String): AppResult<Boolean> = AppResult.Success(true)
+        override suspend fun getPostLikeUsers(postId: String): AppResult<List<UserProfile>> = AppResult.Success(emptyList())
+        override suspend fun deletePost(postId: String, userId: String): AppResult<Unit> = AppResult.Success(Unit)
+        override fun observeComments(postId: String, limit: Long): Flow<AppResult<List<PostComment>>> =
+            flowOf(AppResult.Success(emptyList()))
+        override suspend fun addComment(postId: String, authorId: String, text: String, parentCommentId: String): AppResult<PostComment> =
+            AppResult.Error(AppError.Database("N/A"))
+        override suspend fun deleteComment(postId: String, commentId: String, userId: String): AppResult<Unit> = AppResult.Success(Unit)
+        override suspend fun toggleSave(postId: String, userId: String): AppResult<Boolean> = AppResult.Success(true)
+        override fun observeSavedPosts(userId: String, limit: Long): Flow<AppResult<List<Post>>> =
+            flowOf(AppResult.Success(emptyList()))
     }
 }
