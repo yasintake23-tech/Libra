@@ -1,6 +1,9 @@
 package com.libra.app.ui.components
 
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -8,6 +11,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +21,21 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -47,18 +58,16 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,7 +78,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -79,7 +93,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -216,7 +234,6 @@ fun formatCommentRelativeTime(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraCommentsBottomSheet(
     comments: List<LibraCommentItem>,
@@ -237,10 +254,13 @@ fun LibraCommentsBottomSheet(
     onDeleteComment: (LibraCommentItem) -> Unit = {},
     onOpenProfile: (String) -> Unit = {}
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { 120.dp.toPx() }
+    val initialSlidePx = with(density) { 480.dp.toPx() }
+    val sheetOffsetY = remember { Animatable(initialSlidePx) }
 
     var sortOrder by remember { mutableStateOf(CommentSortOrder.NEWEST) }
     var replyTarget by remember { mutableStateOf<LibraCommentItem?>(null) }
@@ -267,41 +287,106 @@ fun LibraCommentsBottomSheet(
         return current.id
     }
 
+    LaunchedEffect(Unit) {
+        sheetOffsetY.animateTo(0f, AppleSprings.gentle())
+    }
+
     LaunchedEffect(replyTarget?.id) {
         if (replyTarget != null) {
             runCatching { focusRequester.requestFocus() }
         }
     }
 
-    ModalBottomSheet(
+    val topSafeInsets = WindowInsets.statusBars
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top)
+
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-        dragHandle = null,
-        modifier = modifier.fillMaxHeight(0.92f),
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Column(
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.let { w ->
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    w.isNavigationBarContrastEnforced = false
+                }
+            }
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
-                .navigationBarsPadding()
-        ) {
-            // Drag Handle & Instagram-Style Header
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(top = 10.dp, bottom = 10.dp, start = 16.dp, end = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(40.dp)
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outline)
+                .background(Color.Black.copy(alpha = 0.48f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
                 )
+        ) {
+            val sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            Surface(
+                modifier = modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .windowInsetsPadding(topSafeInsets)
+                    .padding(top = 24.dp)
+                    .graphicsLayer { translationY = sheetOffsetY.value }
+                    .clip(sheetShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
+                shape = sheetShape,
+                color = MaterialTheme.colorScheme.background
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Drag Handle & Instagram-Style Header
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        scope.launch {
+                                            if (sheetOffsetY.value > dismissThresholdPx) {
+                                                onDismiss()
+                                            } else {
+                                                sheetOffsetY.animateTo(0f, AppleSprings.gentle())
+                                            }
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        scope.launch { sheetOffsetY.animateTo(0f, AppleSprings.gentle()) }
+                                    },
+                                    onVerticalDrag = { _, dragAmount ->
+                                        scope.launch {
+                                            val next = (sheetOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                            sheetOffsetY.snapTo(next)
+                                        }
+                                    }
+                                )
+                            }
+                            .padding(top = 10.dp, bottom = 10.dp, start = 16.dp, end = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(40.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.outline)
+                        )
 
                 Spacer(Modifier.height(10.dp))
 
@@ -549,7 +634,11 @@ fun LibraCommentsBottomSheet(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                ) {
                     HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
 
                     if (!error.isNullOrBlank()) {
@@ -853,6 +942,8 @@ fun LibraCommentsBottomSheet(
                         }
                     }
                 }
+            }
+        }
             }
         }
     }

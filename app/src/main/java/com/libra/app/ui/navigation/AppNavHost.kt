@@ -276,14 +276,28 @@ fun AppNavHost(
     var lastSelectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     if (selectedPublicProfile != null) lastSelectedPublicProfile = selectedPublicProfile
 
+    var hideHomeBottomBar by remember { mutableStateOf(false) }
+    var fullScreenHome by remember { mutableStateOf(false) }
+    var hideProfileBottomBar by remember { mutableStateOf(false) }
+    var fullScreenProfile by remember { mutableStateOf(false) }
+
+    val isImmersiveTabActive = (selectedTab == BottomNavTab.HOME && fullScreenHome) ||
+        (selectedTab == BottomNavTab.PROFILE && fullScreenProfile)
+
     val isAnyOverlayActive = showCreateBook || createContentMode != null || readerBook != null ||
         selectedBook != null || selectedWritingBook != null || selectedPublicProfile != null ||
         showNotifications || showCommunityServers || showGlobalChat || showAdminPanel ||
-        showProfileEdit || showSettings
+        showProfileEdit || showSettings ||
+        (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
+        (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(
-            contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
+            contentWindowInsets = if (isImmersiveTabActive) {
+                WindowInsets(0, 0, 0, 0)
+            } else {
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)
+            },
             bottomBar = {
                 if (!isAnyOverlayActive) {
                     LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
@@ -361,6 +375,8 @@ fun AppNavHost(
                                 onInitialCommentPostConsumed = { notificationPostTargetId = null },
                                 onRefreshPosts = homeVm::refreshHome,
                                 onLoadMorePosts = homeVm::loadMorePosts,
+                                onHideBottomBarChanged = { hideHomeBottomBar = it },
+                                onFullScreenChanged = { fullScreenHome = it },
                                 onStoryReply = { story ->
                                     scope.launch {
                                         when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
@@ -454,7 +470,9 @@ fun AppNavHost(
                                 onTogglePostLike = profileVm::togglePostLike,
                                 onTogglePostSave = profileVm::togglePostSave,
                                 onDeletePost = profileVm::deletePost,
-                                onToggleStoryLike = profileVm::toggleStoryLike
+                                onToggleStoryLike = profileVm::toggleStoryLike,
+                                onHideBottomBarChanged = { hideProfileBottomBar = it },
+                                onFullScreenChanged = { fullScreenProfile = it }
                             )
                         }
                     }

@@ -84,6 +84,8 @@ fun ProfileScreen(
     onTogglePostSave: (Post) -> Unit = {},
     onDeletePost: (Post) -> Unit = {},
     onToggleStoryLike: (com.libra.app.domain.model.Story) -> Unit = {},
+    onHideBottomBarChanged: (Boolean) -> Unit = {},
+    onFullScreenChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     when (uiState) {
@@ -127,6 +129,8 @@ fun ProfileScreen(
             onTogglePostSave = onTogglePostSave,
             onDeletePost = onDeletePost,
             onToggleStoryLike = onToggleStoryLike,
+            onHideBottomBarChanged = onHideBottomBarChanged,
+            onFullScreenChanged = onFullScreenChanged,
             modifier = modifier
         )
     }
@@ -151,6 +155,8 @@ private fun ProfileContent(
     onTogglePostSave: (Post) -> Unit,
     onDeletePost: (Post) -> Unit,
     onToggleStoryLike: (com.libra.app.domain.model.Story) -> Unit,
+    onHideBottomBarChanged: (Boolean) -> Unit,
+    onFullScreenChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(ProfileContentTab.POSTS) }
@@ -166,6 +172,22 @@ private fun ProfileContent(
         selectedPostId?.let { id ->
             contentState.posts.firstOrNull { it.id == id }
                 ?: contentState.savedPosts.firstOrNull { it.id == id }
+        }
+    }
+
+    val hideBottomBar = showStoryViewer || selectedPost != null || showCreateSheet ||
+        socialDialog != null || shareContent != null || selectedCosmetic != null
+    val isImmersiveFullScreen = showStoryViewer
+    androidx.compose.runtime.LaunchedEffect(hideBottomBar) {
+        onHideBottomBarChanged(hideBottomBar)
+    }
+    androidx.compose.runtime.LaunchedEffect(isImmersiveFullScreen) {
+        onFullScreenChanged(isImmersiveFullScreen)
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            onHideBottomBarChanged(false)
+            onFullScreenChanged(false)
         }
     }
 

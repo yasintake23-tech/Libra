@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -493,6 +494,7 @@ private fun BookReelItem(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(start = 16.dp, end = 78.dp, bottom = 18.dp)
         ) {
             // Category & Chapter Count Badges
@@ -742,6 +744,7 @@ private fun BookReelItem(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
                 .padding(end = 10.dp, bottom = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)

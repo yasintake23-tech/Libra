@@ -182,7 +182,9 @@ fun HomeScreen(
     initialCommentPostId: String? = null,
     onInitialCommentPostConsumed: () -> Unit = {},
     onRefreshPosts: () -> Unit = {},
-    onLoadMorePosts: () -> Unit = {}
+    onLoadMorePosts: () -> Unit = {},
+    onHideBottomBarChanged: (Boolean) -> Unit = {},
+    onFullScreenChanged: (Boolean) -> Unit = {}
 ) {
     when (uiState) {
         is UiState.Loading -> LoadingView(message = "Libra hazırlanıyor…")
@@ -198,6 +200,31 @@ fun HomeScreen(
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
             var shareContent by remember { mutableStateOf<SharedContent?>(null) }
             var likeUsersPost by remember { mutableStateOf<Post?>(null) }
+
+            val hideBottomBar = shouldHideHomeBottomBar(
+                selectedSection = selectedSection,
+                hasOpenStory = selectedStoryIndex != null,
+                hasOpenComments = selectedPost != null,
+                hasOpenLikes = likeUsersPost != null,
+                hasOpenShare = shareContent != null
+            )
+            val isImmersiveFullScreen = isHomeImmersiveFullScreen(
+                selectedSection = selectedSection,
+                hasOpenStory = selectedStoryIndex != null
+            )
+
+            LaunchedEffect(hideBottomBar) {
+                onHideBottomBarChanged(hideBottomBar)
+            }
+            LaunchedEffect(isImmersiveFullScreen) {
+                onFullScreenChanged(isImmersiveFullScreen)
+            }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose {
+                    onHideBottomBarChanged(false)
+                    onFullScreenChanged(false)
+                }
+            }
 
             LaunchedEffect(initialCommentPostId, data.posts) {
                 val targetId = initialCommentPostId ?: return@LaunchedEffect
@@ -552,8 +579,12 @@ fun HomeScreen(
                             selectedStoryIndex = null
                         },
                         onLike = onStoryLike,
-                        onOpenProfile = onOpenProfile,
+                        onOpenProfile = { uid ->
+                            selectedStoryIndex = null
+                            onOpenProfile(uid)
+                        },
                         onShare = { story ->
+                            selectedStoryIndex = null
                             shareContent = SharedContent(
                                 "story",
                                 story.id,
@@ -637,6 +668,24 @@ fun HomeScreen(
 }
 
 enum class HomeSection { POSTS, BOOKS }
+
+internal fun shouldHideHomeBottomBar(
+    selectedSection: HomeSection,
+    hasOpenStory: Boolean,
+    hasOpenComments: Boolean,
+    hasOpenLikes: Boolean,
+    hasOpenShare: Boolean
+): Boolean =
+    selectedSection == HomeSection.BOOKS ||
+        hasOpenStory ||
+        hasOpenComments ||
+        hasOpenLikes ||
+        hasOpenShare
+
+internal fun isHomeImmersiveFullScreen(
+    selectedSection: HomeSection,
+    hasOpenStory: Boolean
+): Boolean = selectedSection == HomeSection.BOOKS || hasOpenStory
 
 @Composable
 private fun HomeSectionButton(

@@ -25,7 +25,10 @@ import com.libra.app.domain.repository.StoryRepository
 import com.libra.app.domain.repository.UserRepository
 import com.libra.app.feature.book.BookDetailViewModel
 import com.libra.app.feature.discover.BookReelsDiscoverViewModel
+import com.libra.app.feature.home.HomeSection
 import com.libra.app.feature.home.HomeViewModel
+import com.libra.app.feature.home.isHomeImmersiveFullScreen
+import com.libra.app.feature.home.shouldHideHomeBottomBar
 import com.libra.app.ui.components.CommentSortOrder
 import com.libra.app.ui.components.LIBRA_COMMENT_QUICK_EMOJIS
 import com.libra.app.ui.components.LibraCommentItem
@@ -348,6 +351,53 @@ class CommentsUiAndLogicTest {
 
         homeVm.closeComments()
         assertTrue(homeVm.comments.value.isEmpty())
+    }
+
+    @Test
+    fun homeOverlayVisibility_hidesBottomBarForBooksStoriesAndComments() {
+        assertFalse(
+            shouldHideHomeBottomBar(
+                selectedSection = HomeSection.POSTS,
+                hasOpenStory = false,
+                hasOpenComments = false,
+                hasOpenLikes = false,
+                hasOpenShare = false
+            )
+        )
+        assertFalse(isHomeImmersiveFullScreen(HomeSection.POSTS, hasOpenStory = false))
+
+        assertTrue(
+            shouldHideHomeBottomBar(
+                selectedSection = HomeSection.BOOKS,
+                hasOpenStory = false,
+                hasOpenComments = false,
+                hasOpenLikes = false,
+                hasOpenShare = false
+            )
+        )
+        assertTrue(isHomeImmersiveFullScreen(HomeSection.BOOKS, hasOpenStory = false))
+
+        assertTrue(
+            shouldHideHomeBottomBar(
+                selectedSection = HomeSection.POSTS,
+                hasOpenStory = true,
+                hasOpenComments = false,
+                hasOpenLikes = false,
+                hasOpenShare = false
+            )
+        )
+        assertTrue(isHomeImmersiveFullScreen(HomeSection.POSTS, hasOpenStory = true))
+
+        assertTrue(
+            shouldHideHomeBottomBar(
+                selectedSection = HomeSection.POSTS,
+                hasOpenStory = false,
+                hasOpenComments = true,
+                hasOpenLikes = false,
+                hasOpenShare = false
+            )
+        )
+        assertFalse(isHomeImmersiveFullScreen(HomeSection.POSTS, hasOpenStory = false))
     }
 
     // --- Test Fakes ---
