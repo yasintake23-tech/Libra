@@ -157,7 +157,7 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() <= 160;
       allow update, delete: if request.auth != null
-        && resource.data.ownerId == request.auth.uid;
+        && (resource.data.ownerId == request.auth.uid || hasAdminPermission("manageServers"));
 
       match /members/{uid} {
         allow read: if request.auth != null;
@@ -168,43 +168,51 @@ service cloud.firestore {
           && (request.resource.data.role == "MEMBER"
             || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
         allow update: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
-          && uid != request.auth.uid
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"))
+          && uid != get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role"])
           && request.resource.data.role is string;
         allow delete: if request.auth != null
           && (uid == request.auth.uid
-            || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid);
+            || get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
       }
 
       match /roles/{roleId} {
         allow read: if request.auth != null;
         allow create, update, delete: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
       }
 
       match /bans/{uid} {
         allow read: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
         allow create, update, delete: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
       }
 
       match /categories/{categoryId} {
         allow read: if request.auth != null;
         allow create, update, delete: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
       }
 
       match /channels/{channelId} {
         allow read: if request.auth != null;
         allow create, update, delete: if request.auth != null
-          && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+          && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+            || hasAdminPermission("manageServers"));
 
         match /permissions/{permissionId} {
           allow read: if request.auth != null;
           allow create, update, delete: if request.auth != null
-            && get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid;
+            && (get(/databases/$(database)/documents/communityServers/$(serverId)).data.ownerId == request.auth.uid
+              || hasAdminPermission("manageServers"));
         }
       }
     }
@@ -222,7 +230,8 @@ service cloud.firestore {
         && request.resource.data.expiresAt is number
         && request.resource.data.expiresAt > request.resource.data.createdAt
         && request.resource.data.expiresAt <= request.resource.data.createdAt + 86400000;
-      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+      allow delete: if request.auth != null
+        && (resource.data.authorId == request.auth.uid || hasAdminPermission("manageStories"));
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likesCount", "commentsCount"])
         && request.resource.data.likesCount is number

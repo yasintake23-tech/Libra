@@ -96,11 +96,17 @@ fun AdminPanelScreen(
         val members by vm.members.collectAsState()
         val books by vm.books.collectAsState()
         val posts by vm.posts.collectAsState()
+        val stories by vm.stories.collectAsState()
+        val servers by vm.servers.collectAsState()
+        val globalMessages by vm.globalMessages.collectAsState()
 
         var section by remember { mutableStateOf<String?>(null) }
         var member by remember { mutableStateOf<UserProfile?>(null) }
         var booksOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
         var postsOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
+        var storiesOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
+        var serversOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
+        var globalChatOwnerFilter by remember { mutableStateOf<UserProfile?>(null) }
         var controlBook by remember { mutableStateOf<Book?>(null) }
         var bookSubModule by remember { mutableStateOf<ManagementSubPage?>(null) }
         var previewBook by remember { mutableStateOf<Book?>(null) }
@@ -125,6 +131,18 @@ fun AdminPanelScreen(
                 section == "Gönderi işlemleri" -> {
                     section = null
                     postsOwnerFilter = null
+                }
+                section == "Hikâye işlemleri" -> {
+                    section = null
+                    storiesOwnerFilter = null
+                }
+                section == "Sunucu işlemleri" -> {
+                    section = null
+                    serversOwnerFilter = null
+                }
+                section == "Genel chat işlemleri" -> {
+                    section = null
+                    globalChatOwnerFilter = null
                 }
                 section == "Güncelleme ayarları" -> section = null
                 member != null -> member = null
@@ -263,6 +281,57 @@ fun AdminPanelScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            section == "Hikâye işlemleri" -> {
+                AdminStoriesScreen(
+                    vm = vm,
+                    permissions = permissions,
+                    initialOwnerFilter = storiesOwnerFilter,
+                    onBack = {
+                        section = null
+                        storiesOwnerFilter = null
+                    },
+                    onOpenMemberAdmin = { author ->
+                        section = null
+                        storiesOwnerFilter = null
+                        member = author
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            section == "Sunucu işlemleri" -> {
+                AdminServersScreen(
+                    vm = vm,
+                    permissions = permissions,
+                    initialOwnerFilter = serversOwnerFilter,
+                    onBack = {
+                        section = null
+                        serversOwnerFilter = null
+                    },
+                    onOpenMemberAdmin = { owner ->
+                        section = null
+                        serversOwnerFilter = null
+                        member = owner
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            section == "Genel chat işlemleri" -> {
+                AdminGlobalChatScreen(
+                    vm = vm,
+                    permissions = permissions,
+                    initialOwnerFilter = globalChatOwnerFilter,
+                    onBack = {
+                        section = null
+                        globalChatOwnerFilter = null
+                    },
+                    onOpenMemberAdmin = { sender ->
+                        section = null
+                        globalChatOwnerFilter = null
+                        member = sender
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             section == "Güncelleme ayarları" -> {
                 UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
             }
@@ -279,6 +348,18 @@ fun AdminPanelScreen(
                     onOpenMemberPosts = { target ->
                         postsOwnerFilter = target
                         section = "Gönderi işlemleri"
+                    },
+                    onOpenMemberStories = { target ->
+                        storiesOwnerFilter = target
+                        section = "Hikâye işlemleri"
+                    },
+                    onOpenMemberServers = { target ->
+                        serversOwnerFilter = target
+                        section = "Sunucu işlemleri"
+                    },
+                    onOpenMemberGlobalChat = { target ->
+                        globalChatOwnerFilter = target
+                        section = "Genel chat işlemleri"
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -332,9 +413,9 @@ fun AdminPanelScreen(
                             "Üye işlemleri" -> "${members.size} üye • Ban, rol, profil ve kitap yetkileri" to Icons.Default.People
                             "Kitap işlemleri" -> "${books.size} kitap • Kategorizasyon, yayın, bölüm ve moderasyon" to Icons.AutoMirrored.Filled.MenuBook
                             "Gönderi işlemleri" -> "${posts.size} gönderi • Akış, etiket, yorum ve üye yetkileri" to Icons.Default.Edit
-                            "Hikâye işlemleri" -> "Hikâye denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
-                            "Sunucu işlemleri" -> "Topluluk sunucu denetimi (sıradaki modül)" to Icons.Default.Groups
-                            "Genel chat işlemleri" -> "Genel sohbet denetimi (sıradaki modül)" to Icons.Default.ChatBubbleOutline
+                            "Hikâye işlemleri" -> "${stories.size} hikâye • 24 saat akış, medya ve hikâye izinleri" to Icons.Default.ChatBubbleOutline
+                            "Sunucu işlemleri" -> "${servers.size} sunucu • Kanallar, mesajlar, üyeler ve yasaklar" to Icons.Default.Groups
+                            "Genel chat işlemleri" -> "${globalMessages.size} mesaj • Akış denetimi, duyuru ve mesaj izinleri" to Icons.Default.ChatBubbleOutline
                             "Güncelleme ayarları" -> "APK yayınlama ve sürüm yönetimi" to Icons.Default.SystemUpdate
                             else -> "" to Icons.Default.Settings
                         }
@@ -348,6 +429,9 @@ fun AdminPanelScreen(
                                     if (enabled) {
                                         booksOwnerFilter = null
                                         postsOwnerFilter = null
+                                        storiesOwnerFilter = null
+                                        serversOwnerFilter = null
+                                        globalChatOwnerFilter = null
                                         section = title
                                     }
                                 }),
@@ -734,6 +818,9 @@ private fun MemberAdminScreen(
     permissions: AdminPermissionSet,
     onOpenMemberBooks: (UserProfile) -> Unit,
     onOpenMemberPosts: (UserProfile) -> Unit,
+    onOpenMemberStories: (UserProfile) -> Unit,
+    onOpenMemberServers: (UserProfile) -> Unit,
+    onOpenMemberGlobalChat: (UserProfile) -> Unit,
     modifier: Modifier
 ) {
     var current by remember(member) { mutableStateOf(member) }
@@ -756,25 +843,38 @@ private fun MemberAdminScreen(
         return
     }
 
+    val actions = listOf(
+        "Ban ve erişim işlemleri" to permissions.manageBans,
+        "Hesap ve üyelik işlemleri" to permissions.editProfiles,
+        "Kitap işlemleri" to permissions.manageBooks,
+        "Gönderi işlemleri" to permissions.managePosts,
+        "Hikâye işlemleri" to permissions.manageStories,
+        "Sunucu işlemleri" to permissions.manageServers,
+        "Genel chat işlemleri" to permissions.manageGlobalChat,
+        "Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,
+        "Kozmetik rol" to permissions.manageCosmetics,
+        "Kullanıcıya geri bildirim / DM" to permissions.sendFeedback
+    ).filter { it.second }
+
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-                Column {
-                    Text(current.displayName, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                    Text("@" + current.username, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
+                    Column {
+                        Text(current.displayName, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                        Text("@" + current.username, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
+                Spacer(Modifier.height(14.dp))
             }
-            Spacer(Modifier.height(18.dp))
-            listOf(
-                "Ban ve erişim işlemleri" to permissions.manageBans,
-                "Hesap ve üyelik işlemleri" to permissions.editProfiles,
-                "Kitap işlemleri" to permissions.manageBooks,
-                "Gönderi işlemleri" to permissions.managePosts,
-                "Yönetici rolü verme işlemleri" to permissions.manageAdminRoles,
-                "Kozmetik rol" to permissions.manageCosmetics,
-                "Kullanıcıya geri bildirim / DM" to permissions.sendFeedback
-            ).filter { it.second }.forEach { (title, _) ->
+            items(actions, key = { it.first }) { (title, _) ->
                 val shape = RoundedCornerShape(18.dp)
                 Surface(
                     modifier = Modifier
@@ -785,6 +885,9 @@ private fun MemberAdminScreen(
                             when (title) {
                                 "Kitap işlemleri" -> onOpenMemberBooks(current)
                                 "Gönderi işlemleri" -> onOpenMemberPosts(current)
+                                "Hikâye işlemleri" -> onOpenMemberStories(current)
+                                "Sunucu işlemleri" -> onOpenMemberServers(current)
+                                "Genel chat işlemleri" -> onOpenMemberGlobalChat(current)
                                 else -> page = title
                             }
                         }),

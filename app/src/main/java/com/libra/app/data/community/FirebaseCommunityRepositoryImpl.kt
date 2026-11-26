@@ -33,6 +33,24 @@ class FirebaseCommunityRepositoryImpl(
     private val inviteRandom = SecureRandom()
     private val inviteAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
 
+    private suspend fun isServerAdmin(uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (uid == LIBRA_SERVER_ADMIN_UID) return true
+        return runCatching {
+            firestore.collection("adminRoles")
+                .document(uid)
+                .get()
+                .await()
+                .get("permissions.manageServers") == true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun hasServerManagePermission(ownerId: String?, uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (!ownerId.isNullOrBlank() && ownerId == uid) return true
+        return isServerAdmin(uid)
+    }
+
     private fun normalizeInviteKey(input: String): String {
         return input.trim()
             .removePrefix("https://")
@@ -94,7 +112,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = ref.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi davet anahtarını oluşturabilir."))
             }
 
@@ -255,7 +273,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = ref.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi düzenleyebilir."))
             }
 
@@ -292,7 +310,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = ref.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya ayarlarını değiştirebilir."))
             }
 
@@ -368,7 +386,7 @@ class FirebaseCommunityRepositoryImpl(
                 .toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya yükleyebilir."))
             }
 
@@ -402,16 +420,18 @@ class FirebaseCommunityRepositoryImpl(
                 .toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi medya silebilir."))
             }
 
-            val ownedPrefix = "users/" + user.uid + "/"
-            if (!fileKey.trim().startsWith(ownedPrefix)) {
+            val cleanKey = fileKey.trim()
+            val ownerPrefix = "users/" + server.ownerId + "/"
+            val actorPrefix = "users/" + user.uid + "/"
+            if (!cleanKey.startsWith(ownerPrefix) && !cleanKey.startsWith(actorPrefix)) {
                 return AppResult.Error(AppError.Auth("Bu medya dosyasına erişimin yok."))
             }
 
-            storageRepository.deleteMedia(fileKey.trim())
+            storageRepository.deleteMedia(cleanKey)
         } catch (e: Exception) {
             AppResult.Error(AppError.Storage("Sunucu medyası silinemedi.", e))
         }
@@ -423,13 +443,17 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi silebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi silebilir."))
             val batch = firestore.batch()
             listOf("members", "categories", "channels", "roles", "bans").forEach { collection ->
                 serverRef.collection(collection).get().await().documents.forEach { batch.delete(it.reference) }
             }
             batch.delete(serverRef)
             batch.commit().await()
+            runCatching {
+                if (server.avatarUrl.isNotBlank()) storageRepository.deleteMedia(server.avatarUrl)
+                if (server.bannerUrl.isNotBlank()) storageRepository.deleteMedia(server.bannerUrl)
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Sunucu silinemedi.", e))
@@ -501,7 +525,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 if (serverRef.collection("bans").document(user.uid).get().await().exists()) {
                     return AppResult.Error(AppError.Auth("Bu sunucudan yasaklandın."))
                 }
@@ -627,7 +651,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori oluşturabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori oluşturabilir."))
             val position = serverRef.collection("categories").get().await().size()
             val ref = serverRef.collection("categories").document()
             val category = ServerCategory(ref.id, clean, position)
@@ -645,7 +669,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori düzenleyebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori düzenleyebilir."))
             serverRef.collection("categories").document(categoryId).update("name", clean).await()
             val channels = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await()
             val batch = firestore.batch()
@@ -661,7 +685,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori silebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kategori silebilir."))
             val channels = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await()
             val batch = firestore.batch()
             channels.documents.forEach { batch.delete(it.reference) }
@@ -685,7 +709,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal oluşturabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal oluşturabilir."))
             val category = serverRef.collection("categories").document(categoryId).get().await()
             if (!category.exists()) return AppResult.Error(AppError.NotFound("Kategori bulunamadı."))
             val position = serverRef.collection("channels").whereEqualTo("categoryId", categoryId).get().await().size()
@@ -711,7 +735,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal düzenleyebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal düzenleyebilir."))
             serverRef.collection("channels").document(channelId).update("name", clean).await()
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Kanal güncellenemedi.", e)) }
@@ -722,7 +746,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal taşıyabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal taşıyabilir."))
             val category = serverRef.collection("categories").document(categoryId).get().await()
             if (!category.exists()) return AppResult.Error(AppError.NotFound("Kategori bulunamadı."))
             val channelRef = serverRef.collection("channels").document(channelId)
@@ -741,7 +765,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal silebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi kanal silebilir."))
             serverRef.collection("channels").document(channelId).delete().await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
@@ -759,7 +783,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin değiştirebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin değiştirebilir."))
             if (override.subjectType != "ROLE" && override.subjectType != "USER") return AppResult.Error(AppError.Validation("Geçersiz izin hedefi."))
             if (override.subjectId.isBlank()) return AppResult.Error(AppError.Validation("İzin hedefi bulunamadı."))
             val id = override.id.ifBlank { override.subjectType + "_" + override.subjectId }
@@ -781,7 +805,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val server = serversRef.document(serverId).get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin silebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi izin silebilir."))
             serversRef.document(serverId).collection("channels").document(channelId)
                 .collection("permissions").document(overrideId).delete().await()
             AppResult.Success(Unit)
@@ -839,7 +863,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol oluşturabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol oluşturabilir."))
             val ref = serverRef.collection("roles").document()
             val position = serverRef.collection("roles").get().await().size()
             val role = com.libra.app.domain.model.ServerRoleDefinition(ref.id, clean, permissions.distinct(), position)
@@ -858,7 +882,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol düzenleyebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol düzenleyebilir."))
             serverRef.collection("roles").document(roleId).update(
                 mapOf("name" to clean, "permissions" to permissions.distinct())
             ).await()
@@ -877,7 +901,7 @@ class FirebaseCommunityRepositoryImpl(
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol sıralayabilir."))
             }
             val docs = serverRef.collection("roles").orderBy("position").get().await().documents
@@ -909,7 +933,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol silebilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol silebilir."))
             serverRef.collection("roles").document(roleId).delete().await()
             val members = serverRef.collection("members").whereEqualTo("role", roleId).get().await()
             val batch = firestore.batch()
@@ -934,7 +958,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi rol değiştirebilir."))
             }
             if (memberId == server.ownerId) {
@@ -963,7 +987,7 @@ class FirebaseCommunityRepositoryImpl(
             val server = serverRef.get().await().toObject(CommunityServer::class.java)
                 ?: return AppResult.Error(AppError.Validation("Sunucu bulunamadı."))
 
-            if (server.ownerId != user.uid) {
+            if (!hasServerManagePermission(server.ownerId, user.uid)) {
                 return AppResult.Error(AppError.Auth("Sadece sunucu sahibi üye çıkarabilir."))
             }
             if (memberId == server.ownerId) {
@@ -982,7 +1006,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi üye yasaklayabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi üye yasaklayabilir."))
             if (memberId == server.ownerId) return AppResult.Error(AppError.Validation("Sunucu sahibi yasaklanamaz."))
             val memberRef = serverRef.collection("members").document(memberId)
             val member = memberRef.get().await()
@@ -1024,7 +1048,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val serverRef = serversRef.document(serverId)
             val server = serverRef.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi yasağı kaldırabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi yasağı kaldırabilir."))
             serverRef.collection("bans").document(memberId).delete().await()
             AppResult.Success(Unit)
         } catch (e: Exception) { AppResult.Error(AppError.Database("Yasak kaldırılamadı.", e)) }
@@ -1035,7 +1059,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val ref = serversRef.document(serverId)
             val server = ref.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
             val docs = ref.collection("categories").orderBy("position").get().await().documents
             val index = docs.indexOfFirst { it.id == categoryId }; val target = index + direction
             if (index < 0 || target !in docs.indices) return AppResult.Success(Unit)
@@ -1050,7 +1074,7 @@ class FirebaseCommunityRepositoryImpl(
         return try {
             val ref = serversRef.document(serverId)
             val server = ref.get().await().toObject(CommunityServer::class.java) ?: return AppResult.Error(AppError.NotFound("Sunucu bulunamadı."))
-            if (server.ownerId != user.uid) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
+            if (!hasServerManagePermission(server.ownerId, user.uid)) return AppResult.Error(AppError.Auth("Sadece sunucu sahibi taşıyabilir."))
             val channel = ref.collection("channels").document(channelId).get().await()
             if (!channel.exists()) return AppResult.Error(AppError.NotFound("Kanal bulunamadı."))
             val categoryId = channel.getString("categoryId").orEmpty()
@@ -1086,3 +1110,5 @@ class FirebaseCommunityRepositoryImpl(
         }
     }
 }
+
+private const val LIBRA_SERVER_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"

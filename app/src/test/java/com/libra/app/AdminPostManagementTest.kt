@@ -135,6 +135,9 @@ class AdminPostManagementTest {
         repo = fakeAdminRepo,
         bookRepo = fakeBookRepo,
         postRepo = fakePostRepo,
+        storyRepo = FakeAdminStoryRepo(),
+        communityRepo = FakeAdminCommunityRepo(),
+        chatRepo = FakeAdminChatRepo(),
         updateRepo = fakeUpdateRepo,
         releaseStorageRepo = fakeReleaseStorageRepo,
         notificationRepo = fakeNotificationRepo

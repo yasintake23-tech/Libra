@@ -12,16 +12,27 @@ import com.libra.app.domain.model.AppUpdate
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.BookStatus
+import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.CosmeticRole
+import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
+import com.libra.app.domain.model.ServerBan
+import com.libra.app.domain.model.ServerCategory
+import com.libra.app.domain.model.ServerChannel
+import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.ServerMessage
+import com.libra.app.domain.model.Story
 import com.libra.app.domain.model.UserModeration
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.domain.repository.AdminRepository
 import com.libra.app.domain.repository.AppReleaseStorageRepository
 import com.libra.app.domain.repository.BookRepository
+import com.libra.app.domain.repository.ChatRepository
+import com.libra.app.domain.repository.CommunityRepository
 import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.PostRepository
+import com.libra.app.domain.repository.StoryRepository
 import com.libra.app.domain.repository.UpdateRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +41,150 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+enum class AdminStoryFilter(val label: String) {
+    ALL("Tümü"),
+    ACTIVE("Aktif (24s)"),
+    EXPIRED("Süresi Dolmuş"),
+    WITH_MEDIA("Görselli"),
+    TEXT_ONLY("Metin")
+}
+
+enum class AdminStorySortOption(val label: String) {
+    NEWEST("En Yeni"),
+    EXPIRING_SOON("Süresi Yaklaşan"),
+    MOST_LIKED("En Çok Beğenilen")
+}
+
+fun filterAndSortAdminStories(
+    stories: List<Story>,
+    query: String = "",
+    ownerFilterUid: String? = null,
+    filter: AdminStoryFilter = AdminStoryFilter.ALL,
+    sortOption: AdminStorySortOption = AdminStorySortOption.NEWEST,
+    nowMs: Long = System.currentTimeMillis()
+): List<Story> {
+    val trLocale = java.util.Locale.forLanguageTag("tr")
+    val q = query.trim().lowercase(trLocale)
+    val filtered = stories.filter { story ->
+        val matchesOwner = ownerFilterUid.isNullOrBlank() || story.authorId == ownerFilterUid
+        val matchesQuery = q.isBlank() ||
+            story.text.lowercase(trLocale).contains(q) ||
+            story.authorName.lowercase(trLocale).contains(q) ||
+            story.authorId.lowercase(trLocale).contains(q) ||
+            story.id.lowercase(trLocale).contains(q)
+        val matchesFilter = when (filter) {
+            AdminStoryFilter.ALL -> true
+            AdminStoryFilter.ACTIVE -> story.expiresAt > nowMs
+            AdminStoryFilter.EXPIRED -> story.expiresAt <= nowMs
+            AdminStoryFilter.WITH_MEDIA -> story.mediaUrl.isNotBlank()
+            AdminStoryFilter.TEXT_ONLY -> story.mediaUrl.isBlank()
+        }
+        matchesOwner && matchesQuery && matchesFilter
+    }
+    return when (sortOption) {
+        AdminStorySortOption.NEWEST -> filtered.sortedByDescending { it.createdAt }
+        AdminStorySortOption.EXPIRING_SOON -> filtered.sortedWith(
+            compareBy<Story> { it.expiresAt <= nowMs }.thenBy { it.expiresAt }
+        )
+        AdminStorySortOption.MOST_LIKED -> filtered.sortedWith(
+            compareByDescending<Story> { it.likesCount }.thenByDescending { it.createdAt }
+        )
+    }
+}
+
+enum class AdminServerFilter(val label: String) {
+    ALL("Tümü"),
+    WITH_MEDIA("Görselli"),
+    WITH_INVITE("Davet Anahtarlı")
+}
+
+enum class AdminServerSortOption(val label: String) {
+    NEWEST("En Yeni"),
+    OLDEST("En Eski"),
+    NAME_ASC("Ad (A-Z)")
+}
+
+fun filterAndSortAdminServers(
+    servers: List<CommunityServer>,
+    query: String = "",
+    ownerFilterUid: String? = null,
+    filter: AdminServerFilter = AdminServerFilter.ALL,
+    sortOption: AdminServerSortOption = AdminServerSortOption.NEWEST
+): List<CommunityServer> {
+    val trLocale = java.util.Locale.forLanguageTag("tr")
+    val q = query.trim().lowercase(trLocale)
+    val filtered = servers.filter { server ->
+        val matchesOwner = ownerFilterUid.isNullOrBlank() || server.ownerId == ownerFilterUid
+        val matchesQuery = q.isBlank() ||
+            server.name.lowercase(trLocale).contains(q) ||
+            server.description.lowercase(trLocale).contains(q) ||
+            server.inviteKey.lowercase(trLocale).contains(q) ||
+            server.ownerId.lowercase(trLocale).contains(q) ||
+            server.id.lowercase(trLocale).contains(q)
+        val matchesFilter = when (filter) {
+            AdminServerFilter.ALL -> true
+            AdminServerFilter.WITH_MEDIA -> server.avatarUrl.isNotBlank() || server.bannerUrl.isNotBlank()
+            AdminServerFilter.WITH_INVITE -> server.inviteKey.isNotBlank()
+        }
+        matchesOwner && matchesQuery && matchesFilter
+    }
+    return when (sortOption) {
+        AdminServerSortOption.NEWEST -> filtered.sortedByDescending { it.createdAt }
+        AdminServerSortOption.OLDEST -> filtered.sortedBy { it.createdAt }
+        AdminServerSortOption.NAME_ASC -> filtered.sortedBy { it.name.lowercase(trLocale) }
+    }
+}
+
+enum class AdminGlobalChatFilter(val label: String) {
+    ALL("Tümü"),
+    WITH_MEDIA("Görselli"),
+    WITH_SHARED_CONTENT("Paylaşımlı"),
+    EDITED("Düzenlenen"),
+    WITH_REACTIONS("Tepkili")
+}
+
+enum class AdminGlobalChatSortOption(val label: String) {
+    NEWEST("En Yeni"),
+    OLDEST("En Eski"),
+    MOST_REACTED("En Çok Tepkili")
+}
+
+fun filterAndSortAdminGlobalMessages(
+    messages: List<GlobalChatMessage>,
+    query: String = "",
+    ownerFilterUid: String? = null,
+    filter: AdminGlobalChatFilter = AdminGlobalChatFilter.ALL,
+    sortOption: AdminGlobalChatSortOption = AdminGlobalChatSortOption.NEWEST
+): List<GlobalChatMessage> {
+    val trLocale = java.util.Locale.forLanguageTag("tr")
+    val q = query.trim().lowercase(trLocale)
+    val filtered = messages.filter { msg ->
+        val matchesOwner = ownerFilterUid.isNullOrBlank() || msg.senderId == ownerFilterUid
+        val matchesQuery = q.isBlank() ||
+            msg.text.lowercase(trLocale).contains(q) ||
+            msg.senderName.lowercase(trLocale).contains(q) ||
+            msg.senderUsername.lowercase(trLocale).contains(q) ||
+            msg.senderId.lowercase(trLocale).contains(q) ||
+            msg.id.lowercase(trLocale).contains(q) ||
+            msg.sharedContent?.title.orEmpty().lowercase(trLocale).contains(q)
+        val matchesFilter = when (filter) {
+            AdminGlobalChatFilter.ALL -> true
+            AdminGlobalChatFilter.WITH_MEDIA -> msg.mediaUrl.isNotBlank()
+            AdminGlobalChatFilter.WITH_SHARED_CONTENT -> msg.sharedContent != null
+            AdminGlobalChatFilter.EDITED -> msg.editedAt != null
+            AdminGlobalChatFilter.WITH_REACTIONS -> msg.reactions.isNotEmpty()
+        }
+        matchesOwner && matchesQuery && matchesFilter
+    }
+    return when (sortOption) {
+        AdminGlobalChatSortOption.NEWEST -> filtered.sortedByDescending { it.createdAt }
+        AdminGlobalChatSortOption.OLDEST -> filtered.sortedBy { it.createdAt }
+        AdminGlobalChatSortOption.MOST_REACTED -> filtered.sortedWith(
+            compareByDescending<GlobalChatMessage> { it.reactions.size }.thenByDescending { it.createdAt }
+        )
+    }
+}
 
 enum class AdminBookStatusFilter(val label: String) {
     ALL("Tümü"),
@@ -254,6 +409,9 @@ class AdminViewModel(
     private val repo: AdminRepository,
     private val bookRepo: BookRepository,
     private val postRepo: PostRepository,
+    private val storyRepo: StoryRepository,
+    private val communityRepo: CommunityRepository,
+    private val chatRepo: ChatRepository,
     private val updateRepo: UpdateRepository,
     private val releaseStorageRepo: AppReleaseStorageRepository,
     private val notificationRepo: NotificationRepository
@@ -263,6 +421,9 @@ class AdminViewModel(
         repo = ServiceLocator.adminRepository,
         bookRepo = ServiceLocator.bookRepository,
         postRepo = ServiceLocator.postRepository,
+        storyRepo = ServiceLocator.storyRepository,
+        communityRepo = ServiceLocator.communityRepository,
+        chatRepo = ServiceLocator.chatRepository,
         updateRepo = ServiceLocator.updateRepository,
         releaseStorageRepo = ServiceLocator.appReleaseStorageRepository,
         notificationRepo = ServiceLocator.notificationRepository
@@ -286,6 +447,30 @@ class AdminViewModel(
     val postActionBusy: StateFlow<Boolean> = _postActionBusy.asStateFlow()
     private val _postActionMessage = MutableStateFlow<String?>(null)
     val postActionMessage: StateFlow<String?> = _postActionMessage.asStateFlow()
+    private val _stories = MutableStateFlow<List<Story>>(emptyList())
+    val stories: StateFlow<List<Story>> = _stories.asStateFlow()
+    private val _storiesLoading = MutableStateFlow(true)
+    val storiesLoading: StateFlow<Boolean> = _storiesLoading.asStateFlow()
+    private val _storyActionBusy = MutableStateFlow(false)
+    val storyActionBusy: StateFlow<Boolean> = _storyActionBusy.asStateFlow()
+    private val _storyActionMessage = MutableStateFlow<String?>(null)
+    val storyActionMessage: StateFlow<String?> = _storyActionMessage.asStateFlow()
+    private val _servers = MutableStateFlow<List<CommunityServer>>(emptyList())
+    val servers: StateFlow<List<CommunityServer>> = _servers.asStateFlow()
+    private val _serversLoading = MutableStateFlow(true)
+    val serversLoading: StateFlow<Boolean> = _serversLoading.asStateFlow()
+    private val _serverActionBusy = MutableStateFlow(false)
+    val serverActionBusy: StateFlow<Boolean> = _serverActionBusy.asStateFlow()
+    private val _serverActionMessage = MutableStateFlow<String?>(null)
+    val serverActionMessage: StateFlow<String?> = _serverActionMessage.asStateFlow()
+    private val _globalMessages = MutableStateFlow<List<GlobalChatMessage>>(emptyList())
+    val globalMessages: StateFlow<List<GlobalChatMessage>> = _globalMessages.asStateFlow()
+    private val _globalMessagesLoading = MutableStateFlow(true)
+    val globalMessagesLoading: StateFlow<Boolean> = _globalMessagesLoading.asStateFlow()
+    private val _globalChatActionBusy = MutableStateFlow(false)
+    val globalChatActionBusy: StateFlow<Boolean> = _globalChatActionBusy.asStateFlow()
+    private val _globalChatActionMessage = MutableStateFlow<String?>(null)
+    val globalChatActionMessage: StateFlow<String?> = _globalChatActionMessage.asStateFlow()
     private val _cosmeticRoles = MutableStateFlow<List<CosmeticRole>>(emptyList())
     val cosmeticRoles: StateFlow<List<CosmeticRole>> = _cosmeticRoles.asStateFlow()
     private val _activeRelease = MutableStateFlow<AppUpdate?>(null)
@@ -303,6 +488,9 @@ class AdminViewModel(
 
     private var booksJob: Job? = null
     private var postsJob: Job? = null
+    private var storiesJob: Job? = null
+    private var serversJob: Job? = null
+    private var globalMessagesJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -325,6 +513,9 @@ class AdminViewModel(
         }
         observeBooks()
         observePosts()
+        observeStories()
+        observeServers()
+        observeGlobalMessages()
     }
 
     fun observeBooks() {
@@ -963,6 +1154,562 @@ class AdminViewModel(
             _posts.value.map { if (it.id == updated.id) updated else it }
         } else {
             listOf(updated) + _posts.value
+        }
+    }
+
+    // --- Story Administration & Moderation ---
+
+    fun observeStories() {
+        storiesJob?.cancel()
+        _storiesLoading.value = true
+        storiesJob = viewModelScope.launch {
+            storyRepo.observeAllStoriesForAdmin(250).collect { res ->
+                when (res) {
+                    is AppResult.Success -> _stories.value = res.data
+                    is AppResult.Error -> _error.value = res.error.message
+                }
+                _storiesLoading.value = false
+            }
+        }
+    }
+
+    fun clearStoryActionMessage() {
+        _storyActionMessage.value = null
+    }
+
+    fun deleteStoryAsAdmin(story: Story, actorUid: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _storyActionBusy.value = true
+        when (val res = storyRepo.deleteStory(story.id, actorUid)) {
+            is AppResult.Success -> {
+                _stories.value = _stories.value.filterNot { it.id == story.id }
+                _storyActionMessage.value = "Hikâye kalıcı olarak silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _storyActionBusy.value = false
+    }
+
+    fun batchDeleteStories(storyIds: Set<String>, actorUid: String, onDone: (Int) -> Unit = {}) = viewModelScope.launch {
+        if (storyIds.isEmpty()) return@launch
+        _storyActionBusy.value = true
+        var deletedCount = 0
+        var lastError: String? = null
+        val targets = _stories.value.filter { it.id in storyIds }
+        targets.forEach { story ->
+            when (val res = storyRepo.deleteStory(story.id, actorUid)) {
+                is AppResult.Success -> deletedCount++
+                is AppResult.Error -> lastError = res.error.message
+            }
+        }
+        if (deletedCount > 0) {
+            val removedIds = targets.map { it.id }.toSet()
+            _stories.value = _stories.value.filterNot { it.id in removedIds }
+            _storyActionMessage.value = "$deletedCount hikâye silindi."
+        } else if (lastError != null) {
+            _error.value = lastError
+        }
+        _storyActionBusy.value = false
+        onDone(deletedCount)
+    }
+
+    fun toggleAuthorStoryPermission(uid: String, disabled: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val member = _members.value.firstOrNull { it.uid == uid } ?: return@launch
+        val updatedMod = member.moderation.copy(
+            storyDisabled = disabled,
+            storyDisabledUntil = 0L
+        )
+        when (val res = repo.updateModeration(uid, updatedMod)) {
+            is AppResult.Success -> {
+                _members.value = _members.value.map {
+                    if (it.uid == uid) it.copy(moderation = updatedMod) else it
+                }
+                _storyActionMessage.value = if (disabled) {
+                    "${member.displayName} için hikâye paylaşma kısıtlandı."
+                } else {
+                    "${member.displayName} için hikâye paylaşma yetkisi açıldı."
+                }
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+    }
+
+    fun sendStoryModerationNotification(
+        recipientUid: String,
+        actorUid: String,
+        title: String,
+        body: String,
+        storyId: String = "",
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        val res = notificationRepo.create(
+            AppNotification(
+                recipientId = recipientUid,
+                actorId = actorUid,
+                actorName = "Libra Yönetim",
+                type = "ADMIN_FEEDBACK",
+                title = title.trim().ifBlank { "Hikâye Yönetimi Bildirimi" },
+                body = body.trim(),
+                referenceId = storyId,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        if (res is AppResult.Success) {
+            _storyActionMessage.value = "Üyeye bildirim gönderildi."
+            onDone(true)
+        } else {
+            _error.value = (res as AppResult.Error).error.message
+            onDone(false)
+        }
+    }
+
+    // --- Community Server Administration & Moderation ---
+
+    fun observeServers() {
+        serversJob?.cancel()
+        _serversLoading.value = true
+        serversJob = viewModelScope.launch {
+            communityRepo.observeCommunityServers().collect { res ->
+                when (res) {
+                    is AppResult.Success -> _servers.value = res.data
+                    is AppResult.Error -> _error.value = res.error.message
+                }
+                _serversLoading.value = false
+            }
+        }
+    }
+
+    fun clearServerActionMessage() {
+        _serverActionMessage.value = null
+    }
+
+    fun observeServerMembers(serverId: String): Flow<AppResult<List<ServerMember>>> =
+        communityRepo.observeServerMembers(serverId)
+
+    fun observeServerCategories(serverId: String): Flow<AppResult<List<ServerCategory>>> =
+        communityRepo.observeServerCategories(serverId)
+
+    fun observeServerChannels(serverId: String): Flow<AppResult<List<ServerChannel>>> =
+        communityRepo.observeServerChannels(serverId)
+
+    fun observeServerBans(serverId: String): Flow<AppResult<List<ServerBan>>> =
+        communityRepo.observeServerBans(serverId)
+
+    fun observeServerMessages(serverId: String, channelId: String): Flow<AppResult<List<ServerMessage>>> =
+        chatRepo.observeServerMessages(serverId, limit = 150, channelId = channelId)
+
+    fun updateServerMetadataAsAdmin(
+        serverId: String,
+        name: String,
+        description: String,
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        val cleanName = name.trim()
+        val cleanDesc = description.trim()
+        when (val res = communityRepo.updateCommunityServer(serverId, cleanName, cleanDesc)) {
+            is AppResult.Success -> {
+                _servers.value = _servers.value.map {
+                    if (it.id == serverId) it.copy(name = cleanName, description = cleanDesc) else it
+                }
+                _serverActionMessage.value = "Sunucu bilgileri güncellendi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun clearServerMediaAsAdmin(
+        server: CommunityServer,
+        clearAvatar: Boolean,
+        clearBanner: Boolean,
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        val nextAvatar = if (clearAvatar) "" else server.avatarUrl
+        val nextBanner = if (clearBanner) "" else server.bannerUrl
+        when (val res = communityRepo.updateCommunityServerMedia(server.id, nextAvatar, nextBanner)) {
+            is AppResult.Success -> {
+                if (clearAvatar && server.avatarUrl.isNotBlank()) {
+                    communityRepo.deleteServerMedia(server.id, server.avatarUrl)
+                }
+                if (clearBanner && server.bannerUrl.isNotBlank()) {
+                    communityRepo.deleteServerMedia(server.id, server.bannerUrl)
+                }
+                _servers.value = _servers.value.map {
+                    if (it.id == server.id) it.copy(avatarUrl = nextAvatar, bannerUrl = nextBanner) else it
+                }
+                _serverActionMessage.value = "Sunucu görseli kaldırıldı."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun deleteServerAsAdmin(server: CommunityServer, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.deleteCommunityServer(server.id)) {
+            is AppResult.Success -> {
+                _servers.value = _servers.value.filterNot { it.id == server.id }
+                _serverActionMessage.value = "\"${server.name}\" sunucusu silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun createServerCategoryAsAdmin(serverId: String, name: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.createServerCategory(serverId, name)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Kategori oluşturuldu."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun deleteServerCategoryAsAdmin(serverId: String, categoryId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.deleteServerCategory(serverId, categoryId)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Kategori silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun createServerChannelAsAdmin(serverId: String, categoryId: String, name: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.createServerChannel(serverId, categoryId, name)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Kanal oluşturuldu."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun deleteServerChannelAsAdmin(serverId: String, channelId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.deleteServerChannel(serverId, channelId)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Kanal silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun setServerMemberRoleAsAdmin(serverId: String, memberId: String, role: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.setServerMemberRole(serverId, memberId, role)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Sunucu üye rolü güncellendi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun removeServerMemberAsAdmin(serverId: String, memberId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.removeServerMember(serverId, memberId)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Üye sunucudan çıkarıldı."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun banServerMemberAsAdmin(serverId: String, memberId: String, reason: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.banServerMember(serverId, memberId, reason)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Üye sunucudan yasaklandı."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun unbanServerMemberAsAdmin(serverId: String, memberId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = communityRepo.unbanServerMember(serverId, memberId)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Sunucu yasağı kaldırıldı."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun deleteServerMessageAsAdmin(serverId: String, messageId: String, channelId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _serverActionBusy.value = true
+        when (val res = chatRepo.deleteServerMessage(serverId, messageId, channelId)) {
+            is AppResult.Success -> {
+                _serverActionMessage.value = "Kanal mesajı silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _serverActionBusy.value = false
+    }
+
+    fun toggleOwnerServerCreationPermission(uid: String, disabled: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val member = _members.value.firstOrNull { it.uid == uid } ?: return@launch
+        val updatedMod = member.moderation.copy(
+            serverCreationDisabled = disabled,
+            serverCreationDisabledUntil = 0L
+        )
+        when (val res = repo.updateModeration(uid, updatedMod)) {
+            is AppResult.Success -> {
+                _members.value = _members.value.map { if (it.uid == uid) it.copy(moderation = updatedMod) else it }
+                _serverActionMessage.value = if (disabled) {
+                    "${member.displayName} için sunucu oluşturma kısıtlandı."
+                } else {
+                    "${member.displayName} için sunucu oluşturma yetkisi açıldı."
+                }
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+    }
+
+    fun toggleUserServerMessagingPermission(uid: String, disabled: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val member = _members.value.firstOrNull { it.uid == uid } ?: return@launch
+        val updatedMod = member.moderation.copy(
+            serverMessagingDisabled = disabled,
+            serverMessagingDisabledUntil = 0L
+        )
+        when (val res = repo.updateModeration(uid, updatedMod)) {
+            is AppResult.Success -> {
+                _members.value = _members.value.map { if (it.uid == uid) it.copy(moderation = updatedMod) else it }
+                val msg = if (disabled) {
+                    "${member.displayName} için sunucu/genel chat mesajları kısıtlandı."
+                } else {
+                    "${member.displayName} için sunucu/genel chat mesaj yetkisi açıldı."
+                }
+                _serverActionMessage.value = msg
+                _globalChatActionMessage.value = msg
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+    }
+
+    fun sendServerModerationNotification(
+        recipientUid: String,
+        actorUid: String,
+        title: String,
+        body: String,
+        serverId: String = "",
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        val res = notificationRepo.create(
+            AppNotification(
+                recipientId = recipientUid,
+                actorId = actorUid,
+                actorName = "Libra Yönetim",
+                type = "ADMIN_FEEDBACK",
+                title = title.trim().ifBlank { "Sunucu Yönetimi Bildirimi" },
+                body = body.trim(),
+                referenceId = serverId,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        if (res is AppResult.Success) {
+            _serverActionMessage.value = "Sunucu sahibine bildirim gönderildi."
+            onDone(true)
+        } else {
+            _error.value = (res as AppResult.Error).error.message
+            onDone(false)
+        }
+    }
+
+    // --- Global Chat Administration & Moderation ---
+
+    fun observeGlobalMessages() {
+        globalMessagesJob?.cancel()
+        _globalMessagesLoading.value = true
+        globalMessagesJob = viewModelScope.launch {
+            chatRepo.observeGlobalMessages(250).collect { res ->
+                when (res) {
+                    is AppResult.Success -> _globalMessages.value = res.data
+                    is AppResult.Error -> _error.value = res.error.message
+                }
+                _globalMessagesLoading.value = false
+            }
+        }
+    }
+
+    fun clearGlobalChatActionMessage() {
+        _globalChatActionMessage.value = null
+    }
+
+    fun deleteGlobalMessageAsAdmin(messageId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _globalChatActionBusy.value = true
+        when (val res = chatRepo.deleteGlobalMessage(messageId)) {
+            is AppResult.Success -> {
+                _globalMessages.value = _globalMessages.value.filterNot { it.id == messageId }
+                _globalChatActionMessage.value = "Mesaj genel chatten silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _globalChatActionBusy.value = false
+    }
+
+    fun batchDeleteGlobalMessages(messageIds: Set<String>, onDone: (Int) -> Unit = {}) = viewModelScope.launch {
+        if (messageIds.isEmpty()) return@launch
+        _globalChatActionBusy.value = true
+        var deletedCount = 0
+        var lastError: String? = null
+        val targets = _globalMessages.value.filter { it.id in messageIds }
+        targets.forEach { msg ->
+            when (val res = chatRepo.deleteGlobalMessage(msg.id)) {
+                is AppResult.Success -> deletedCount++
+                is AppResult.Error -> lastError = res.error.message
+            }
+        }
+        if (deletedCount > 0) {
+            val removedIds = targets.map { it.id }.toSet()
+            _globalMessages.value = _globalMessages.value.filterNot { it.id in removedIds }
+            _globalChatActionMessage.value = "$deletedCount mesaj silindi."
+        } else if (lastError != null) {
+            _error.value = lastError
+        }
+        _globalChatActionBusy.value = false
+        onDone(deletedCount)
+    }
+
+    fun sendGlobalAnnouncementAsAdmin(text: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        _globalChatActionBusy.value = true
+        when (val res = chatRepo.sendGlobalMessage(text.trim())) {
+            is AppResult.Success -> {
+                _globalChatActionMessage.value = "Mesaj genel chate gönderildi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _globalChatActionBusy.value = false
+    }
+
+    fun toggleUserGlobalMessagingPermission(uid: String, disabled: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val member = _members.value.firstOrNull { it.uid == uid } ?: return@launch
+        val updatedMod = member.moderation.copy(
+            messagingDisabled = disabled,
+            messagingDisabledUntil = 0L
+        )
+        when (val res = repo.updateModeration(uid, updatedMod)) {
+            is AppResult.Success -> {
+                _members.value = _members.value.map { if (it.uid == uid) it.copy(moderation = updatedMod) else it }
+                _globalChatActionMessage.value = if (disabled) {
+                    "${member.displayName} için mesaj atma kısıtlandı."
+                } else {
+                    "${member.displayName} için mesaj atma yetkisi açıldı."
+                }
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+    }
+
+    fun sendGlobalChatModerationNotification(
+        recipientUid: String,
+        actorUid: String,
+        title: String,
+        body: String,
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        val res = notificationRepo.create(
+            AppNotification(
+                recipientId = recipientUid,
+                actorId = actorUid,
+                actorName = "Libra Yönetim",
+                type = "ADMIN_FEEDBACK",
+                title = title.trim().ifBlank { "Genel Chat Bildirimi" },
+                body = body.trim(),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        if (res is AppResult.Success) {
+            _globalChatActionMessage.value = "Üyeye bildirim gönderildi."
+            onDone(true)
+        } else {
+            _error.value = (res as AppResult.Error).error.message
+            onDone(false)
         }
     }
 

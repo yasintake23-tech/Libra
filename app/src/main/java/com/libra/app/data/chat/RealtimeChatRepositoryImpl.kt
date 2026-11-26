@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 
 private const val LIBRA_RTDB_URL =
     "https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app"
+private const val LIBRA_CHAT_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
 
 /**
  * Single realtime chat implementation.
@@ -326,7 +327,7 @@ class RealtimeChatRepositoryImpl(
         editMessage(ref("globalMessages/$messageId"), text, 1000)
 
     override suspend fun deleteGlobalMessage(messageId: String): AppResult<Unit> =
-        deleteMessage(ref("globalMessages/$messageId"))
+        deleteMessage(ref("globalMessages/$messageId"), requiredAdminPermission = "manageGlobalChat")
 
     override suspend fun toggleGlobalMessageReaction(
         messageId: String,
@@ -994,7 +995,10 @@ class RealtimeChatRepositoryImpl(
         messageId: String,
         channelId: String
     ): AppResult<Unit> =
-        deleteMessage(ref(serverMessagesPath(serverId, channelId) + "/$messageId"))
+        deleteMessage(
+            ref(serverMessagesPath(serverId, channelId) + "/$messageId"),
+            requiredAdminPermission = "manageServers"
+        )
 
     override suspend fun toggleServerMessageReaction(
         serverId: String,
@@ -1093,7 +1097,23 @@ class RealtimeChatRepositoryImpl(
         }
     }
 
-    private suspend fun deleteMessage(messageRef: DatabaseReference?): AppResult<Unit> {
+    private suspend fun isChatAdmin(uid: String, permissionKey: String): Boolean {
+        if (uid.isBlank() || permissionKey.isBlank()) return false
+        if (uid == LIBRA_CHAT_ADMIN_UID) return true
+        return runCatching {
+            FirebaseFirestore.getInstance()
+                .collection("adminRoles")
+                .document(uid)
+                .get()
+                .await()
+                .get("permissions.$permissionKey") == true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun deleteMessage(
+        messageRef: DatabaseReference?,
+        requiredAdminPermission: String = ""
+    ): AppResult<Unit> {
         val uid = currentUid()
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
 
@@ -1106,7 +1126,8 @@ class RealtimeChatRepositoryImpl(
                 return AppResult.Success(Unit)
             }
 
-            if (snapshot.child("senderId").getValue(String::class.java) != uid) {
+            val senderId = snapshot.child("senderId").getValue(String::class.java)
+            if (senderId != uid && !isChatAdmin(uid, requiredAdminPermission)) {
                 return AppResult.Error(AppError.Auth("Bu mesajı silme yetkin yok."))
             }
 

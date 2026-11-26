@@ -73,11 +73,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AdminPermissionSet
@@ -672,7 +670,7 @@ fun AdminPostsScreen(
                             onTagClick = { tag ->
                                 tagFilter = if (tagFilter.equals(tag, ignoreCase = true)) null else tag
                             },
-                            onOpenMedia = { fullScreenMediaUrl = post.mediaUrl }
+                            onOpenMedia = { signedUrl -> fullScreenMediaUrl = signedUrl }
                         )
                     }
                 }
@@ -830,7 +828,7 @@ private fun AdminPostCard(
     onEditTags: () -> Unit,
     onDelete: () -> Unit,
     onTagClick: (String) -> Unit,
-    onOpenMedia: () -> Unit
+    onOpenMedia: (String) -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
     Surface(
@@ -917,16 +915,13 @@ private fun AdminPostCard(
             }
 
             if (post.mediaUrl.isNotBlank()) {
-                val imgShape = RoundedCornerShape(14.dp)
-                AsyncImage(
-                    model = post.mediaUrl,
+                AdminSignedImage(
+                    mediaKey = post.mediaUrl,
                     contentDescription = "Gönderi görseli",
-                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp)
-                        .clip(imgShape)
-                        .clickable(onClick = onOpenMedia)
+                        .height(175.dp),
+                    onImageClick = onOpenMedia
                 )
             }
 
@@ -1141,15 +1136,13 @@ private fun AdminPostControlCenter(
                         )
 
                         if (post.mediaUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = post.mediaUrl,
+                            AdminSignedImage(
+                                mediaKey = post.mediaUrl,
                                 contentDescription = "Gönderi medyası",
-                                contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 260.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable { onOpenFullScreenImage(post.mediaUrl) }
+                                    .height(240.dp),
+                                onImageClick = onOpenFullScreenImage
                             )
                         }
 

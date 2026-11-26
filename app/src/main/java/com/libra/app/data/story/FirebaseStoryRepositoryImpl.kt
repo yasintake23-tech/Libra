@@ -2,15 +2,34 @@ package com.libra.app.data.story
 
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.Story
+import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.StoryRepository
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
-class FirebaseStoryRepositoryImpl : StoryRepository {
+class FirebaseStoryRepositoryImpl(
+    private val storageRepository: StorageRepository? = null
+) : StoryRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val storiesRef get() = firestore.collection("stories")
+
+    private suspend fun isStoryAdmin(uid: String): Boolean {
+        if (uid.isBlank()) return false
+        if (uid == LIBRA_STORY_ADMIN_UID) return true
+        return runCatching {
+            firestore.collection("adminRoles")
+                .document(uid)
+                .get()
+                .await()
+                .get("permissions.manageStories") == true
+        }.getOrDefault(false)
+    }
 
     override suspend fun createStory(
         authorId: String,
@@ -105,4 +124,49 @@ class FirebaseStoryRepositoryImpl : StoryRepository {
             AppResult.Error(AppError.Database("Hikâye beğenisi güncellenemedi.", e))
         }
     }
+
+    override fun observeAllStoriesForAdmin(limit: Long): Flow<AppResult<List<Story>>> = callbackFlow {
+        val safeLimit = limit.coerceIn(1L, 300L)
+        val registration = storiesRef
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(safeLimit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Hikâyeler yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val stories = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(Story::class.java)?.copy(id = doc.id)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(stories))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun deleteStory(storyId: String, userId: String): AppResult<Unit> {
+        if (storyId.isBlank() || userId.isBlank()) {
+            return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        }
+        return try {
+            val ref = storiesRef.document(storyId)
+            val snapshot = ref.get().await()
+            if (!snapshot.exists()) return AppResult.Success(Unit)
+            val authorId = snapshot.getString("authorId")
+            if (authorId != userId && !isStoryAdmin(userId)) {
+                return AppResult.Error(AppError.Auth("Bu hikâyeyi silme yetkin yok."))
+            }
+            val mediaKey = snapshot.getString("mediaUrl").orEmpty()
+            ref.delete().await()
+            if (mediaKey.isNotBlank()) {
+                runCatching { storageRepository?.deleteMedia(mediaKey) }
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Hikâye silinemedi.", e))
+        }
+    }
 }
+
+private const val LIBRA_STORY_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
