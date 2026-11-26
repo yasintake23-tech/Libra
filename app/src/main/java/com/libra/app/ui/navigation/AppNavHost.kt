@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.libra.app.ui.animation.AppleSprings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +49,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libra.app.core.state.UiState
 import com.libra.app.core.di.ServiceLocator
@@ -91,11 +95,13 @@ import com.libra.app.feature.book.BookDetailScreen
 import com.libra.app.notification.InAppNotificationBanner
 import com.libra.app.notification.LibraNotificationHelper
 import com.libra.app.notification.LibraNotificationJobService
+import com.libra.app.notification.LibraNotificationReceiver
+import com.libra.app.notification.LibraNotificationRuntimeState
+import com.libra.app.notification.LibraNotificationSyncManager
 import com.libra.app.notification.NotificationLaunchPayload
 import com.libra.app.notification.NotificationPermissionRationaleDialog
 import com.libra.app.notification.NotificationPreferencesStore
-import com.libra.app.notification.selectNewNotificationsForDelivery
-import com.libra.app.notification.shouldSuppressActiveNotification
+import com.libra.app.notification.NotificationSyncCoordinator
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.feature.update.AppUpdatePrompt
 import com.libra.app.feature.update.AppUpdateViewModel
@@ -142,10 +148,59 @@ fun AppNavHost(
     var showNotificationRationale by remember { mutableStateOf(false) }
 
     val notificationStore = remember(context) { NotificationPreferencesStore(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val notificationPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) {
+    ) { granted ->
         notificationStore.markPermissionPrompted()
+        val uid = currentUser?.uid.orEmpty()
+        if ((granted || LibraNotificationHelper.hasNotificationPermission(context)) && uid.isNotBlank()) {
+            LibraNotificationSyncManager.syncRegistrationState(
+                context = context,
+                uid = uid,
+                allowStartForegroundService = true
+            )
+        }
+    }
+
+    LaunchedEffect(showNotifications, activeDirectConversationId) {
+        LibraNotificationRuntimeState.isNotificationsScreenOpen = showNotifications
+        LibraNotificationRuntimeState.activeDirectConversationId = activeDirectConversationId
+    }
+
+    DisposableEffect(lifecycleOwner, currentUser?.uid) {
+        val observer = LifecycleEventObserver { _, event ->
+            val uid = currentUser?.uid.orEmpty()
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    LibraNotificationRuntimeState.isAppInForeground = true
+                    if (uid.isNotBlank()) {
+                        LibraNotificationSyncManager.syncRegistrationState(
+                            context = context,
+                            uid = uid,
+                            allowStartForegroundService = true
+                        )
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    LibraNotificationRuntimeState.isAppInForeground = false
+                    if (uid.isNotBlank() &&
+                        NotificationPreferencesStore(context).readPreferences().masterEnabled &&
+                        LibraNotificationHelper.hasNotificationPermission(context)
+                    ) {
+                        LibraNotificationJobService.schedulePeriodicSync(context)
+                        LibraNotificationJobService.scheduleImmediateCheck(context)
+                        LibraNotificationReceiver.scheduleBackupAlarm(context)
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            LibraNotificationRuntimeState.isAppInForeground = false
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -333,42 +388,37 @@ fun AppNavHost(
         }
     }
 
+    LaunchedEffect(Unit) {
+        LibraNotificationRuntimeState.inAppBannerEvents.collect { fresh ->
+            activeInAppBanner = fresh
+        }
+    }
+
     LaunchedEffect(currentUser?.uid) {
         val uid = currentUser?.uid.orEmpty()
         if (uid.isBlank()) {
             unreadNotificationCount = 0
-            LibraNotificationJobService.cancelPeriodicSync(context)
+            LibraNotificationRuntimeState.updateUnreadCount(0)
+            LibraNotificationSyncManager.stopAll(context)
             return@LaunchedEffect
         }
 
-        LibraNotificationJobService.schedulePeriodicSync(context)
-        ServiceLocator.notificationRepository.observeNotifications(uid, limit = 80).collect { result ->
+        LibraNotificationSyncManager.syncRegistrationState(
+            context = context,
+            uid = uid,
+            allowStartForegroundService = true
+        )
+        ServiceLocator.notificationRepository.observeNotifications(uid, limit = 120).collect { result ->
             when (result) {
                 is com.libra.app.core.result.AppResult.Success -> {
                     val list = result.data
                     unreadNotificationCount = list.count { !it.read }
-
-                    val selection = selectNewNotificationsForDelivery(
+                    NotificationSyncCoordinator.processIncomingNotifications(
+                        context = context,
+                        uid = uid,
                         notifications = list,
-                        hasBaseline = notificationStore.hasBaseline(uid),
-                        baselineMs = notificationStore.getBaselineTimestamp(uid),
-                        alreadyNotifiedIds = notificationStore.getNotifiedIds(uid),
-                        preferences = notificationStore.readPreferences()
+                        updateUnreadBadgeCount = true
                     )
-                    if (selection.idsToMarkNotified.isNotEmpty() || !notificationStore.hasBaseline(uid)) {
-                        notificationStore.recordDeliverySelection(uid, selection)
-                    }
-                    selection.toDispatch.forEach { freshNotification ->
-                        val suppress = shouldSuppressActiveNotification(
-                            notification = freshNotification,
-                            isNotificationsScreenOpen = showNotifications,
-                            activeDirectConversationId = activeDirectConversationId
-                        )
-                        if (!suppress) {
-                            LibraNotificationHelper.dispatchSystemNotification(context, freshNotification)
-                            activeInAppBanner = freshNotification
-                        }
-                    }
                 }
                 is com.libra.app.core.result.AppResult.Error -> Unit
             }

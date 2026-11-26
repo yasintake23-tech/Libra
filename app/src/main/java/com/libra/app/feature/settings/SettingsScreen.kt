@@ -76,6 +76,7 @@ import com.libra.app.feature.reader.ReaderPreferences
 import com.libra.app.feature.reader.ReaderPreferencesStore
 import com.libra.app.feature.reader.ReaderTheme
 import com.libra.app.notification.LibraNotificationHelper
+import com.libra.app.notification.LibraNotificationSyncManager
 import com.libra.app.notification.NotificationPreferencesBottomSheet
 import com.libra.app.notification.NotificationPreferencesStore
 import com.libra.app.ui.animation.appleBouncy
@@ -118,6 +119,9 @@ fun SettingsScreen(
     ) { granted ->
         notificationStore.markPermissionPrompted()
         hasSystemNotifPerm = granted || LibraNotificationHelper.hasNotificationPermission(context)
+        if (hasSystemNotifPerm) {
+            LibraNotificationSyncManager.syncRegistrationState(context, profile.uid, allowStartForegroundService = true)
+        }
         if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             LibraNotificationHelper.openAppNotificationSettings(context)
         }
@@ -622,6 +626,7 @@ fun SettingsScreen(
             onPreferencesChanged = { updated ->
                 notificationPrefs = updated
                 notificationStore.savePreferences(updated)
+                LibraNotificationSyncManager.syncRegistrationState(context, profile.uid, allowStartForegroundService = true)
             },
             onRequestOrOpenSystemPermission = {
                 if (!hasSystemNotifPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

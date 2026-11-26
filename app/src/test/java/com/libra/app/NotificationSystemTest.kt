@@ -203,6 +203,26 @@ class NotificationSystemTest {
     }
 
     @Test
+    fun selectNewNotificationsForDelivery_deliversMissedUnreadAfterBaselineDespiteClockSkew() {
+        val delayedUnreadFromOtherDevice = AppNotification(
+            id = "n_delayed_dm",
+            type = LibraNotificationTypes.MESSAGE,
+            createdAt = nowMs - (10 * 60_000L), // 10 minutes earlier due to offline/clock skew
+            read = false
+        )
+        val selection = selectNewNotificationsForDelivery(
+            notifications = listOf(delayedUnreadFromOtherDevice),
+            hasBaseline = true,
+            baselineMs = nowMs,
+            alreadyNotifiedIds = setOf("n_prev"),
+            preferences = NotificationPreferencesState(backgroundServiceEnabled = true),
+            nowMs = nowMs + 5_000L
+        )
+        assertEquals(listOf("n_delayed_dm"), selection.toDispatch.map { it.id })
+        assertTrue("n_delayed_dm" in selection.idsToMarkNotified)
+    }
+
+    @Test
     fun shouldSuppressActiveNotification_suppressesActiveConversationAndNotificationsScreen() {
         val dm = AppNotification(
             id = "n1",

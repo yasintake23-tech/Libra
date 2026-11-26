@@ -58,6 +58,7 @@ import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
 import com.libra.app.notification.LibraNotificationHelper
+import com.libra.app.notification.LibraNotificationSyncManager
 import com.libra.app.notification.NotificationPreferenceCategory
 import com.libra.app.notification.NotificationPreferencesBottomSheet
 import com.libra.app.notification.NotificationPreferencesStore
@@ -101,6 +102,9 @@ fun NotificationsScreen(
     ) { granted ->
         prefStore.markPermissionPrompted()
         hasSystemPerm = granted || LibraNotificationHelper.hasNotificationPermission(context)
+        if (hasSystemPerm) {
+            LibraNotificationSyncManager.syncRegistrationState(context, uid, allowStartForegroundService = true)
+        }
         if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             LibraNotificationHelper.openAppNotificationSettings(context)
         }
@@ -323,6 +327,7 @@ fun NotificationsScreen(
             onPreferencesChanged = { updated ->
                 prefsState = updated
                 prefStore.savePreferences(updated)
+                LibraNotificationSyncManager.syncRegistrationState(context, uid, allowStartForegroundService = true)
             },
             onRequestOrOpenSystemPermission = {
                 if (!hasSystemPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

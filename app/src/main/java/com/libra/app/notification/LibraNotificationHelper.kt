@@ -2,6 +2,7 @@ package com.libra.app.notification
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -10,6 +11,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -31,6 +33,9 @@ object LibraNotificationHelper {
     const val CHANNEL_MESSAGES = "libra_messages"
     const val CHANNEL_SOCIAL = "libra_social"
     const val CHANNEL_ANNOUNCEMENTS = "libra_announcements"
+    const val CHANNEL_BACKGROUND_SERVICE = "libra_background_service"
+
+    const val FOREGROUND_SERVICE_NOTIFICATION_ID = 42070
 
     const val EXTRA_NOTIFICATION_ID = "extra_libra_notif_id"
     const val EXTRA_NOTIFICATION_TYPE = "extra_libra_notif_type"
@@ -66,6 +71,16 @@ object LibraNotificationHelper {
             ).apply {
                 description = "Libra yönetim duyuruları ve önemli bilgilendirmeler."
                 enableVibration(true)
+            },
+            NotificationChannel(
+                CHANNEL_BACKGROUND_SERVICE,
+                "Arka Plan Bildirim Bağlantısı",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Uygulama kapalıyken anlık bildirim alabilmek için sessiz bağlantı durumu."
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
             }
         )
         manager.createNotificationChannels(channels)
@@ -82,6 +97,30 @@ object LibraNotificationHelper {
         }
     }
 
+    fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+        return runCatching { pm.isIgnoringBatteryOptimizations(context.packageName) }.getOrDefault(false)
+    }
+
+    fun openBatteryOptimizationSettings(context: Context) {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+            }
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure {
+            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { context.startActivity(fallback) }
+        }
+    }
+
     fun openAppNotificationSettings(context: Context) {
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -94,6 +133,31 @@ object LibraNotificationHelper {
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
+    }
+
+    fun buildForegroundSyncNotification(context: Context): Notification {
+        ensureChannels(context)
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            FOREGROUND_SERVICE_NOTIFICATION_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(context, CHANNEL_BACKGROUND_SERVICE)
+            .setSmallIcon(R.drawable.ic_libra_notification)
+            .setContentTitle("Libra")
+            .setContentText("Anlık bildirim senkronizasyonu aktif")
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setContentIntent(pendingIntent)
+            .build()
     }
 
     fun extractNotificationPayload(intent: Intent?): NotificationLaunchPayload? {

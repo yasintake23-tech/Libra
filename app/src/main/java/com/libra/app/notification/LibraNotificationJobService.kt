@@ -23,6 +23,8 @@ class LibraNotificationJobService : JobService() {
     private var syncJob: Job? = null
 
     override fun onStartJob(params: JobParameters?): Boolean {
+        LibraNotificationSyncManager.ensureFirebaseInitialized(applicationContext)
+
         val uid = runCatching { FirebaseAuth.getInstance().currentUser?.uid }.getOrNull().orEmpty()
         if (uid.isBlank() || !LibraNotificationHelper.hasNotificationPermission(this)) {
             return false
@@ -32,28 +34,22 @@ class LibraNotificationJobService : JobService() {
         serviceScope = scope
         syncJob = scope.launch {
             try {
-                val store = NotificationPreferencesStore(applicationContext)
-                val prefs = store.readPreferences()
+                val prefs = NotificationPreferencesStore(applicationContext).readPreferences()
                 if (!prefs.masterEnabled) return@launch
 
-                when (val res = ServiceLocator.notificationRepository.fetchUnreadNotifications(uid, limit = 25)) {
+                when (val res = ServiceLocator.notificationRepository.fetchUnreadNotifications(uid, limit = 100)) {
                     is AppResult.Success -> {
-                        val selection = selectNewNotificationsForDelivery(
+                        NotificationSyncCoordinator.processIncomingNotifications(
+                            context = applicationContext,
+                            uid = uid,
                             notifications = res.data,
-                            hasBaseline = store.hasBaseline(uid),
-                            baselineMs = store.getBaselineTimestamp(uid),
-                            alreadyNotifiedIds = store.getNotifiedIds(uid),
-                            preferences = prefs
+                            updateUnreadBadgeCount = false
                         )
-                        selection.toDispatch.forEach { notification ->
-                            LibraNotificationHelper.dispatchSystemNotification(applicationContext, notification)
-                        }
-                        if (selection.idsToMarkNotified.isNotEmpty() || !store.hasBaseline(uid)) {
-                            store.recordDeliverySelection(uid, selection)
-                        }
                     }
                     is AppResult.Error -> Unit
                 }
+
+                LibraNotificationReceiver.scheduleBackupAlarm(applicationContext)
             } finally {
                 jobFinished(params, false)
             }
@@ -69,26 +65,42 @@ class LibraNotificationJobService : JobService() {
     }
 
     companion object {
-        private const val JOB_ID = 42071
+        private const val JOB_ID_PERIODIC = 42071
+        private const val JOB_ID_IMMEDIATE = 42072
         private const val PERIODIC_INTERVAL_MS = 15L * 60L * 1000L
 
         fun schedulePeriodicSync(context: Context) {
             runCatching {
                 val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler ?: return
-                if (scheduler.getPendingJob(JOB_ID) != null) return
+                if (scheduler.getPendingJob(JOB_ID_PERIODIC) != null) return
                 val component = ComponentName(context, LibraNotificationJobService::class.java)
-                val info = JobInfo.Builder(JOB_ID, component)
+                val info = JobInfo.Builder(JOB_ID_PERIODIC, component)
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true)
                     .setPeriodic(PERIODIC_INTERVAL_MS)
                     .build()
                 scheduler.schedule(info)
             }
         }
 
-        fun cancelPeriodicSync(context: Context) {
+        fun scheduleImmediateCheck(context: Context) {
             runCatching {
                 val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler ?: return
-                scheduler.cancel(JOB_ID)
+                val component = ComponentName(context, LibraNotificationJobService::class.java)
+                val info = JobInfo.Builder(JOB_ID_IMMEDIATE, component)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setMinimumLatency(3_000L)
+                    .setOverrideDeadline(20_000L)
+                    .build()
+                scheduler.schedule(info)
+            }
+        }
+
+        fun cancelAllSync(context: Context) {
+            runCatching {
+                val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler ?: return
+                scheduler.cancel(JOB_ID_PERIODIC)
+                scheduler.cancel(JOB_ID_IMMEDIATE)
             }
         }
     }

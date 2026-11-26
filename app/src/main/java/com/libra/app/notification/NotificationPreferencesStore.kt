@@ -15,7 +15,8 @@ data class NotificationPreferencesState(
     val masterEnabled: Boolean = true,
     val messagesEnabled: Boolean = true,
     val socialEnabled: Boolean = true,
-    val announcementsEnabled: Boolean = true
+    val announcementsEnabled: Boolean = true,
+    val backgroundServiceEnabled: Boolean = true
 ) {
     fun allowsType(type: String): Boolean {
         if (!masterEnabled) return false
@@ -74,7 +75,9 @@ fun selectNewNotificationsForDelivery(
         if (id.isBlank() || id in alreadyNotifiedIds) return@forEach
 
         val isTooOldForInitialSeed = !hasBaseline && item.createdAt > 0L && item.createdAt < effectiveBaseline
-        val isBeforeBaselineWindow = hasBaseline && item.createdAt > 0L && item.createdAt < (effectiveBaseline - 60_000L)
+        // Keep a wide 24h window after baseline is established so clock skew between devices
+        // or delayed background wakeups never silently drop missed unread notifications.
+        val isBeforeBaselineWindow = hasBaseline && item.createdAt > 0L && item.createdAt < (effectiveBaseline - 24L * 60L * 60L * 1000L)
 
         if (item.read || isTooOldForInitialSeed || isBeforeBaselineWindow) {
             idsToMark.add(id)
@@ -112,40 +115,50 @@ class NotificationPreferencesStore(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    @Synchronized
     fun readPreferences(): NotificationPreferencesState = NotificationPreferencesState(
         masterEnabled = prefs.getBoolean(KEY_MASTER_ENABLED, true),
         messagesEnabled = prefs.getBoolean(KEY_MESSAGES_ENABLED, true),
         socialEnabled = prefs.getBoolean(KEY_SOCIAL_ENABLED, true),
-        announcementsEnabled = prefs.getBoolean(KEY_ANNOUNCEMENTS_ENABLED, true)
+        announcementsEnabled = prefs.getBoolean(KEY_ANNOUNCEMENTS_ENABLED, true),
+        backgroundServiceEnabled = prefs.getBoolean(KEY_BACKGROUND_SERVICE, true)
     )
 
+    @Synchronized
     fun savePreferences(state: NotificationPreferencesState) {
         prefs.edit()
             .putBoolean(KEY_MASTER_ENABLED, state.masterEnabled)
             .putBoolean(KEY_MESSAGES_ENABLED, state.messagesEnabled)
             .putBoolean(KEY_SOCIAL_ENABLED, state.socialEnabled)
             .putBoolean(KEY_ANNOUNCEMENTS_ENABLED, state.announcementsEnabled)
+            .putBoolean(KEY_BACKGROUND_SERVICE, state.backgroundServiceEnabled)
             .apply()
     }
 
+    @Synchronized
     fun wasPermissionPrompted(): Boolean = prefs.getBoolean(KEY_PERMISSION_PROMPTED, false)
 
+    @Synchronized
     fun markPermissionPrompted() {
         prefs.edit().putBoolean(KEY_PERMISSION_PROMPTED, true).apply()
     }
 
+    @Synchronized
     fun getBaselineTimestamp(uid: String): Long =
         prefs.getLong(baselineKey(uid), 0L)
 
+    @Synchronized
     fun hasBaseline(uid: String): Boolean =
         prefs.contains(baselineKey(uid))
 
+    @Synchronized
     fun getNotifiedIds(uid: String): Set<String> {
         val raw = prefs.getString(notifiedIdsKey(uid), "").orEmpty()
         if (raw.isBlank()) return emptySet()
         return raw.split(",").filter { it.isNotBlank() }.toSet()
     }
 
+    @Synchronized
     fun recordDeliverySelection(uid: String, selection: NotificationDeliverySelection) {
         if (uid.isBlank()) return
         val existingOrdered = prefs.getString(notifiedIdsKey(uid), "")
@@ -178,7 +191,8 @@ class NotificationPreferencesStore(context: Context) {
         private const val KEY_MESSAGES_ENABLED = "messages_enabled"
         private const val KEY_SOCIAL_ENABLED = "social_enabled"
         private const val KEY_ANNOUNCEMENTS_ENABLED = "announcements_enabled"
+        private const val KEY_BACKGROUND_SERVICE = "background_service_enabled"
         private const val KEY_PERMISSION_PROMPTED = "permission_prompted_v1"
-        private const val MAX_STORED_IDS = 250
+        private const val MAX_STORED_IDS = 500
     }
 }

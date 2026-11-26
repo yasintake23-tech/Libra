@@ -20,17 +20,22 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
             close()
             return@callbackFlow
         }
+        val safeLimit = limit.coerceIn(1L, 300L).toInt()
+        // Query without an unordered Firestore limit so newer notifications
+        // never get dropped behind older read documents when no composite index exists.
         val registration = ref.whereEqualTo("recipientId", uid)
-            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     trySend(AppResult.Error(AppError.Database("Bildirimler yüklenemedi.", error)))
                     return@addSnapshotListener
                 }
-                val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
-                }
-                trySend(AppResult.Success(list.sortedByDescending { it.createdAt }))
+                val list = snapshot?.documents.orEmpty()
+                    .mapNotNull { doc ->
+                        runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
+                    }
+                    .sortedByDescending { it.createdAt }
+                    .take(safeLimit)
+                trySend(AppResult.Success(list))
             }
         awaitClose { registration.remove() }
     }
@@ -69,14 +74,18 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
 
     override suspend fun fetchUnreadNotifications(uid: String, limit: Long): AppResult<List<AppNotification>> {
         if (uid.isBlank()) return AppResult.Success(emptyList())
+        val safeLimit = limit.coerceIn(1L, 150L).toInt()
         return try {
             val snapshot = ref.whereEqualTo("recipientId", uid)
-                .limit(limit.coerceIn(1L, 100L))
                 .get()
                 .await()
-            val unread = snapshot.documents.mapNotNull { doc ->
-                runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
-            }.filter { !it.read }.sortedByDescending { it.createdAt }
+            val unread = snapshot.documents
+                .mapNotNull { doc ->
+                    runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
+                }
+                .filter { !it.read }
+                .sortedByDescending { it.createdAt }
+                .take(safeLimit)
             AppResult.Success(unread)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Okunmamış bildirimler alınamadı.", e))
@@ -96,12 +105,13 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
     override suspend fun markAllRead(uid: String): AppResult<Unit> {
         if (uid.isBlank()) return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
-            val snapshot = ref.whereEqualTo("recipientId", uid).limit(100).get().await()
-            val batch = firestore.batch()
-            snapshot.documents.filter { it.getBoolean("read") != true }.forEach {
-                batch.update(it.reference, "read", true)
+            val snapshot = ref.whereEqualTo("recipientId", uid).get().await()
+            val unreadDocs = snapshot.documents.filter { it.getBoolean("read") != true }
+            unreadDocs.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { doc -> batch.update(doc.reference, "read", true) }
+                batch.commit().await()
             }
-            batch.commit().await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Bildirimler okunamadı.", e))

@@ -99,6 +99,11 @@ fun NotificationPreferencesBottomSheet(
     onRequestOrOpenSystemPermission: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ignoringBattery = remember(context) {
+        LibraNotificationHelper.isIgnoringBatteryOptimizations(context)
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface
@@ -152,12 +157,56 @@ fun NotificationPreferencesBottomSheet(
                 }
             }
 
+            if (!ignoringBattery) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Pil Kısıtlaması (Arka Plan)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = "Uygulama kapalıyken anlık bildirimler için 'Kısıtlanmamış' yapın",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(
+                            onClick = { LibraNotificationHelper.openBatteryOptimizationSettings(context) },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Pil Ayarı")
+                        }
+                    }
+                }
+            }
+
             NotificationToggleItem(
                 title = "Tüm Bildirimler",
                 subtitle = "Uygulama içi ve sistem bildirimlerini yönet",
                 checked = preferences.masterEnabled,
                 onCheckedChange = {
                     onPreferencesChanged(preferences.copy(masterEnabled = it))
+                }
+            )
+            NotificationToggleItem(
+                title = "Uygulama Kapalıyken Anlık Bağlantı",
+                subtitle = "Arka planda canlı bildirim dinleyicisini açık tutar",
+                checked = preferences.backgroundServiceEnabled,
+                enabled = preferences.masterEnabled,
+                onCheckedChange = {
+                    onPreferencesChanged(preferences.copy(backgroundServiceEnabled = it))
                 }
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
