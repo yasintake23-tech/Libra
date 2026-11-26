@@ -21,21 +21,22 @@ import kotlinx.coroutines.launch
 class LibraNotificationActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
-        val action = intent?.action.orEmpty()
+        val safeIntent = intent ?: return
+        val action = safeIntent.action.orEmpty()
         if (action != ACTION_INLINE_REPLY && action != ACTION_MARK_READ) return
 
         val appContext = context.applicationContext
-        val notificationId = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ID).orEmpty()
-        val type = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_TYPE).orEmpty()
-        val referenceId = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_REF_ID).orEmpty()
-        val actorId = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ACTOR_ID).orEmpty()
-        val title = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_TITLE).orEmpty()
-        val incomingBody = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_BODY).orEmpty()
-        val actorName = intent?.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ACTOR_NAME).orEmpty()
-        val requestCode = intent?.getIntExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_REQUEST_CODE, 0) ?: 0
+        val notificationId = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ID).orEmpty()
+        val type = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_TYPE).orEmpty()
+        val referenceId = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_REF_ID).orEmpty()
+        val actorId = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ACTOR_ID).orEmpty()
+        val title = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_TITLE).orEmpty()
+        val incomingBody = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_BODY).orEmpty()
+        val actorName = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ACTOR_NAME).orEmpty()
+        val requestCode = safeIntent.getIntExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_REQUEST_CODE, 0)
 
         val replyText = if (action == ACTION_INLINE_REPLY) {
-            RemoteInput.getResultsFromIntent(intent)
+            RemoteInput.getResultsFromIntent(safeIntent)
                 ?.getCharSequence(LibraNotificationHelper.KEY_REPLY_TEXT)
                 ?.toString()
                 ?.trim()

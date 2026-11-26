@@ -272,13 +272,11 @@ object LibraNotificationHelper {
                 .build()
             val timestamp = notification.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
             val messagingStyle = NotificationCompat.MessagingStyle(mePerson)
-                .apply {
-                    if (notification.type == LibraNotificationTypes.GROUP_MESSAGE) {
-                        setConversationTitle(title)
-                        setGroupConversation(true)
-                    }
-                    addMessage(body, timestamp, senderPerson)
-                }
+            if (notification.type == LibraNotificationTypes.GROUP_MESSAGE) {
+                messagingStyle.setConversationTitle(title)
+                messagingStyle.setGroupConversation(true)
+            }
+            messagingStyle.addMessage(body, timestamp, senderPerson)
             builder.setStyle(messagingStyle)
 
             // WhatsApp-style inline reply action
@@ -363,17 +361,16 @@ object LibraNotificationHelper {
         val mePerson = Person.Builder().setName("Sen").setKey("libra_self").build()
         val senderPerson = Person.Builder().setName(senderName.ifBlank { conversationTitle }).build()
         val now = System.currentTimeMillis()
-        val style = NotificationCompat.MessagingStyle(mePerson).apply {
-            if (isGroup) {
-                setConversationTitle(conversationTitle)
-                setGroupConversation(true)
-            }
-            if (incomingText.isNotBlank()) {
-                addMessage(incomingText, now - 1000L, senderPerson)
-            }
-            val confirmLine = if (sentSuccessfully) replyText else "Gönderilemedi: $replyText"
-            addMessage(confirmLine, now, mePerson)
+        val style = NotificationCompat.MessagingStyle(mePerson)
+        if (isGroup) {
+            style.setConversationTitle(conversationTitle)
+            style.setGroupConversation(true)
         }
+        if (incomingText.isNotBlank()) {
+            style.addMessage(incomingText, now - 1000L, senderPerson)
+        }
+        val confirmLine = if (sentSuccessfully) replyText else "Gönderilemedi: $replyText"
+        style.addMessage(confirmLine, now, mePerson)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_libra_notification)
