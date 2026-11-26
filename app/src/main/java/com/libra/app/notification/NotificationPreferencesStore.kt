@@ -38,13 +38,13 @@ fun classifyNotificationCategory(type: String): NotificationPreferenceCategory =
     else -> NotificationPreferenceCategory.SOCIAL
 }
 
-internal data class NotificationDeliverySelection(
+data class NotificationDeliverySelection(
     val toDispatch: List<AppNotification>,
     val idsToMarkNotified: List<String>,
     val nextBaselineMs: Long
 )
 
-internal fun selectNewNotificationsForDelivery(
+fun selectNewNotificationsForDelivery(
     notifications: List<AppNotification>,
     hasBaseline: Boolean,
     baselineMs: Long,
@@ -96,7 +96,7 @@ internal fun selectNewNotificationsForDelivery(
     )
 }
 
-internal fun shouldSuppressActiveNotification(
+fun shouldSuppressActiveNotification(
     notification: AppNotification,
     isNotificationsScreenOpen: Boolean,
     activeDirectConversationId: String?
