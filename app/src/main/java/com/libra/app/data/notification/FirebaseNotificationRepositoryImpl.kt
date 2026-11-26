@@ -47,6 +47,42 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         }
     }
 
+    override suspend fun createBatch(notifications: List<AppNotification>): AppResult<Int> {
+        val valid = notifications.filter { it.recipientId.isNotBlank() && it.actorId.isNotBlank() }
+        if (valid.isEmpty()) return AppResult.Success(0)
+        return try {
+            var delivered = 0
+            valid.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { item ->
+                    val doc = ref.document()
+                    batch.set(doc, item.copy(id = doc.id))
+                }
+                batch.commit().await()
+                delivered += chunk.size
+            }
+            AppResult.Success(delivered)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Toplu bildirim gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun fetchUnreadNotifications(uid: String, limit: Long): AppResult<List<AppNotification>> {
+        if (uid.isBlank()) return AppResult.Success(emptyList())
+        return try {
+            val snapshot = ref.whereEqualTo("recipientId", uid)
+                .limit(limit.coerceIn(1L, 100L))
+                .get()
+                .await()
+            val unread = snapshot.documents.mapNotNull { doc ->
+                runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
+            }.filter { !it.read }.sortedByDescending { it.createdAt }
+            AppResult.Success(unread)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Okunmamış bildirimler alınamadı.", e))
+        }
+    }
+
     override suspend fun markRead(notificationId: String): AppResult<Unit> {
         if (notificationId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz bildirim."))
         return try {

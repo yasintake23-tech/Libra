@@ -674,7 +674,8 @@ class BookRepositoryImpl(
         if (bookId.isBlank() || userId.isBlank()) return AppResult.Error(AppError.Validation("Kitap ve kullanıcı bilgisi gerekli."))
         val bookRef = booksRef?.child(bookId) ?: return databaseError()
         return try {
-            if (!bookRef.get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            val bookSnap = bookRef.get().await()
+            if (!bookSnap.exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
             val memberRef = bookRef.child(collection).child(userId)
             val active = !memberRef.get().await().exists()
             memberRef.setValue(if (active) true else null).await()
@@ -686,6 +687,38 @@ class BookRepositoryImpl(
                 }
                 override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {}
             })
+            if (active && collection == "likes") {
+                val notifRepo = notificationRepository
+                val ownerId = bookSnap.child("ownerId").getValue(String::class.java).orEmpty()
+                if (notifRepo != null && ownerId.isNotBlank() && ownerId != userId) {
+                    runCatching {
+                        val actor = userRepository?.let { repo ->
+                            (repo.getUserProfileFresh(userId) as? AppResult.Success)?.data
+                        }
+                        val actorName = actor?.displayName?.ifBlank { actor.username } ?: "Bir okur"
+                        val bookTitle = bookSnap.child("title").getValue(String::class.java).orEmpty()
+                        val body = if (bookTitle.isNotBlank()) {
+                            "$actorName \"$bookTitle\" kitabını beğendi."
+                        } else {
+                            "$actorName kitabını beğendi."
+                        }
+                        notifRepo.create(
+                            AppNotification(
+                                recipientId = ownerId,
+                                actorId = userId,
+                                actorName = actorName,
+                                actorUsername = actor?.username.orEmpty(),
+                                actorPhotoUrl = actor?.profileImageUrl.orEmpty(),
+                                type = "BOOK_LIKE",
+                                title = "Kitabın beğenildi",
+                                body = body,
+                                referenceId = bookId,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
             AppResult.Success(active)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Kitap etkileşimi güncellenemedi: ${e.localizedMessage}", e))

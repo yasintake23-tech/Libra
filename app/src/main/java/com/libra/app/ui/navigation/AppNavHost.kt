@@ -1,7 +1,12 @@
 package com.libra.app.ui.navigation
 
+import android.Manifest
+import android.app.Activity
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -12,16 +17,17 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -36,14 +42,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libra.app.core.state.UiState
 import com.libra.app.core.di.ServiceLocator
+import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.AdminPermissionSet
@@ -78,9 +88,18 @@ import com.libra.app.feature.write.WriteViewModel
 import com.libra.app.feature.write.create.CreateBookScreen
 import com.libra.app.feature.reader.BookReaderScreen
 import com.libra.app.feature.book.BookDetailScreen
+import com.libra.app.notification.InAppNotificationBanner
+import com.libra.app.notification.LibraNotificationHelper
+import com.libra.app.notification.LibraNotificationJobService
+import com.libra.app.notification.NotificationLaunchPayload
+import com.libra.app.notification.NotificationPermissionRationaleDialog
+import com.libra.app.notification.NotificationPreferencesStore
+import com.libra.app.notification.selectNewNotificationsForDelivery
+import com.libra.app.notification.shouldSuppressActiveNotification
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.feature.update.AppUpdatePrompt
 import com.libra.app.feature.update.AppUpdateViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -89,7 +108,9 @@ fun AppNavHost(
     authViewModel: AuthViewModel = viewModel(),
     modifier: Modifier = Modifier,
     darkTheme: Boolean = true,
-    onDarkThemeChanged: (Boolean) -> Unit = {}
+    onDarkThemeChanged: (Boolean) -> Unit = {},
+    pendingNotificationLaunch: NotificationLaunchPayload? = null,
+    onNotificationLaunchConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -114,6 +135,37 @@ fun AppNavHost(
     var showCreateBook by remember { mutableStateOf(false) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    var selectedDirectConversationId by remember { mutableStateOf<String?>(null) }
+    var activeDirectConversationId by remember { mutableStateOf<String?>(null) }
+    var activeInAppBanner by remember { mutableStateOf<AppNotification?>(null) }
+    var announcementNotification by remember { mutableStateOf<AppNotification?>(null) }
+    var showNotificationRationale by remember { mutableStateOf(false) }
+
+    val notificationStore = remember(context) { NotificationPreferencesStore(context) }
+    val notificationPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        notificationStore.markPermissionPrompted()
+    }
+
+    LaunchedEffect(Unit) {
+        LibraNotificationHelper.ensureChannels(context)
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !LibraNotificationHelper.hasNotificationPermission(context) &&
+            !notificationStore.wasPermissionPrompted()
+        ) {
+            delay(350L)
+            notificationStore.markPermissionPrompted()
+            val activity = context as? Activity
+            if (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)) {
+                showNotificationRationale = true
+            } else {
+                notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     fun openPublicProfile(uid: String) {
         if (uid.isBlank()) return
         scope.launch {
@@ -141,6 +193,105 @@ fun AppNavHost(
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
 
+    fun closeNavigationOverlays() {
+        showNotifications = false
+        showSettings = false
+        showAdminPanel = false
+        showProfileEdit = false
+        showGlobalChat = false
+        showCommunityServers = false
+        showCreateBook = false
+        createContentMode = null
+        selectedWritingBook = null
+        readerBook = null
+    }
+
+    fun handleNotificationNavigation(notification: AppNotification) {
+        if (!notification.read && notification.id.isNotBlank()) {
+            scope.launch { ServiceLocator.notificationRepository.markRead(notification.id) }
+        }
+        activeInAppBanner = null
+        when (notification.type.uppercase()) {
+            LibraNotificationTypes.MESSAGE -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                selectedTab = BottomNavTab.DM
+                if (notification.actorId.isNotBlank()) {
+                    scope.launch {
+                        val user = (ServiceLocator.userRepository.getUserProfileFresh(notification.actorId) as? com.libra.app.core.result.AppResult.Success)?.data
+                            ?: com.libra.app.domain.model.UserProfile(
+                                uid = notification.actorId,
+                                displayName = notification.actorName.ifBlank { "Libra Kullanıcısı" },
+                                username = notification.actorUsername,
+                                profileImageUrl = notification.actorPhotoUrl
+                            )
+                        selectedDirectUser = user
+                    }
+                } else if (notification.referenceId.isNotBlank()) {
+                    selectedDirectConversationId = notification.referenceId
+                }
+            }
+            LibraNotificationTypes.GROUP_MESSAGE -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                selectedTab = BottomNavTab.DM
+                if (notification.referenceId.isNotBlank()) {
+                    selectedDirectConversationId = notification.referenceId
+                }
+            }
+            LibraNotificationTypes.LIKE,
+            LibraNotificationTypes.COMMENT,
+            LibraNotificationTypes.COMMENT_REPLY -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                if (notification.referenceId.isNotBlank()) {
+                    homeVm.ensurePostVisible(notification.referenceId)
+                    notificationPostTargetId = notification.referenceId
+                }
+                selectedTab = BottomNavTab.HOME
+            }
+            LibraNotificationTypes.BOOK_LIKE,
+            LibraNotificationTypes.BOOK_COMMENT,
+            LibraNotificationTypes.BOOK_COMMENT_REPLY -> {
+                if (notification.referenceId.isNotBlank()) {
+                    scope.launch {
+                        val res = ServiceLocator.bookRepository.getBookById(notification.referenceId).first()
+                        val targetBook = (res as? com.libra.app.core.result.AppResult.Success)?.data
+                        if (targetBook != null) {
+                            closeNavigationOverlays()
+                            selectedPublicProfile = null
+                            selectedBook = targetBook
+                        } else {
+                            Toast.makeText(context, "Kitap bulunamadı.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            LibraNotificationTypes.FOLLOW,
+            LibraNotificationTypes.STORY_LIKE -> {
+                closeNavigationOverlays()
+                if (notification.actorId.isNotBlank()) {
+                    openPublicProfile(notification.actorId)
+                }
+            }
+            LibraNotificationTypes.SERVER_MENTION -> {
+                closeNavigationOverlays()
+                showCommunityServers = true
+            }
+            LibraNotificationTypes.ADMIN_BROADCAST,
+            LibraNotificationTypes.ADMIN_FEEDBACK -> {
+                showNotifications = false
+                announcementNotification = notification
+            }
+            else -> {
+                showNotifications = true
+            }
+        }
+    }
+
     // Keep the update prompt above all authentication/profile early returns.
     // Release metadata is public, so this works for signed-out and incomplete profiles too.
     updateState.release?.let { release ->
@@ -157,23 +308,69 @@ fun AppNavHost(
         )
     }
 
+    if (showNotificationRationale) {
+        NotificationPermissionRationaleDialog(
+            onAllowClick = {
+                showNotificationRationale = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            },
+            onDismiss = { showNotificationRationale = false }
+        )
+    }
+
     // Update checks must run independently of authentication/profile setup.
     // This lets a fresh install see a mandatory/new release before login or registration.
     LaunchedEffect(currentUser?.uid) {
         updateVm.checkForUpdate()
     }
 
+    LaunchedEffect(activeInAppBanner?.id) {
+        if (activeInAppBanner != null) {
+            delay(4500L)
+            activeInAppBanner = null
+        }
+    }
+
     LaunchedEffect(currentUser?.uid) {
         val uid = currentUser?.uid.orEmpty()
         if (uid.isBlank()) {
             unreadNotificationCount = 0
+            LibraNotificationJobService.cancelPeriodicSync(context)
             return@LaunchedEffect
         }
 
-        ServiceLocator.notificationRepository.observeNotifications(uid).collect { result ->
-            unreadNotificationCount = when (result) {
-                is com.libra.app.core.result.AppResult.Success -> result.data.count { !it.read }
-                is com.libra.app.core.result.AppResult.Error -> unreadNotificationCount
+        LibraNotificationJobService.schedulePeriodicSync(context)
+        ServiceLocator.notificationRepository.observeNotifications(uid, limit = 80).collect { result ->
+            when (result) {
+                is com.libra.app.core.result.AppResult.Success -> {
+                    val list = result.data
+                    unreadNotificationCount = list.count { !it.read }
+
+                    val selection = selectNewNotificationsForDelivery(
+                        notifications = list,
+                        hasBaseline = notificationStore.hasBaseline(uid),
+                        baselineMs = notificationStore.getBaselineTimestamp(uid),
+                        alreadyNotifiedIds = notificationStore.getNotifiedIds(uid),
+                        preferences = notificationStore.readPreferences()
+                    )
+                    if (selection.idsToMarkNotified.isNotEmpty() || !notificationStore.hasBaseline(uid)) {
+                        notificationStore.recordDeliverySelection(uid, selection)
+                    }
+                    selection.toDispatch.forEach { freshNotification ->
+                        val suppress = shouldSuppressActiveNotification(
+                            notification = freshNotification,
+                            isNotificationsScreenOpen = showNotifications,
+                            activeDirectConversationId = activeDirectConversationId
+                        )
+                        if (!suppress) {
+                            LibraNotificationHelper.dispatchSystemNotification(context, freshNotification)
+                            activeInAppBanner = freshNotification
+                        }
+                    }
+                }
+                is com.libra.app.core.result.AppResult.Error -> Unit
             }
         }
     }
@@ -244,7 +441,7 @@ fun AppNavHost(
     LaunchedEffect(profile.uid) {
         if (profile.uid == LIBRA_ADMIN_UID) {
             hasAdminAccess = true
-            adminPermissions = AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true)
+            adminPermissions = AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true, manageNotifications = true)
         } else {
             val role = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
             hasAdminAccess = role != null
@@ -255,6 +452,22 @@ fun AppNavHost(
     if (!profile.profileCompleted) {
         ProfileSetupScreen(profile = profile, onCompleted = authViewModel::checkSession, modifier = modifier.fillMaxSize())
         return
+    }
+
+    LaunchedEffect(profile.uid, pendingNotificationLaunch) {
+        val payload = pendingNotificationLaunch ?: return@LaunchedEffect
+        handleNotificationNavigation(
+            AppNotification(
+                id = payload.notificationId,
+                recipientId = profile.uid,
+                actorId = payload.actorId,
+                type = payload.type,
+                title = payload.title,
+                body = payload.body,
+                referenceId = payload.referenceId
+            )
+        )
+        onNotificationLaunchConsumed()
     }
 
     var lastSelectedBook by remember { mutableStateOf<Book?>(null) }
@@ -420,8 +633,13 @@ fun AppNavHost(
                         BottomNavTab.DM -> DirectMessagesScreen(
                             onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
                             onGlobalChatClick = { showGlobalChat = true },
-                            initialUser = selectedDirectUser, onInitialUserConsumed = { selectedDirectUser = null },
-                            onOpenProfile = ::openPublicProfile, canMessage = profile.moderation.canMessage,
+                            initialUser = selectedDirectUser,
+                            onInitialUserConsumed = { selectedDirectUser = null },
+                            initialConversationId = selectedDirectConversationId,
+                            onInitialConversationConsumed = { selectedDirectConversationId = null },
+                            onActiveConversationChanged = { activeDirectConversationId = it },
+                            onOpenProfile = ::openPublicProfile,
+                            canMessage = profile.moderation.canMessage,
                             onServersClick = { showCommunityServers = true }
                         )
                         BottomNavTab.LIBRARY -> {
@@ -491,30 +709,7 @@ fun AppNavHost(
                 NotificationsScreen(
                     onBack = { showNotifications = false },
                     onOpenProfile = ::openPublicProfile,
-                    onOpenNotification = { notification ->
-                        if (
-                            notification.referenceId.isNotBlank() &&
-                            (notification.type == "COMMENT" || notification.type == "COMMENT_REPLY")
-                        ) {
-                            notificationPostTargetId = notification.referenceId
-                            showNotifications = false
-                            selectedTab = BottomNavTab.HOME
-                        } else if (
-                            notification.referenceId.isNotBlank() &&
-                            (notification.type == "BOOK_COMMENT" || notification.type == "BOOK_COMMENT_REPLY")
-                        ) {
-                            scope.launch {
-                                val res = ServiceLocator.bookRepository.getBookById(notification.referenceId).first()
-                                val targetBook = (res as? com.libra.app.core.result.AppResult.Success)?.data
-                                if (targetBook != null) {
-                                    selectedBook = targetBook
-                                    showNotifications = false
-                                } else {
-                                    Toast.makeText(context, "Kitap bulunamadı.", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    },
+                    onOpenNotification = ::handleNotificationNavigation,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -780,6 +975,47 @@ fun AppNavHost(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        }
+
+        InAppNotificationBanner(
+            notification = activeInAppBanner,
+            onOpen = ::handleNotificationNavigation,
+            onDismiss = { activeInAppBanner = null },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+
+        announcementNotification?.let { announcement ->
+            AlertDialog(
+                onDismissRequest = { announcementNotification = null },
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = {
+                    Text(
+                        text = announcement.title.ifBlank { "Libra Duyurusu" },
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = announcement.body,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (announcement.actorName.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = "Gönderen: ${announcement.actorName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { announcementNotification = null }) {
+                        Text("Tamam")
+                    }
+                }
+            )
         }
     }
 }

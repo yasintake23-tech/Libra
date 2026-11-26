@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.AdminAudienceCategory
+import com.libra.app.domain.model.AdminNotificationCampaignLog
+import com.libra.app.domain.model.AdminNotificationDraft
 import com.libra.app.domain.model.AdminRole
 import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.AppReleaseInfo
@@ -15,6 +18,7 @@ import com.libra.app.domain.model.BookStatus
 import com.libra.app.domain.model.CommunityServer
 import com.libra.app.domain.model.CosmeticRole
 import com.libra.app.domain.model.GlobalChatMessage
+import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
 import com.libra.app.domain.model.ServerBan
@@ -405,6 +409,137 @@ fun summarizeAdminBookCategories(books: List<Book>): List<AdminBookCategorySumma
         )
     }
 
+internal const val LIBRA_PRIMARY_ADMIN_UID = "ZBkz2js9plg07zrny2PzLW80X3i2"
+private const val NEW_MEMBER_WINDOW_MILLIS = 14L * 24L * 60L * 60L * 1000L
+
+fun resolveAdminNotificationRecipients(
+    members: List<UserProfile>,
+    books: List<Book>,
+    posts: List<Post>,
+    stories: List<Story>,
+    adminRoleUserIds: Set<String>,
+    categoryType: AdminAudienceCategory,
+    categorySubId: String = "",
+    customUserIds: Collection<String> = emptyList(),
+    excludeUid: String = "",
+    nowMillis: Long = System.currentTimeMillis()
+): List<UserProfile> {
+    val eligibleMembers = members
+        .asSequence()
+        .filter { it.uid.isNotBlank() && it.uid != excludeUid && !it.moderation.isBanned }
+        .distinctBy { it.uid }
+        .toList()
+
+    return when (categoryType) {
+        AdminAudienceCategory.ALL -> eligibleMembers
+
+        AdminAudienceCategory.AUTHORS -> {
+            val authorIds = books.mapNotNull { it.ownerId.takeIf(String::isNotBlank) }.toSet()
+            eligibleMembers.filter { it.uid in authorIds || it.booksWrittenCount > 0 }
+        }
+
+        AdminAudienceCategory.CREATORS -> {
+            val creatorIds = buildSet {
+                posts.forEach { if (it.authorId.isNotBlank()) add(it.authorId) }
+                stories.forEach { if (it.authorId.isNotBlank()) add(it.authorId) }
+            }
+            eligibleMembers.filter { it.uid in creatorIds }
+        }
+
+        AdminAudienceCategory.NEW_MEMBERS -> {
+            eligibleMembers.filter { member ->
+                member.createdAt > 0L &&
+                    (nowMillis - member.createdAt) in 0L..NEW_MEMBER_WINDOW_MILLIS
+            }
+        }
+
+        AdminAudienceCategory.COSMETIC_ROLE -> {
+            val targetRoleId = categorySubId.trim()
+            if (targetRoleId.isBlank()) {
+                emptyList()
+            } else {
+                eligibleMembers.filter { targetRoleId in it.cosmeticRoleIds }
+            }
+        }
+
+        AdminAudienceCategory.BOOK_CATEGORY_AUTHORS -> {
+            val targetCategory = BookCategory.entries.firstOrNull {
+                it.name.equals(categorySubId.trim(), ignoreCase = true)
+            }
+            if (targetCategory == null) {
+                emptyList()
+            } else {
+                val categoryAuthorIds = books
+                    .asSequence()
+                    .filter { it.category == targetCategory && it.ownerId.isNotBlank() }
+                    .map { it.ownerId }
+                    .toSet()
+                eligibleMembers.filter { it.uid in categoryAuthorIds }
+            }
+        }
+
+        AdminAudienceCategory.ADMINS -> {
+            eligibleMembers.filter { it.uid in adminRoleUserIds || it.uid == LIBRA_PRIMARY_ADMIN_UID }
+        }
+
+        AdminAudienceCategory.CUSTOM_USERS -> {
+            val selectedIds = customUserIds.map(String::trim).filter(String::isNotBlank).toSet()
+            if (selectedIds.isEmpty()) {
+                emptyList()
+            } else {
+                eligibleMembers.filter { it.uid in selectedIds }
+            }
+        }
+    }
+}
+
+fun resolveAdminAudienceLabel(
+    categoryType: AdminAudienceCategory,
+    categorySubId: String = "",
+    cosmeticRoles: List<CosmeticRole> = emptyList(),
+    customCount: Int = 0
+): String = when (categoryType) {
+    AdminAudienceCategory.ALL -> categoryType.label
+    AdminAudienceCategory.AUTHORS -> categoryType.label
+    AdminAudienceCategory.CREATORS -> categoryType.label
+    AdminAudienceCategory.NEW_MEMBERS -> "Yeni Katılanlar (14 Gün)"
+    AdminAudienceCategory.COSMETIC_ROLE -> {
+        val role = cosmeticRoles.firstOrNull { it.id == categorySubId }
+        if (role != null) "Rozet: ${role.name}" else categoryType.label
+    }
+    AdminAudienceCategory.BOOK_CATEGORY_AUTHORS -> {
+        val bookCategory = BookCategory.entries.firstOrNull {
+            it.name.equals(categorySubId.trim(), ignoreCase = true)
+        }
+        if (bookCategory != null) "${bookCategory.displayName} Yazarları" else categoryType.label
+    }
+    AdminAudienceCategory.ADMINS -> categoryType.label
+    AdminAudienceCategory.CUSTOM_USERS -> "Seçili Kişiler ($customCount)"
+}
+
+fun filterAndSortAdminNotificationDrafts(
+    drafts: List<AdminNotificationDraft>,
+    query: String = "",
+    tagFilter: String = "Tümü"
+): List<AdminNotificationDraft> {
+    val cleanQuery = query.trim().lowercase()
+    val cleanTag = tagFilter.trim()
+    return drafts
+        .filter { draft ->
+            val matchesTag = cleanTag.isBlank() ||
+                cleanTag.equals("Tümü", ignoreCase = true) ||
+                draft.tagLabel.equals(cleanTag, ignoreCase = true)
+            val categoryLabel = AdminAudienceCategory.fromKey(draft.categoryType).label
+            val matchesQuery = cleanQuery.isBlank() ||
+                draft.title.lowercase().contains(cleanQuery) ||
+                draft.body.lowercase().contains(cleanQuery) ||
+                draft.tagLabel.lowercase().contains(cleanQuery) ||
+                categoryLabel.lowercase().contains(cleanQuery)
+            matchesTag && matchesQuery
+        }
+        .sortedByDescending { maxOf(it.updatedAt, it.createdAt, it.lastSentAt) }
+}
+
 class AdminViewModel(
     private val repo: AdminRepository,
     private val bookRepo: BookRepository,
@@ -473,6 +608,16 @@ class AdminViewModel(
     val globalChatActionMessage: StateFlow<String?> = _globalChatActionMessage.asStateFlow()
     private val _cosmeticRoles = MutableStateFlow<List<CosmeticRole>>(emptyList())
     val cosmeticRoles: StateFlow<List<CosmeticRole>> = _cosmeticRoles.asStateFlow()
+    private val _notificationDrafts = MutableStateFlow<List<AdminNotificationDraft>>(emptyList())
+    val notificationDrafts: StateFlow<List<AdminNotificationDraft>> = _notificationDrafts.asStateFlow()
+    private val _notificationLogs = MutableStateFlow<List<AdminNotificationCampaignLog>>(emptyList())
+    val notificationLogs: StateFlow<List<AdminNotificationCampaignLog>> = _notificationLogs.asStateFlow()
+    private val _adminRoleUserIds = MutableStateFlow<Set<String>>(emptySet())
+    val adminRoleUserIds: StateFlow<Set<String>> = _adminRoleUserIds.asStateFlow()
+    private val _notificationActionBusy = MutableStateFlow(false)
+    val notificationActionBusy: StateFlow<Boolean> = _notificationActionBusy.asStateFlow()
+    private val _notificationActionMessage = MutableStateFlow<String?>(null)
+    val notificationActionMessage: StateFlow<String?> = _notificationActionMessage.asStateFlow()
     private val _activeRelease = MutableStateFlow<AppUpdate?>(null)
     val activeRelease: StateFlow<AppUpdate?> = _activeRelease.asStateFlow()
     private val _releaseProgress = MutableStateFlow(0)
@@ -491,6 +636,9 @@ class AdminViewModel(
     private var storiesJob: Job? = null
     private var serversJob: Job? = null
     private var globalMessagesJob: Job? = null
+    private var notificationDraftsJob: Job? = null
+    private var notificationLogsJob: Job? = null
+    private var adminRoleIdsJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -516,6 +664,34 @@ class AdminViewModel(
         observeStories()
         observeServers()
         observeGlobalMessages()
+        observeNotificationHub()
+    }
+
+    private fun observeNotificationHub() {
+        notificationDraftsJob?.cancel()
+        notificationDraftsJob = viewModelScope.launch {
+            repo.observeAdminNotificationDrafts().collect { res ->
+                if (res is AppResult.Success) _notificationDrafts.value = res.data
+                else if (res is AppResult.Error) _error.value = res.error.message
+            }
+        }
+        notificationLogsJob?.cancel()
+        notificationLogsJob = viewModelScope.launch {
+            repo.observeAdminNotificationLogs().collect { res ->
+                if (res is AppResult.Success) _notificationLogs.value = res.data
+                else if (res is AppResult.Error) _error.value = res.error.message
+            }
+        }
+        adminRoleIdsJob?.cancel()
+        adminRoleIdsJob = viewModelScope.launch {
+            repo.observeAdminRoleUserIds().collect { res ->
+                if (res is AppResult.Success) _adminRoleUserIds.value = res.data
+            }
+        }
+    }
+
+    fun clearNotificationActionMessage() {
+        _notificationActionMessage.value = null
     }
 
     fun observeBooks() {
@@ -1751,5 +1927,216 @@ class AdminViewModel(
         val r = repo.assignCosmeticRole(uid, roleId, assigned)
         if (r is AppResult.Error) _error.value = r.error.message
         onDone(r is AppResult.Success)
+    }
+
+    // --- Admin Notification Broadcasts & Drafts ---
+
+    fun resolveNotificationRecipients(
+        categoryType: AdminAudienceCategory,
+        categorySubId: String = "",
+        customUserIds: Collection<String> = emptyList()
+    ): List<UserProfile> = resolveAdminNotificationRecipients(
+        members = _members.value,
+        books = _books.value,
+        posts = _posts.value,
+        stories = _stories.value,
+        adminRoleUserIds = _adminRoleUserIds.value,
+        categoryType = categoryType,
+        categorySubId = categorySubId,
+        customUserIds = customUserIds
+    )
+
+    fun saveNotificationDraft(
+        draft: AdminNotificationDraft,
+        onDone: (AdminNotificationDraft?) -> Unit = {}
+    ) = viewModelScope.launch {
+        val cleanTitle = draft.title.trim()
+        val cleanBody = draft.body.trim()
+        if (cleanTitle.isBlank() || cleanBody.isBlank()) {
+            _error.value = "Taslak için başlık ve bildirim mesajı zorunludur."
+            onDone(null)
+            return@launch
+        }
+        _notificationActionBusy.value = true
+        val now = System.currentTimeMillis()
+        val normalized = draft.copy(
+            title = cleanTitle,
+            body = cleanBody,
+            tagLabel = draft.tagLabel.trim().ifBlank { "Duyuru" },
+            createdAt = if (draft.createdAt > 0L) draft.createdAt else now,
+            updatedAt = now
+        )
+        when (val res = repo.saveAdminNotificationDraft(normalized)) {
+            is AppResult.Success -> {
+                val saved = res.data
+                if (saved.id.isNotBlank()) {
+                    val current = _notificationDrafts.value.filterNot { it.id == saved.id }
+                    _notificationDrafts.value = listOf(saved) + current
+                }
+                _notificationActionMessage.value = if (draft.id.isBlank()) {
+                    "Bildirim taslağı kaydedildi."
+                } else {
+                    "Bildirim taslağı güncellendi."
+                }
+                onDone(saved)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(null)
+            }
+        }
+        _notificationActionBusy.value = false
+    }
+
+    fun deleteNotificationDraft(
+        draftId: String,
+        onDone: (Boolean) -> Unit = {}
+    ) = viewModelScope.launch {
+        if (draftId.isBlank()) {
+            onDone(false)
+            return@launch
+        }
+        _notificationActionBusy.value = true
+        when (val res = repo.deleteAdminNotificationDraft(draftId)) {
+            is AppResult.Success -> {
+                _notificationDrafts.value = _notificationDrafts.value.filterNot { it.id == draftId }
+                _notificationActionMessage.value = "Bildirim taslağı silindi."
+                onDone(true)
+            }
+            is AppResult.Error -> {
+                _error.value = res.error.message
+                onDone(false)
+            }
+        }
+        _notificationActionBusy.value = false
+    }
+
+    fun sendAdminNotificationBroadcast(
+        title: String,
+        body: String,
+        categoryType: AdminAudienceCategory,
+        categorySubId: String = "",
+        customUserIds: List<String> = emptyList(),
+        tagLabel: String = "Duyuru",
+        senderUid: String,
+        senderName: String = "Libra Yönetim",
+        draftId: String = "",
+        overrideAllMembers: Boolean = false,
+        onDone: (Boolean, Int) -> Unit = { _, _ -> }
+    ) = viewModelScope.launch {
+        val cleanTitle = title.trim()
+        val cleanBody = body.trim()
+        if (cleanTitle.isBlank() || cleanBody.isBlank()) {
+            _error.value = "Bildirim başlığı ve içeriği boş bırakılamaz."
+            onDone(false, 0)
+            return@launch
+        }
+
+        val effectiveAudience = if (overrideAllMembers) AdminAudienceCategory.ALL else categoryType
+        val effectiveSubId = if (overrideAllMembers) "" else categorySubId
+        val effectiveCustomIds = if (overrideAllMembers) emptyList() else customUserIds
+
+        val recipients = resolveNotificationRecipients(
+            categoryType = effectiveAudience,
+            categorySubId = effectiveSubId,
+            customUserIds = effectiveCustomIds
+        )
+        if (recipients.isEmpty()) {
+            _error.value = "Seçilen kategoride bildirim gönderilecek uygun üye bulunamadı."
+            onDone(false, 0)
+            return@launch
+        }
+
+        _notificationActionBusy.value = true
+        val now = System.currentTimeMillis()
+        val effectiveActorUid = senderUid.trim().ifBlank { LIBRA_PRIMARY_ADMIN_UID }
+        val effectiveSenderName = senderName.trim().ifBlank { "Libra Yönetim" }
+        val effectiveTag = tagLabel.trim().ifBlank { "Duyuru" }
+        val categoryLabel = resolveAdminAudienceLabel(
+            categoryType = effectiveAudience,
+            categorySubId = effectiveSubId,
+            cosmeticRoles = _cosmeticRoles.value,
+            customCount = recipients.size
+        )
+
+        val notifications = recipients.map { recipient ->
+            AppNotification(
+                recipientId = recipient.uid,
+                actorId = effectiveActorUid,
+                actorName = effectiveSenderName,
+                type = LibraNotificationTypes.ADMIN_BROADCAST,
+                title = cleanTitle,
+                body = cleanBody,
+                referenceId = draftId,
+                category = effectiveTag,
+                createdAt = now,
+                read = false
+            )
+        }
+
+        when (val sendRes = notificationRepo.createBatch(notifications)) {
+            is AppResult.Success -> {
+                val deliveredCount = sendRes.data
+                val logEntry = AdminNotificationCampaignLog(
+                    title = cleanTitle,
+                    body = cleanBody,
+                    categoryType = effectiveAudience.key,
+                    categoryLabel = categoryLabel,
+                    tagLabel = effectiveTag,
+                    recipientCount = deliveredCount,
+                    senderUid = effectiveActorUid,
+                    senderName = effectiveSenderName,
+                    draftId = draftId,
+                    createdAt = now
+                )
+                repo.logAdminNotificationCampaign(logEntry)
+
+                if (draftId.isNotBlank()) {
+                    val existingDraft = _notificationDrafts.value.firstOrNull { it.id == draftId }
+                    if (existingDraft != null) {
+                        val updatedDraft = existingDraft.copy(
+                            sendCount = existingDraft.sendCount + 1,
+                            lastSentAt = now,
+                            updatedAt = now
+                        )
+                        repo.saveAdminNotificationDraft(updatedDraft)
+                        _notificationDrafts.value = _notificationDrafts.value.map {
+                            if (it.id == draftId) updatedDraft else it
+                        }
+                    }
+                }
+
+                _notificationActionMessage.value =
+                    "$deliveredCount üyeye bildirim gönderildi ($categoryLabel)."
+                onDone(true, deliveredCount)
+            }
+            is AppResult.Error -> {
+                _error.value = sendRes.error.message
+                onDone(false, 0)
+            }
+        }
+        _notificationActionBusy.value = false
+    }
+
+    fun sendAdminDraftNotification(
+        draft: AdminNotificationDraft,
+        senderUid: String,
+        senderName: String = "Libra Yönetim",
+        sendToEveryone: Boolean = false,
+        onDone: (Boolean, Int) -> Unit = { _, _ -> }
+    ) {
+        sendAdminNotificationBroadcast(
+            title = draft.title,
+            body = draft.body,
+            categoryType = AdminAudienceCategory.fromKey(draft.categoryType),
+            categorySubId = draft.categorySubId,
+            customUserIds = draft.customUserIds,
+            tagLabel = draft.tagLabel,
+            senderUid = senderUid,
+            senderName = senderName,
+            draftId = draft.id,
+            overrideAllMembers = sendToEveryone,
+            onDone = onDone
+        )
     }
 }

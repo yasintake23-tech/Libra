@@ -279,6 +279,9 @@ fun DirectMessagesScreen(
     onServersClick: () -> Unit,
     initialUser: UserProfile? = null,
     onInitialUserConsumed: () -> Unit = {},
+    initialConversationId: String? = null,
+    onInitialConversationConsumed: () -> Unit = {},
+    onActiveConversationChanged: (String?) -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     canMessage: Boolean = true,
@@ -293,6 +296,22 @@ fun DirectMessagesScreen(
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
 
+    val currentActiveConversationId = remember(selectedConversation?.id, selectedUser?.uid) {
+        selectedConversation?.id ?: selectedUser?.let { peer ->
+            val me = authUserId()
+            if (me.isNotBlank() && peer.uid.isNotBlank()) {
+                listOf(me, peer.uid).sorted().joinToString("_")
+            } else null
+        }
+    }
+
+    LaunchedEffect(currentActiveConversationId) {
+        onActiveConversationChanged(currentActiveConversationId)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onActiveConversationChanged(null) }
+    }
+
     LaunchedEffect(initialUser?.uid) {
         initialUser?.let {
             selectedUser = it
@@ -300,6 +319,32 @@ fun DirectMessagesScreen(
             viewModel.openConversation(it)
             viewModel.markRead(listOf(authUserId(), it.uid).sorted().joinToString("_"))
             onInitialUserConsumed()
+        }
+    }
+
+    LaunchedEffect(initialConversationId, conversations) {
+        val targetConvId = initialConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val matched = conversations.firstOrNull { it.id == targetConvId }
+        if (matched != null) {
+            if (matched.isGroup) {
+                selectedUser = null
+                selectedConversation = matched
+                viewModel.openConversation(matched)
+            } else {
+                val peerUid = matched.otherUserId
+                if (peerUid.isNotBlank()) {
+                    selectedConversation = null
+                    selectedUser = UserProfile(
+                        uid = peerUid,
+                        displayName = matched.otherUserName,
+                        username = matched.otherUserUsername,
+                        profileImageUrl = matched.otherUserPhotoUrl
+                    )
+                    viewModel.openConversation(selectedUser!!)
+                    viewModel.markRead(matched.id)
+                }
+            }
+            onInitialConversationConsumed()
         }
     }
 

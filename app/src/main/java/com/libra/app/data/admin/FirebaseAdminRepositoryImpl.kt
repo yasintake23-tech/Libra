@@ -2,9 +2,12 @@ package com.libra.app.data.admin
 
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.AdminNotificationCampaignLog
+import com.libra.app.domain.model.AdminNotificationDraft
 import com.libra.app.domain.model.AdminRole
 import com.libra.app.domain.model.CosmeticRole
 import com.libra.app.domain.model.UserModeration
@@ -20,6 +23,8 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
     private val users = firestore.collection("users")
     private val roles = firestore.collection("adminRoles")
     private val cosmetics = firestore.collection("cosmeticRoles")
+    private val notificationDrafts = firestore.collection("adminNotificationDrafts")
+    private val notificationLogs = firestore.collection("adminNotificationLogs")
     private val rtdb = FirebaseDatabase.getInstance("https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app")
 
     override fun observeMembers(): Flow<AppResult<List<UserProfile>>> = callbackFlow {
@@ -88,6 +93,101 @@ class FirebaseAdminRepositoryImpl : AdminRepository {
         if(assigned&&roleId !in ids)ids.add(roleId);if(!assigned)ids.remove(roleId)
         ref.update("cosmeticRoleIds",ids).await();AppResult.Success(Unit)
     }catch(e:Exception){AppResult.Error(AppError.Database("Kozmetik rol ataması değiştirilemedi.",e))}
+
+    override fun observeAdminRoleUserIds(): Flow<AppResult<Set<String>>> = callbackFlow {
+        val registration = roles.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                trySend(AppResult.Error(AppError.Database("Yönetici rolleri okunamadı.", error)))
+                return@addSnapshotListener
+            }
+            val ids = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                doc.id.takeIf { it.isNotBlank() }
+            }.toSet() + "ZBkz2js9plg07zrny2PzLW80X3i2"
+            trySend(AppResult.Success(ids))
+        }
+        awaitClose { registration.remove() }
+    }
+
+    override fun observeAdminNotificationDrafts(): Flow<AppResult<List<AdminNotificationDraft>>> = callbackFlow {
+        val registration = notificationDrafts
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+            .limit(150)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Bildirim taslakları yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(AdminNotificationDraft::class.java)?.copy(id = doc.id)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(list))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun saveAdminNotificationDraft(
+        draft: AdminNotificationDraft
+    ): AppResult<AdminNotificationDraft> = try {
+        val ref = if (draft.id.isBlank()) notificationDrafts.document() else notificationDrafts.document(draft.id)
+        val now = System.currentTimeMillis()
+        val saved = draft.copy(
+            id = ref.id,
+            title = draft.title.trim(),
+            body = draft.body.trim(),
+            tagLabel = draft.tagLabel.trim().ifBlank { "Duyuru" },
+            createdAt = if (draft.createdAt == 0L) now else draft.createdAt,
+            updatedAt = now
+        )
+        ref.set(saved).await()
+        AppResult.Success(saved)
+    } catch (e: Exception) {
+        AppResult.Error(AppError.Database("Bildirim taslağı kaydedilemedi.", e))
+    }
+
+    override suspend fun deleteAdminNotificationDraft(draftId: String): AppResult<Unit> {
+        if (draftId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz taslak kimliği."))
+        return try {
+            notificationDrafts.document(draftId).delete().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Bildirim taslağı silinemedi.", e))
+        }
+    }
+
+    override fun observeAdminNotificationLogs(
+        limit: Long
+    ): Flow<AppResult<List<AdminNotificationCampaignLog>>> = callbackFlow {
+        val registration = notificationLogs
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(limit.coerceIn(1L, 100L))
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(AppResult.Error(AppError.Database("Bildirim geçmişi yüklenemedi.", error)))
+                    return@addSnapshotListener
+                }
+                val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    runCatching {
+                        doc.toObject(AdminNotificationCampaignLog::class.java)?.copy(id = doc.id)
+                    }.getOrNull()
+                }
+                trySend(AppResult.Success(list))
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun logAdminNotificationCampaign(log: AdminNotificationCampaignLog): AppResult<Unit> = try {
+        val ref = if (log.id.isBlank()) notificationLogs.document() else notificationLogs.document(log.id)
+        val saved = log.copy(
+            id = ref.id,
+            createdAt = if (log.createdAt == 0L) System.currentTimeMillis() else log.createdAt
+        )
+        ref.set(saved).await()
+        AppResult.Success(Unit)
+    } catch (e: Exception) {
+        AppResult.Error(AppError.Database("Bildirim geçmişi kaydedilemedi.", e))
+    }
 
     private fun UserModeration.toPersistedMap(): Map<String, Any> = mapOf(
         "banned" to banned,

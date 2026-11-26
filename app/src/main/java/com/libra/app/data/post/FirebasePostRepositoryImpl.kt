@@ -331,26 +331,36 @@ class FirebasePostRepositoryImpl(
             }.await()
 
             if (nowLiked) {
-                val recipientId = postsRef.document(postId).get().await().getString("authorId").orEmpty()
+                val postSnap = postsRef.document(postId).get().await()
+                val recipientId = postSnap.getString("authorId").orEmpty()
                 if (recipientId.isNotBlank() && recipientId != user.uid) {
                     runCatching {
                         val actor = (userRepository.getUserProfileFresh(user.uid) as? AppResult.Success)?.data
-                        if (actor != null) {
-                            notificationRepository.create(
-                                AppNotification(
-                                    recipientId = recipientId,
-                                    actorId = user.uid,
-                                    actorName = actor.displayName,
-                                    actorUsername = actor.username,
-                                    actorPhotoUrl = actor.profileImageUrl,
-                                    type = "LIKE",
-                                    title = "Yeni beğeni",
-                                    body = actor.displayName + " gönderini beğendi.",
-                                    referenceId = postId,
-                                    createdAt = System.currentTimeMillis()
-                                )
-                            )
+                        val actorDisplay = actor?.displayName?.ifBlank { actor.username }
+                            ?: user.displayName?.ifBlank { "Bir kullanıcı" }
+                            ?: "Bir kullanıcı"
+                        val snippet = postSnap.getString("title").orEmpty().ifBlank {
+                            postSnap.getString("text").orEmpty().take(50)
+                        }.trim()
+                        val body = if (snippet.isNotBlank()) {
+                            "$actorDisplay \"$snippet\" gönderini beğendi."
+                        } else {
+                            "$actorDisplay gönderini beğendi."
                         }
+                        notificationRepository.create(
+                            AppNotification(
+                                recipientId = recipientId,
+                                actorId = user.uid,
+                                actorName = actorDisplay,
+                                actorUsername = actor?.username.orEmpty(),
+                                actorPhotoUrl = actor?.profileImageUrl ?: user.photoUrl?.toString().orEmpty(),
+                                type = "LIKE",
+                                title = "Yeni beğeni",
+                                body = body,
+                                referenceId = postId,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
                     }
                 }
             }

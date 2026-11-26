@@ -230,6 +230,7 @@ fun HomeScreen(
                 val targetId = initialCommentPostId ?: return@LaunchedEffect
                 val targetPost = data.posts.firstOrNull { it.id == targetId }
                 if (targetPost != null) {
+                    selectedSection = HomeSection.POSTS
                     selectedPost = targetPost
                     commentText = ""
                     onOpenComments(targetPost)

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -62,6 +63,7 @@ private val sections = listOf(
     "Hikâye işlemleri",
     "Sunucu işlemleri",
     "Genel chat işlemleri",
+    "Bildirimler",
     "Güncelleme ayarları"
 )
 
@@ -81,7 +83,8 @@ fun AdminPanelScreen(
         manageAdminRoles = true,
         manageCosmetics = true,
         sendFeedback = true,
-        manageUpdates = true
+        manageUpdates = true,
+        manageNotifications = true
     ),
     onOpenProfile: ((String) -> Unit)? = null,
     vm: AdminViewModel = viewModel()
@@ -99,6 +102,8 @@ fun AdminPanelScreen(
         val stories by vm.stories.collectAsState()
         val servers by vm.servers.collectAsState()
         val globalMessages by vm.globalMessages.collectAsState()
+        val notificationDrafts by vm.notificationDrafts.collectAsState()
+        val notificationLogs by vm.notificationLogs.collectAsState()
 
         var section by remember { mutableStateOf<String?>(null) }
         var member by remember { mutableStateOf<UserProfile?>(null) }
@@ -144,6 +149,7 @@ fun AdminPanelScreen(
                     section = null
                     globalChatOwnerFilter = null
                 }
+                section == "Bildirimler" -> section = null
                 section == "Güncelleme ayarları" -> section = null
                 member != null -> member = null
                 section != null -> section = null
@@ -332,6 +338,19 @@ fun AdminPanelScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            section == "Bildirimler" -> {
+                val currentDisplayName = members.firstOrNull { it.uid == currentUid }
+                    ?.displayName
+                    ?.ifBlank { "Libra Yönetim" }
+                    ?: "Libra Yönetim"
+                AdminNotificationsScreen(
+                    vm = vm,
+                    currentUid = currentUid,
+                    currentDisplayName = currentDisplayName,
+                    onBack = { section = null },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             section == "Güncelleme ayarları" -> {
                 UpdateSettingsPage(vm, { section = null }, Modifier.fillMaxSize())
             }
@@ -406,6 +425,7 @@ fun AdminPanelScreen(
                             "Hikâye işlemleri" -> permissions.manageStories
                             "Sunucu işlemleri" -> permissions.manageServers
                             "Genel chat işlemleri" -> permissions.manageGlobalChat
+                            "Bildirimler" -> permissions.manageNotifications || permissions.sendFeedback
                             "Güncelleme ayarları" -> permissions.manageUpdates
                             else -> false
                         }
@@ -416,6 +436,7 @@ fun AdminPanelScreen(
                             "Hikâye işlemleri" -> "${stories.size} hikâye • 24 saat akış, medya ve hikâye izinleri" to Icons.Default.ChatBubbleOutline
                             "Sunucu işlemleri" -> "${servers.size} sunucu • Kanallar, mesajlar, üyeler ve yasaklar" to Icons.Default.Groups
                             "Genel chat işlemleri" -> "${globalMessages.size} mesaj • Akış denetimi, duyuru ve mesaj izinleri" to Icons.Default.ChatBubbleOutline
+                            "Bildirimler" -> "${notificationDrafts.size} taslak • ${notificationLogs.size} kampanya • Toplu ve kategorili gönderim" to Icons.Default.Notifications
                             "Güncelleme ayarları" -> "APK yayınlama ve sürüm yönetimi" to Icons.Default.SystemUpdate
                             else -> "" to Icons.Default.Settings
                         }
@@ -1108,8 +1129,8 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
         "Moderatör" to AdminPermissionSet(manageMembers = true, manageBans = true, managePosts = true, manageStories = true, manageGlobalChat = true, sendFeedback = true),
         "Sunucu Moderatörü" to AdminPermissionSet(manageMembers = true, manageBans = true, manageServers = true, manageGlobalChat = true),
         "İçerik Editörü" to AdminPermissionSet(managePosts = true, manageStories = true, manageBooks = true),
-        "Yönetici" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, sendFeedback = true),
-        "CEO" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true)
+        "Yönetici" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, sendFeedback = true, manageNotifications = true),
+        "CEO" to AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true, manageNotifications = true)
     )
     val permissionItems = listOf(
         "Üye yönetimi" to Triple("Üyeleri görüntüleme ve üye yönetim ekranlarını kullanma.", perms.manageMembers, { v: Boolean -> perms = perms.copy(manageMembers = v) }),
@@ -1123,6 +1144,7 @@ private fun AdminRolePage(uid: String, vm: AdminViewModel, dismiss: () -> Unit) 
         "Yönetici rolü verme" to Triple("Yönetici rolleri verme, düzenleme ve kaldırma.", perms.manageAdminRoles, { v: Boolean -> perms = perms.copy(manageAdminRoles = v) }),
         "Kozmetik rol yönetimi" to Triple("Kozmetik rozet oluşturma ve kullanıcıya atama.", perms.manageCosmetics, { v: Boolean -> perms = perms.copy(manageCosmetics = v) }),
         "Geri bildirim / DM" to Triple("Yönetim bildirimi ve doğrudan mesaj gönderme.", perms.sendFeedback, { v: Boolean -> perms = perms.copy(sendFeedback = v) }),
+        "Bildirim yönetimi" to Triple("Toplu duyuru, kategorize edilmiş bildirim ve taslak kampanya yönetimi.", perms.manageNotifications, { v: Boolean -> perms = perms.copy(manageNotifications = v) }),
         "Uygulama güncellemeleri" to Triple("Yeni APK yayınlama ve aktif sürüm yönetimi.", perms.manageUpdates, { v: Boolean -> perms = perms.copy(manageUpdates = v) })
     )
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {

@@ -5,16 +5,21 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.Story
+import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.StorageRepository
 import com.libra.app.domain.repository.StoryRepository
+import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 class FirebaseStoryRepositoryImpl(
-    private val storageRepository: StorageRepository? = null
+    private val storageRepository: StorageRepository? = null,
+    private val userRepository: UserRepository? = null,
+    private val notificationRepository: NotificationRepository? = null
 ) : StoryRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val storiesRef get() = firestore.collection("stories")
@@ -119,6 +124,32 @@ class FirebaseStoryRepositoryImpl(
                     true
                 }
             }.await()
+            if (liked) {
+                val notifRepo = notificationRepository
+                val storyOwnerId = storyRef.get().await().getString("authorId").orEmpty()
+                if (notifRepo != null && storyOwnerId.isNotBlank() && storyOwnerId != userId) {
+                    runCatching {
+                        val actor = userRepository?.let { repo ->
+                            (repo.getUserProfileFresh(userId) as? AppResult.Success)?.data
+                        }
+                        val actorName = actor?.displayName?.ifBlank { actor.username } ?: "Bir kullanıcı"
+                        notifRepo.create(
+                            AppNotification(
+                                recipientId = storyOwnerId,
+                                actorId = userId,
+                                actorName = actorName,
+                                actorUsername = actor?.username.orEmpty(),
+                                actorPhotoUrl = actor?.profileImageUrl.orEmpty(),
+                                type = "STORY_LIKE",
+                                title = "Hikâyen beğenildi",
+                                body = "$actorName hikâyeni beğendi.",
+                                referenceId = storyId,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
             AppResult.Success(liked)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Hikâye beğenisi güncellenemedi.", e))

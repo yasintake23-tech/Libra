@@ -500,6 +500,7 @@ class RealtimeChatRepositoryImpl(
         }
 
         val profile = profileOrFallback(sender.uid, sender.displayName.orEmpty(), sender.photoUrl?.toString().orEmpty())
+        val groupName = memberSnapshot.child("groupName").getValue(String::class.java).orEmpty().ifBlank { "Grup sohbeti" }
         val members = memberSnapshot.child("participantIds").children.mapNotNull { it.getValue(String::class.java) }
         if (sender.uid !in members) return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
 
@@ -535,12 +536,40 @@ class RealtimeChatRepositoryImpl(
                 "directConversations/${sender.uid}/${conversationId}/updatedAt" to now,
                 "directConversations/${sender.uid}/${conversationId}/unreadCount" to 0
             )
-            members.filter { it != sender.uid }.forEach { memberUid ->
+            val recipients = members.filter { it != sender.uid }.distinct()
+            recipients.forEach { memberUid ->
                 updates["directConversations/${memberUid}/${conversationId}/lastMessage"] = last
                 updates["directConversations/${memberUid}/${conversationId}/updatedAt"] = now
                 updates["directConversations/${memberUid}/${conversationId}/unreadCount"] = ServerValue.increment(1)
             }
             root.updateChildren(updates).await()
+
+            if (recipients.isNotEmpty()) {
+                runCatching {
+                    val senderDisplay = profile.displayName.ifBlank { profile.username.ifBlank { "Bir kullanıcı" } }
+                    val previewText = when {
+                        clean.isNotBlank() -> "$senderDisplay: ${clean.take(100)}"
+                        sharedContent != null -> "$senderDisplay bir içerik paylaştı."
+                        mediaUrl.isNotBlank() -> "$senderDisplay bir medya gönderdi."
+                        else -> "$senderDisplay gruba mesaj gönderdi."
+                    }
+                    val groupNotifications = recipients.map { memberUid ->
+                        AppNotification(
+                            recipientId = memberUid,
+                            actorId = sender.uid,
+                            actorName = profile.displayName,
+                            actorUsername = profile.username,
+                            actorPhotoUrl = profile.profileImageUrl,
+                            type = "GROUP_MESSAGE",
+                            title = groupName,
+                            body = previewText,
+                            referenceId = conversationId,
+                            createdAt = now
+                        )
+                    }
+                    notificationRepository.createBatch(groupNotifications)
+                }
+            }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             cleanupMedia(mediaUrl)
@@ -695,6 +724,15 @@ class RealtimeChatRepositoryImpl(
             )
 
             runCatching {
+                val senderTitle = senderProfile.displayName.ifBlank {
+                    senderProfile.username.ifBlank { "Yeni mesaj" }
+                }
+                val messageBody = when {
+                    clean.isNotBlank() -> clean.take(120)
+                    sharedContent != null -> "Bir içerik paylaştı."
+                    mediaUrl.isNotBlank() -> "Bir medya paylaştı."
+                    else -> "Sana bir mesaj gönderdi."
+                }
                 notificationRepository.create(
                     AppNotification(
                         recipientId = recipientId,
@@ -703,8 +741,8 @@ class RealtimeChatRepositoryImpl(
                         actorUsername = senderProfile.username,
                         actorPhotoUrl = senderProfile.profileImageUrl,
                         type = "MESSAGE",
-                        title = "Yeni mesaj",
-                        body = senderProfile.displayName + " sana bir mesaj gönderdi.",
+                        title = senderTitle,
+                        body = messageBody,
                         referenceId = conversation,
                         createdAt = now
                     )

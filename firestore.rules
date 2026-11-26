@@ -142,6 +142,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /adminNotificationDrafts/{draftId} {
+      allow read, create, update, delete: if hasAdminPermission("manageNotifications") || hasAdminPermission("sendFeedback");
+    }
+
+    match /adminNotificationLogs/{logId} {
+      allow read, create: if hasAdminPermission("manageNotifications") || hasAdminPermission("sendFeedback");
+      allow update, delete: if false;
+    }
+
     match /{path=**}/members/{uid} {
       allow read: if request.auth != null && uid == request.auth.uid;
     }

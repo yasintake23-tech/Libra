@@ -244,6 +244,22 @@ class HomeViewModel(
         }
     }
 
+    fun ensurePostVisible(postId: String): Boolean {
+        if (postId.isBlank()) return false
+        val index = allPostsPool.indexOfFirst { it.id == postId }
+        if (index >= 0) {
+            if (index >= _visiblePostsCount.value) {
+                _visiblePostsCount.value = index + 1
+                updateVisiblePosts()
+            }
+            return true
+        }
+        val cached = rawPostsCache.firstOrNull { it.id == postId } ?: return false
+        allPostsPool = listOf(cached) + allPostsPool.filterNot { it.id == postId }
+        updateVisiblePosts()
+        return true
+    }
+
     private fun updateHome(transform: (HomeData) -> HomeData) {
         val current = (_uiState.value as? UiState.Success)?.data ?: return
         _uiState.value = UiState.Success(transform(current))

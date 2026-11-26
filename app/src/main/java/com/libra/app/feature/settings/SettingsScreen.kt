@@ -1,5 +1,9 @@
 package com.libra.app.feature.settings
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -70,6 +75,9 @@ import com.libra.app.domain.model.UserProfile
 import com.libra.app.feature.reader.ReaderPreferences
 import com.libra.app.feature.reader.ReaderPreferencesStore
 import com.libra.app.feature.reader.ReaderTheme
+import com.libra.app.notification.LibraNotificationHelper
+import com.libra.app.notification.NotificationPreferencesBottomSheet
+import com.libra.app.notification.NotificationPreferencesStore
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.UserAvatar
 import kotlin.math.roundToInt
@@ -93,13 +101,27 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val readerStore = remember { ReaderPreferencesStore(context) }
+    val notificationStore = remember(context) { NotificationPreferencesStore(context) }
 
     var searchQuery by remember { mutableStateOf("") }
     var readerPrefs by remember { mutableStateOf(readerStore.read()) }
+    var notificationPrefs by remember { mutableStateOf(notificationStore.readPreferences()) }
+    var hasSystemNotifPerm by remember { mutableStateOf(LibraNotificationHelper.hasNotificationPermission(context)) }
 
     var showReaderPrefsSheet by remember { mutableStateOf(false) }
+    var showNotificationPrefsSheet by remember { mutableStateOf(false) }
     var showAccountStatusDialog by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationStore.markPermissionPrompted()
+        hasSystemNotifPerm = granted || LibraNotificationHelper.hasNotificationPermission(context)
+        if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            LibraNotificationHelper.openAppNotificationSettings(context)
+        }
+    }
 
     val q = searchQuery.trim().lowercase()
     fun matches(vararg keywords: String): Boolean {
@@ -282,6 +304,26 @@ fun SettingsScreen(
                                     title = "Bildirim Merkezi",
                                     subtitle = "Son hareketlerini ve yanıtları görüntüle",
                                     onClick = onOpenNotifications
+                                )
+                            }
+
+                            if (matches("bildirim", "izin", "tercih", "mesaj", "beğeni")) {
+                                if (!first) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                first = false
+                                val notifSubtitle = when {
+                                    !hasSystemNotifPerm -> "Android bildirim izni kapalı • Açmak için dokun"
+                                    !notificationPrefs.masterEnabled -> "Uygulama bildirimleri duraklatıldı"
+                                    else -> "Mesaj, beğeni, yorum ve duyuru tercihleri"
+                                }
+                                InstagramSettingsRow(
+                                    icon = Icons.Default.NotificationsActive,
+                                    title = "Bildirim İzinleri ve Tercihler",
+                                    subtitle = notifSubtitle,
+                                    onClick = {
+                                        hasSystemNotifPerm = LibraNotificationHelper.hasNotificationPermission(context)
+                                        notificationPrefs = notificationStore.readPreferences()
+                                        showNotificationPrefsSheet = true
+                                    }
                                 )
                             }
 
@@ -571,6 +613,25 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
             }
         }
+    }
+
+    if (showNotificationPrefsSheet) {
+        NotificationPreferencesBottomSheet(
+            preferences = notificationPrefs,
+            systemPermissionGranted = hasSystemNotifPerm,
+            onPreferencesChanged = { updated ->
+                notificationPrefs = updated
+                notificationStore.savePreferences(updated)
+            },
+            onRequestOrOpenSystemPermission = {
+                if (!hasSystemNotifPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    LibraNotificationHelper.openAppNotificationSettings(context)
+                }
+            },
+            onDismiss = { showNotificationPrefsSheet = false }
+        )
     }
 
     if (showAccountStatusDialog) {
