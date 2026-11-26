@@ -27,13 +27,19 @@ import com.libra.app.feature.book.BookDetailViewModel
 import com.libra.app.feature.discover.BookReelsDiscoverViewModel
 import com.libra.app.feature.home.HomeSection
 import com.libra.app.feature.home.HomeViewModel
+import com.libra.app.feature.home.computeRelativeLuminance
+import com.libra.app.feature.home.computeStoryHeaderIsLight
+import com.libra.app.feature.home.darkenToAmbientArgb
 import com.libra.app.feature.home.isHomeImmersiveFullScreen
+import com.libra.app.feature.home.selectStoryTextBackdropColors
 import com.libra.app.feature.home.shouldHideHomeBottomBar
 import com.libra.app.ui.components.CommentSortOrder
 import com.libra.app.ui.components.LIBRA_COMMENT_QUICK_EMOJIS
 import com.libra.app.ui.components.LibraCommentItem
 import com.libra.app.ui.components.appendEmojiToCommentDraft
 import com.libra.app.ui.components.buildCommentThreads
+import com.libra.app.ui.components.computeCommentsSheetBottomInsetPx
+import com.libra.app.ui.components.computeCommentsSheetTopPaddingPx
 import com.libra.app.ui.components.formatCommentRelativeTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -398,6 +404,107 @@ class CommentsUiAndLogicTest {
             )
         )
         assertFalse(isHomeImmersiveFullScreen(HomeSection.POSTS, hasOpenStory = false))
+    }
+
+    @Test
+    fun commentsSheetInsetMath_preventsTopDoubleOffsetAndBottomOverflow() {
+        // Normal edge-to-edge Dialog anchored at y = 0
+        assertEquals(
+            124,
+            computeCommentsSheetTopPaddingPx(
+                safeTopInsetPx = 90,
+                dialogTopOnScreenPx = 0,
+                extraGapPx = 34
+            )
+        )
+        // OEM-shifted Dialog anchored below status bar cutout must not double-pad top
+        assertEquals(
+            34,
+            computeCommentsSheetTopPaddingPx(
+                safeTopInsetPx = 90,
+                dialogTopOnScreenPx = 90,
+                extraGapPx = 34
+            )
+        )
+
+        // When Dialog reports 0 navigationBars inside its own window, fallback to host nav inset
+        assertEquals(
+            64,
+            computeCommentsSheetBottomInsetPx(
+                dialogNavBottomPx = 0,
+                hostNavBottomPx = 64,
+                imeBottomPx = 0,
+                dialogBottomOverflowPx = 0
+            )
+        )
+        // If Dialog still extends past bottom of screen by 90px, push composer up cleanly
+        assertEquals(
+            154,
+            computeCommentsSheetBottomInsetPx(
+                dialogNavBottomPx = 64,
+                hostNavBottomPx = 64,
+                imeBottomPx = 0,
+                dialogBottomOverflowPx = 90
+            )
+        )
+        // IME (keyboard) takes precedence when larger than nav + overflow
+        assertEquals(
+            780,
+            computeCommentsSheetBottomInsetPx(
+                dialogNavBottomPx = 64,
+                hostNavBottomPx = 64,
+                imeBottomPx = 780,
+                dialogBottomOverflowPx = 90
+            )
+        )
+    }
+
+    @Test
+    fun storyContrastAndLayout_detectsLightTopOverlapVsCenteredLandscape() {
+        assertEquals(1.0f, computeRelativeLuminance(0xFFFFFFFF.toInt()), 0.001f)
+        assertEquals(0.0f, computeRelativeLuminance(0xFF000000.toInt()), 0.001f)
+        assertTrue(computeRelativeLuminance(darkenToAmbientArgb(0xFFFFFFFF.toInt())) < 0.3f)
+
+        // Vertical white screenshot covers top header -> header switches to dark ink
+        assertTrue(
+            computeStoryHeaderIsLight(
+                topSliceLuminance = 0.94f,
+                cardWidthPx = 1040,
+                cardHeightPx = 1920,
+                imageWidthPx = 1080,
+                imageHeightPx = 1920,
+                headerHeightPx = 240f
+            )
+        )
+
+        // Centered bright landscape image leaves dark ambient margin above it -> keep white header
+        assertFalse(
+            computeStoryHeaderIsLight(
+                topSliceLuminance = 0.96f,
+                cardWidthPx = 1040,
+                cardHeightPx = 1920,
+                imageWidthPx = 1600,
+                imageHeightPx = 900,
+                headerHeightPx = 240f
+            )
+        )
+
+        // Tall dark image keeps crisp white header
+        assertFalse(
+            computeStoryHeaderIsLight(
+                topSliceLuminance = 0.14f,
+                cardWidthPx = 1040,
+                cardHeightPx = 1920,
+                imageWidthPx = 1080,
+                imageHeightPx = 1920,
+                headerHeightPx = 240f
+            )
+        )
+
+        val colorsA = selectStoryTextBackdropColors("story_123")
+        val colorsB = selectStoryTextBackdropColors("story_123")
+        assertEquals(colorsA, colorsB)
+        assertTrue(colorsA.first != colorsA.second)
     }
 
     // --- Test Fakes ---

@@ -1,6 +1,12 @@
 package com.libra.app.ui.components
 
+import android.content.Context
+import android.graphics.Point
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
+import android.view.View
+import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -21,29 +27,27 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -66,9 +70,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -82,6 +88,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
@@ -96,6 +103,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
@@ -234,6 +243,80 @@ fun formatCommentRelativeTime(
     }
 }
 
+internal fun computeCommentsSheetTopPaddingPx(
+    safeTopInsetPx: Int,
+    dialogTopOnScreenPx: Int,
+    extraGapPx: Int
+): Int = (safeTopInsetPx - dialogTopOnScreenPx).coerceAtLeast(0) + extraGapPx.coerceAtLeast(0)
+
+internal fun computeCommentsSheetBottomInsetPx(
+    dialogNavBottomPx: Int,
+    hostNavBottomPx: Int,
+    imeBottomPx: Int,
+    dialogBottomOverflowPx: Int
+): Int = maxOf(
+    imeBottomPx.coerceAtLeast(0),
+    maxOf(dialogNavBottomPx.coerceAtLeast(0), hostNavBottomPx.coerceAtLeast(0)) +
+        dialogBottomOverflowPx.coerceAtLeast(0)
+)
+
+private fun resolveWindowBottomOnScreenPx(view: View): Int {
+    val wm = view.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+    if (wm != null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val boundsBottom = wm.currentWindowMetrics.bounds.bottom
+            if (boundsBottom > 0) return boundsBottom
+        } else {
+            val point = Point()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay?.getRealSize(point)
+            if (point.y > 0) return point.y
+        }
+    }
+    val root = view.rootView
+    val loc = IntArray(2)
+    root.getLocationOnScreen(loc)
+    return loc[1] + root.height
+}
+
+private fun configureCommentsDialogWindow(window: Window, dialogView: View) {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+    window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    window.setDimAmount(0f)
+    @Suppress("DEPRECATION")
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+    )
+    @Suppress("DEPRECATION")
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    @Suppress("DEPRECATION")
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    @Suppress("DEPRECATION")
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isNavigationBarContrastEnforced = false
+        window.isStatusBarContrastEnforced = false
+    }
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+        isAppearanceLightStatusBars = false
+    }
+    window.decorView.setPadding(0, 0, 0, 0)
+    ViewCompat.requestApplyInsets(window.decorView)
+    ViewCompat.requestApplyInsets(dialogView)
+}
+
 @Composable
 fun LibraCommentsBottomSheet(
     comments: List<LibraCommentItem>,
@@ -297,9 +380,13 @@ fun LibraCommentsBottomSheet(
         }
     }
 
-    val topSafeInsets = WindowInsets.statusBars
+    val hostView = LocalView.current
+    val hostTopInsetPx = WindowInsets.statusBars
         .union(WindowInsets.displayCutout)
-        .only(WindowInsetsSides.Top)
+        .getTop(density)
+    val hostNavBottomPx = WindowInsets.navigationBars
+        .getBottom(density)
+    val sheetExtraTopGapPx = with(density) { 14.dp.roundToPx() }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -308,21 +395,70 @@ fun LibraCommentsBottomSheet(
             decorFitsSystemWindows = false
         )
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        val dialogView = LocalView.current
+        val dialogWindow = (dialogView.parent as? DialogWindowProvider)?.window
+        var dialogTopOnScreenPx by remember { mutableIntStateOf(0) }
+        var dialogBoxHeightPx by remember { mutableIntStateOf(0) }
+        var screenBottomOnScreenPx by remember { mutableIntStateOf(0) }
+
+        DisposableEffect(dialogWindow, dialogView) {
+            dialogWindow?.let { w -> configureCommentsDialogWindow(w, dialogView) }
+            onDispose {}
+        }
+
         SideEffect {
-            dialogWindow?.let { w ->
-                @Suppress("DEPRECATION")
-                w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    w.isNavigationBarContrastEnforced = false
-                }
-            }
+            dialogWindow?.let { w -> configureCommentsDialogWindow(w, dialogView) }
+        }
+
+        val dialogTopInsetPx = WindowInsets.statusBars
+            .union(WindowInsets.displayCutout)
+            .getTop(density)
+        val dialogNavBottomPx = WindowInsets.navigationBars
+            .getBottom(density)
+        val dialogImeBottomPx = WindowInsets.ime
+            .getBottom(density)
+
+        val effectiveTopInsetPx = maxOf(dialogTopInsetPx, hostTopInsetPx)
+        val topPadDp = with(density) {
+            computeCommentsSheetTopPaddingPx(
+                safeTopInsetPx = effectiveTopInsetPx,
+                dialogTopOnScreenPx = dialogTopOnScreenPx,
+                extraGapPx = sheetExtraTopGapPx
+            ).toDp()
+        }
+        val effectiveScreenBottomPx = if (screenBottomOnScreenPx > 0) {
+            screenBottomOnScreenPx
+        } else {
+            val hostRoot = hostView.rootView
+            val hostLoc = IntArray(2)
+            hostRoot.getLocationOnScreen(hostLoc)
+            hostLoc[1] + hostRoot.height
+        }
+        val overflowBottomPx = if (dialogBoxHeightPx > 0 && effectiveScreenBottomPx > 0) {
+            ((dialogTopOnScreenPx + dialogBoxHeightPx) - effectiveScreenBottomPx).coerceAtLeast(0)
+        } else {
+            0
+        }
+        val bottomPadDp = with(density) {
+            computeCommentsSheetBottomInsetPx(
+                dialogNavBottomPx = dialogNavBottomPx,
+                hostNavBottomPx = hostNavBottomPx,
+                imeBottomPx = dialogImeBottomPx,
+                dialogBottomOverflowPx = overflowBottomPx
+            ).toDp()
         }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.48f))
+                .onGloballyPositioned { coords ->
+                    val loc = IntArray(2)
+                    dialogView.getLocationOnScreen(loc)
+                    dialogTopOnScreenPx = loc[1]
+                    dialogBoxHeightPx = coords.size.height
+                    screenBottomOnScreenPx = resolveWindowBottomOnScreenPx(dialogView)
+                }
+                .background(Color.Black.copy(alpha = 0.50f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -331,14 +467,13 @@ fun LibraCommentsBottomSheet(
         ) {
             val sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
             Surface(
-                modifier = modifier
+                modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .windowInsetsPadding(topSafeInsets)
-                    .padding(top = 24.dp)
+                    .fillMaxSize()
+                    .padding(top = topPadDp)
                     .graphicsLayer { translationY = sheetOffsetY.value }
                     .clip(sheetShape)
+                    .then(modifier)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -533,7 +668,8 @@ fun LibraCommentsBottomSheet(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 24.dp),
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(
@@ -637,7 +773,7 @@ fun LibraCommentsBottomSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                        .padding(bottom = bottomPadDp)
                 ) {
                     HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
 
