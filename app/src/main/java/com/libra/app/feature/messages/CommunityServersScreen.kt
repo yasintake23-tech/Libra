@@ -1,11 +1,20 @@
 package com.libra.app.feature.messages
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
-
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,61 +27,65 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.IntOffset
-import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.CommunityServer
-import com.libra.app.domain.model.ServerMessage
-import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.ServerCategory
 import com.libra.app.domain.model.ServerChannel
 import com.libra.app.domain.model.ServerChannelPermissionOverride
+import com.libra.app.domain.model.ServerMember
+import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ServerRoleDefinition
-import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.StorageUploadRequest
-import com.libra.app.ui.components.UserAvatar
 import com.libra.app.ui.animation.appleBouncy
+import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.theme.LibraLavender
+import com.libra.app.ui.theme.LibraLavenderDarkSurface
+import com.libra.app.ui.theme.LibraLavenderSurface
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -1535,7 +1548,27 @@ private fun ServerChatScreen(
     }
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val darkTheme = isSystemInDarkTheme()
+
+    var isSelectionMode by remember(server.id, channel.id) { mutableStateOf(false) }
+    var selectedMessageIds by remember(server.id, channel.id) { mutableStateOf<Set<String>>(emptySet()) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var highlightNonce by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedMessageIds = emptySet()
+    }
+
+    fun toggleSelection(messageId: String) {
+        val next = if (messageId in selectedMessageIds) selectedMessageIds - messageId else selectedMessageIds + messageId
+        selectedMessageIds = next
+        if (next.isEmpty()) isSelectionMode = false
+    }
+
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri ->
@@ -1620,61 +1653,123 @@ private fun ServerChatScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isEmpty()) return@LaunchedEffect
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val lastMessageId = messages.lastOrNull()?.id.orEmpty()
+    LaunchedEffect(lastMessageId, imeBottomPx) {
+        if (messages.isEmpty() || isSelectionMode) return@LaunchedEffect
 
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val shouldStickToBottom =
-            lastVisibleIndex < 0 || lastVisibleIndex >= messages.lastIndex - 3
+            imeBottomPx > 0 || lastVisibleIndex < 0 || lastVisibleIndex >= messages.lastIndex - 3
 
         if (shouldStickToBottom) {
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
 
+    LaunchedEffect(highlightedMessageId, highlightNonce) {
+        if (highlightedMessageId != null) {
+            delay(1700L)
+            highlightedMessageId = null
+        }
+    }
+
+    val deletableSelectedIds = remember(messages, selectedMessageIds, currentUid) {
+        messages.filter { it.id in selectedMessageIds && it.senderId == currentUid }.map { it.id }
+    }
+
     Column(modifier.fillMaxSize()) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
+            color = if (isSelectionMode) {
+                if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
             tonalElevation = 2.dp
         ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, "Kanallara dön")
-                }
-                Column(
+            if (isSelectionMode) {
+                Row(
                     Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { showServerInfo = true }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "# " + channel.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        serverName + " • " + members.size + " üye",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
-                if (server.ownerId == currentUid) {
-                    IconButton(onClick = { showManage = true }) {
-                        Icon(Icons.Default.Settings, "Sunucu yönetimi")
+                    IconButton(onClick = { isSelectionMode = false; selectedMessageIds = emptySet() }) {
+                        Icon(Icons.Default.Close, "Seçimi kapat")
+                    }
+                    Text("${selectedMessageIds.size} seçildi", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(
+                        enabled = selectedMessageIds.isNotEmpty(),
+                        onClick = {
+                            val copied = messages.filter { it.id in selectedMessageIds }
+                                .sortedBy { it.createdAt }
+                                .mapNotNull { m -> m.text.trim().takeIf { it.isNotBlank() }?.let { "${m.senderName.ifBlank { "Üye" }}: $it" } }
+                                .joinToString("\n")
+                            if (copied.isNotBlank()) {
+                                clipboard.setText(AnnotatedString(copied))
+                                Toast.makeText(context, "Seçilen mesajlar kopyalandı.", Toast.LENGTH_SHORT).show()
+                            }
+                            isSelectionMode = false
+                            selectedMessageIds = emptySet()
+                        }
+                    ) { Icon(Icons.Default.ContentCopy, "Kopyala") }
+                    IconButton(
+                        enabled = deletableSelectedIds.isNotEmpty(),
+                        onClick = { showBatchDeleteConfirm = true }
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            "Sil",
+                            tint = if (deletableSelectedIds.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                IconButton(onClick = { showMembers = true }) {
-                    Icon(Icons.Default.People, "Üyeler")
+            } else {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, "Kanallara dön")
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showServerInfo = true }
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            "# " + channel.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            serverName + " • " + members.size + " üye",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    if (messages.isNotEmpty()) {
+                        IconButton(onClick = { isSelectionMode = true }) {
+                            Icon(Icons.Default.CheckCircleOutline, "Mesajları seç")
+                        }
+                    }
+                    if (server.ownerId == currentUid) {
+                        IconButton(onClick = { showManage = true }) {
+                            Icon(Icons.Default.Settings, "Sunucu yönetimi")
+                        }
+                    }
+                    IconButton(onClick = { showMembers = true }) {
+                        Icon(Icons.Default.People, "Üyeler")
+                    }
                 }
             }
         }
@@ -1709,19 +1804,37 @@ private fun ServerChatScreen(
                     MessageDateSeparator(message.createdAt)
                 }
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
+                val isSelected = message.id in selectedMessageIds
+                val isHighlighted = highlightedMessageId == message.id
+                val rowBg by animateColorAsState(
+                    targetValue = when {
+                        isHighlighted -> if (darkTheme) Color(0xFF4C1D95) else Color(0xFFEDE9FE)
+                        isSelected -> if (darkTheme) Color(0xFF2E1065) else Color(0xFFF3E8FF)
+                        else -> Color.Transparent
+                    },
+                    label = "server_msg_highlight"
+                )
                 Box(
                     Modifier.fillMaxWidth()
-                        .pointerInput(message.id + "-swipe") {
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { _, amount ->
-                                    dragX = (dragX + amount).coerceIn(0f, 96f)
-                                },
-                                onDragEnd = {
-                                    if (dragX >= 64f) replyTarget = message
-                                    dragX = 0f
-                                },
-                                onDragCancel = { dragX = 0f }
-                            )
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(rowBg)
+                        .let { mod ->
+                            if (isSelectionMode) {
+                                mod.clickable { toggleSelection(message.id) }
+                            } else {
+                                mod.pointerInput(message.id + "-swipe") {
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { _, amount ->
+                                            dragX = (dragX + amount).coerceIn(0f, 96f)
+                                        },
+                                        onDragEnd = {
+                                            if (dragX >= 64f) replyTarget = message
+                                            dragX = 0f
+                                        },
+                                        onDragCancel = { dragX = 0f }
+                                    )
+                                }
+                            }
                         }
                 ) {
                     if (dragX > 0f) {
@@ -1749,6 +1862,20 @@ private fun ServerChatScreen(
                         horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
                         verticalAlignment = Alignment.Bottom
                     ) {
+                    if (isSelectionMode) {
+                        Surface(
+                            modifier = Modifier.padding(end = 6.dp, bottom = 6.dp).size(20.dp),
+                            shape = CircleShape,
+                            color = if (isSelected) LibraLavender else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.5.dp, if (isSelected) LibraLavender else MaterialTheme.colorScheme.outline)
+                        ) {
+                            if (isSelected) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                }
+                            }
+                        }
+                    }
                     if (message.senderId != currentUid) {
                         if (groupedWithPrevious) {
                             Spacer(Modifier.width(36.dp))
@@ -1757,14 +1884,16 @@ private fun ServerChatScreen(
                                 photoUrl = message.senderPhotoUrl,
                                 initials = message.senderName.take(1).uppercase(),
                                 size = 30.dp,
-                                onClick = { onOpenProfile(message.senderId) }
+                                onClick = {
+                                    if (isSelectionMode) toggleSelection(message.id) else onOpenProfile(message.senderId)
+                                }
                             )
                         }
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
                         color = when {
-                            message.mentionedUserIds.contains(currentUid) -> androidx.compose.ui.graphics.Color(0xFFFFE8D5)
+                            message.mentionedUserIds.contains(currentUid) -> Color(0xFFFFE8D5)
                             message.senderId == currentUid -> MaterialTheme.colorScheme.primaryContainer
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         },
@@ -1774,10 +1903,18 @@ private fun ServerChatScreen(
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp
                         ),
-                        modifier = Modifier.pointerInput(message.id + "-tap") {
+                        border = if (isSelected) BorderStroke(2.dp, LibraLavender) else null,
+                        modifier = Modifier.pointerInput(message.id + "-tap", isSelectionMode) {
                             detectTapGestures(
-                                onDoubleTap = { scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️", channelId = channel.id) } },
-                                onLongPress = { actionMessage = message }
+                                onTap = { if (isSelectionMode) toggleSelection(message.id) },
+                                onDoubleTap = {
+                                    if (isSelectionMode) toggleSelection(message.id)
+                                    else scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, "❤️", channelId = channel.id) }
+                                },
+                                onLongPress = {
+                                    if (isSelectionMode) toggleSelection(message.id)
+                                    else actionMessage = message
+                                }
                             )
                         }
                     ) {
@@ -1806,10 +1943,32 @@ private fun ServerChatScreen(
                                 }
                             }
                             if (message.replyToMessageId.isNotBlank()) {
-                                Surface(color = androidx.compose.ui.graphics.Color(0xFFFFE8D5), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                Surface(
+                                    color = Color(0xFFFFE8D5),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            if (isSelectionMode) {
+                                                toggleSelection(message.id)
+                                            } else {
+                                                val idx = findReplyTargetIndex(messages, message.replyToMessageId) { it.id }
+                                                if (idx >= 0) {
+                                                    scope.launch {
+                                                        listState.animateScrollToItem(idx)
+                                                        highlightedMessageId = message.replyToMessageId
+                                                        highlightNonce++
+                                                    }
+                                                } else {
+                                                    Toast.makeText(context, "Alıntılanan mesaj silinmiş veya görünmüyor.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                ) {
                                     Column(Modifier.padding(8.dp)) {
-                                        Text(message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" }, color = androidx.compose.ui.graphics.Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                                        Text(message.replyToText.ifBlank { "📷 Fotoğraf" }, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                        Text(message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" }, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                        Text(message.replyToText.ifBlank { "📷 Fotoğraf" }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 Spacer(Modifier.height(5.dp))
@@ -1948,7 +2107,7 @@ private fun ServerChatScreen(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
@@ -2046,11 +2205,56 @@ private fun ServerChatScreen(
         RichMessageActionSheet(
             canEdit = message.senderId == currentUid && message.mediaUrl.isBlank(),
             canDelete = message.senderId == currentUid,
+            previewText = message.text,
+            previewMediaUrl = message.mediaUrl,
+            isOwnMessage = message.senderId == currentUid,
+            selectedReaction = message.reactions[currentUid],
             onDismiss = { actionMessage = null },
             onReply = { replyTarget = message; actionMessage = null },
+            onSelectMultiple = {
+                actionMessage = null
+                isSelectionMode = true
+                selectedMessageIds = setOf(message.id)
+            },
             onReaction = { emoji -> scope.launch { chatRepository.toggleServerMessageReaction(server.id, message.id, emoji, channelId = channel.id) }; actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
             onDelete = { scope.launch { chatRepository.deleteServerMessage(server.id, message.id, channelId = channel.id) }; actionMessage = null }
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Mesajları Sil (${deletableSelectedIds.size})", fontWeight = FontWeight.Bold) },
+            text = {
+                val skipped = selectedMessageIds.size - deletableSelectedIds.size
+                val note = if (skipped > 0) " Başkasına ait $skipped mesaj atlanacak." else ""
+                Text("Seçilen ${deletableSelectedIds.size} mesaj kalıcı olarak silinecek.$note")
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        val ids = deletableSelectedIds
+                        showBatchDeleteConfirm = false
+                        isSelectionMode = false
+                        selectedMessageIds = emptySet()
+                        scope.launch {
+                            when (val result = chatRepository.deleteServerMessages(server.id, ids, channelId = channel.id)) {
+                                is AppResult.Success -> {
+                                    actionError = null
+                                    Toast.makeText(context, "${ids.size} mesaj silindi.", Toast.LENGTH_SHORT).show()
+                                }
+                                is AppResult.Error -> actionError = result.error.message
+                            }
+                        }
+                    }
+                ) { Text("Sil") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("Vazgeç") }
+            }
         )
     }
 

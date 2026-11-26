@@ -96,6 +96,92 @@ object NotificationSyncCoordinator {
             }
         }
     }
+
+    suspend fun runBackgroundSyncOnce(context: Context): Boolean {
+        val appContext = context.applicationContext
+        LibraNotificationSyncManager.ensureFirebaseInitialized(appContext)
+        val authUser = runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }.getOrNull()
+        val uid = authUser?.uid.orEmpty()
+        val prefs = NotificationPreferencesStore(appContext).readPreferences()
+        val hasPerm = LibraNotificationHelper.hasNotificationPermission(appContext)
+        if (uid.isBlank() || !prefs.masterEnabled || !hasPerm) return false
+
+        // Warm up auth token and RTDB connection on cold process wakeup
+        runCatching { authUser?.getIdToken(false)?.await() }
+        val db = runCatching {
+            FirebaseDatabase.getInstance(LIBRA_NOTIF_RTDB_URL).also { it.goOnline() }
+        }.getOrNull()
+
+        val firestoreUnread = when (
+            val res = com.libra.app.core.di.ServiceLocator.notificationRepository
+                .fetchUnreadNotifications(uid, limit = 100)
+        ) {
+            is com.libra.app.core.result.AppResult.Success -> {
+                processIncomingNotifications(
+                    context = appContext,
+                    uid = uid,
+                    notifications = res.data,
+                    updateUnreadBadgeCount = false
+                )
+                res.data
+            }
+            is com.libra.app.core.result.AppResult.Error -> emptyList()
+        }
+
+        // RTDB DM/Group fallback in case Firestore notification lagged or network returned partial
+        if (db != null) {
+            runCatching {
+                val convSnap = db.getReference("directConversations/$uid")
+                    .orderByChild("updatedAt")
+                    .limitToLast(25)
+                    .get()
+                    .await()
+                val clearedSnap = db.getReference("notifications/$uid/chatClearedAt")
+                    .get()
+                    .await()
+                val clearedMap = clearedSnap.children.associate { child ->
+                    child.key.orEmpty() to (child.getValue(Long::class.java) ?: 0L)
+                }
+                val conversations = convSnap.children.mapNotNull { child ->
+                    val convId = child.key.orEmpty()
+                    val otherUid = child.child("otherUserId").getValue(String::class.java).orEmpty()
+                    val isGroup = child.child("isGroup").getValue(Boolean::class.java) ?: false
+                    if (convId.isBlank() || (!isGroup && otherUid.isBlank())) return@mapNotNull null
+                    com.libra.app.domain.model.DirectConversation(
+                        id = convId,
+                        otherUserId = otherUid,
+                        otherUserName = child.child("otherUserName").getValue(String::class.java).orEmpty(),
+                        otherUserUsername = child.child("otherUserUsername").getValue(String::class.java).orEmpty(),
+                        otherUserPhotoUrl = child.child("otherUserPhotoUrl").getValue(String::class.java).orEmpty(),
+                        lastMessage = child.child("lastMessage").getValue(String::class.java).orEmpty(),
+                        updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: 0L,
+                        unreadCount = (child.child("unreadCount").getValue(Long::class.java) ?: 0L).toInt(),
+                        isGroup = isGroup,
+                        groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
+                        groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty()
+                    )
+                }
+                val store = NotificationPreferencesStore(appContext)
+                val fallback = buildRtdbFallbackDmNotifications(
+                    uid = uid,
+                    conversations = conversations,
+                    existingFirestoreChatNotifications = firestoreUnread,
+                    getLastDmNotifiedAt = { convId -> store.getLastDmNotifiedAt(uid, convId) },
+                    getClearedAt = { convId -> clearedMap[convId] ?: 0L },
+                    preferences = store.readPreferences()
+                )
+                if (fallback.isNotEmpty()) {
+                    processIncomingNotifications(
+                        context = appContext,
+                        uid = uid,
+                        notifications = fallback,
+                        updateUnreadBadgeCount = false
+                    )
+                }
+            }
+        }
+        return true
+    }
 }
 
 object LibraNotificationSyncManager {

@@ -111,6 +111,66 @@ fun shouldSuppressActiveNotification(
     return isChatType && notification.referenceId == activeDirectConversationId
 }
 
+fun buildRtdbFallbackDmNotifications(
+    uid: String,
+    conversations: List<com.libra.app.domain.model.DirectConversation>,
+    existingFirestoreChatNotifications: List<AppNotification>,
+    getLastDmNotifiedAt: (String) -> Long,
+    getClearedAt: (String) -> Long,
+    preferences: NotificationPreferencesState,
+    nowMs: Long = System.currentTimeMillis()
+): List<AppNotification> {
+    if (uid.isBlank() || conversations.isEmpty()) return emptyList()
+    val firestoreLatestByConv = mutableMapOf<String, Long>()
+    existingFirestoreChatNotifications.forEach { item ->
+        val isChat = item.type == LibraNotificationTypes.MESSAGE ||
+            item.type == LibraNotificationTypes.GROUP_MESSAGE
+        if (isChat && item.referenceId.isNotBlank()) {
+            val prev = firestoreLatestByConv[item.referenceId] ?: 0L
+            firestoreLatestByConv[item.referenceId] = maxOf(prev, item.createdAt)
+        }
+    }
+
+    val minRecentWindowMs = nowMs - 24L * 60L * 60L * 1000L
+    return conversations.mapNotNull { conv ->
+        if (conv.id.isBlank() || conv.unreadCount <= 0 || conv.updatedAt <= 0L) return@mapNotNull null
+        if (conv.updatedAt < minRecentWindowMs) return@mapNotNull null
+        val clearedAt = getClearedAt(conv.id)
+        if (conv.updatedAt <= clearedAt) return@mapNotNull null
+        val lastNotified = getLastDmNotifiedAt(conv.id)
+        if (conv.updatedAt <= lastNotified) return@mapNotNull null
+        val fsTs = firestoreLatestByConv[conv.id] ?: 0L
+        if (fsTs > 0L && kotlin.math.abs(fsTs - conv.updatedAt) <= 10_000L) return@mapNotNull null
+
+        val notifType = if (conv.isGroup) LibraNotificationTypes.GROUP_MESSAGE else LibraNotificationTypes.MESSAGE
+        if (!preferences.allowsType(notifType)) return@mapNotNull null
+
+        val senderDisplay = if (conv.isGroup) {
+            conv.groupName.ifBlank { "Grup sohbeti" }
+        } else {
+            conv.otherUserName.ifBlank {
+                conv.otherUserUsername.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Yeni mesaj"
+            }
+        }
+        val preview = conv.lastMessage.ifBlank { "Sana bir mesaj gönderdi." }
+
+        AppNotification(
+            id = "rtdb_${conv.id}_${conv.updatedAt}",
+            recipientId = uid,
+            actorId = if (conv.isGroup) "" else conv.otherUserId,
+            actorName = senderDisplay,
+            actorUsername = conv.otherUserUsername,
+            actorPhotoUrl = if (conv.isGroup) conv.groupPhotoUrl else conv.otherUserPhotoUrl,
+            type = notifType,
+            title = senderDisplay,
+            body = preview,
+            referenceId = conv.id,
+            createdAt = conv.updatedAt,
+            read = false
+        )
+    }.sortedBy { it.createdAt }
+}
+
 class NotificationPreferencesStore(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -141,6 +201,29 @@ class NotificationPreferencesStore(context: Context) {
     @Synchronized
     fun markPermissionPrompted() {
         prefs.edit().putBoolean(KEY_PERMISSION_PROMPTED, true).apply()
+    }
+
+    @Synchronized
+    fun wasBatteryPrompted(): Boolean = prefs.getBoolean(KEY_BATTERY_PROMPTED, false)
+
+    @Synchronized
+    fun markBatteryPrompted() {
+        prefs.edit().putBoolean(KEY_BATTERY_PROMPTED, true).apply()
+    }
+
+    @Synchronized
+    fun getLastDmNotifiedAt(uid: String, conversationId: String): Long =
+        if (uid.isBlank() || conversationId.isBlank()) 0L
+        else prefs.getLong(dmNotifiedKey(uid, conversationId), 0L)
+
+    @Synchronized
+    fun recordDmNotifiedAt(uid: String, conversationId: String, timestampMs: Long) {
+        if (uid.isBlank() || conversationId.isBlank() || timestampMs <= 0L) return
+        val key = dmNotifiedKey(uid, conversationId)
+        val prev = prefs.getLong(key, 0L)
+        if (timestampMs > prev) {
+            prefs.edit().putLong(key, timestampMs).apply()
+        }
     }
 
     @Synchronized
@@ -176,14 +259,27 @@ class NotificationPreferencesStore(context: Context) {
         } else {
             existingOrdered
         }
-        prefs.edit()
+        val editor = prefs.edit()
             .putLong(baselineKey(uid), selection.nextBaselineMs)
             .putString(notifiedIdsKey(uid), capped.joinToString(","))
-            .apply()
+
+        selection.toDispatch.forEach { item ->
+            val isChat = item.type == LibraNotificationTypes.MESSAGE ||
+                item.type == LibraNotificationTypes.GROUP_MESSAGE
+            if (isChat && item.referenceId.isNotBlank() && item.createdAt > 0L) {
+                val key = dmNotifiedKey(uid, item.referenceId)
+                val prev = prefs.getLong(key, 0L)
+                if (item.createdAt > prev) {
+                    editor.putLong(key, item.createdAt)
+                }
+            }
+        }
+        editor.apply()
     }
 
     private fun baselineKey(uid: String): String = "baseline_ms_$uid"
     private fun notifiedIdsKey(uid: String): String = "notified_ids_$uid"
+    private fun dmNotifiedKey(uid: String, convId: String): String = "dm_notified_${uid}_$convId"
 
     companion object {
         private const val PREFS_NAME = "libra_notification_prefs"
@@ -193,6 +289,7 @@ class NotificationPreferencesStore(context: Context) {
         private const val KEY_ANNOUNCEMENTS_ENABLED = "announcements_enabled"
         private const val KEY_BACKGROUND_SERVICE = "background_live_service_opt_in_v2"
         private const val KEY_PERMISSION_PROMPTED = "permission_prompted_v1"
+        private const val KEY_BATTERY_PROMPTED = "battery_prompted_v1"
         private const val MAX_STORED_IDS = 500
     }
 }

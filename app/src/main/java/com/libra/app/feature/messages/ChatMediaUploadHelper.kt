@@ -202,6 +202,46 @@ fun isMessageSeenByPeer(
         message.createdAt > 0L &&
         peerLastReadAt >= message.createdAt
 
+fun <T> findReplyTargetIndex(
+    messages: List<T>,
+    replyToMessageId: String,
+    idSelector: (T) -> String
+): Int {
+    if (replyToMessageId.isBlank() || messages.isEmpty()) return -1
+    return messages.indexOfFirst { idSelector(it) == replyToMessageId }
+}
+
+fun filterVisibleDirectMessages(
+    messages: List<DirectMessage>,
+    clearedAtMs: Long,
+    deletedMessageIds: Set<String>
+): List<DirectMessage> = messages.filter { msg ->
+    if (msg.id.isNotBlank() && msg.id in deletedMessageIds) return@filter false
+    if (clearedAtMs > 0L && msg.createdAt > 0L && msg.createdAt <= clearedAtMs) return@filter false
+    true
+}
+
+fun formatSelectedMessagesForCopy(
+    messages: List<DirectMessage>,
+    currentUid: String,
+    peerFallbackName: String
+): String = messages
+    .sortedBy { it.createdAt }
+    .mapNotNull { msg ->
+        val content = resolveShareableMessageText(msg).trim()
+        if (content.isBlank()) return@mapNotNull null
+        val sender = when {
+            msg.senderId == currentUid -> "Sen"
+            msg.senderName.isNotBlank() -> msg.senderName
+            peerFallbackName.isNotBlank() -> peerFallbackName
+            else -> "Üye"
+        }
+        val time = formatMessageHour(msg.createdAt)
+        val prefix = if (time.isNotBlank()) "[$time] $sender" else sender
+        "$prefix: $content"
+    }
+    .joinToString("\n")
+
 suspend fun prepareChatImageForUpload(
     context: Context,
     uri: Uri,

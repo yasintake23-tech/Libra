@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -55,12 +56,17 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Public
@@ -71,6 +77,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -89,6 +97,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -157,6 +166,7 @@ class DirectMessagesViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
     private var conversationJob: Job? = null
+    private var observedConversationId: String? = null
     private val pendingMessages = linkedMapOf<String, DirectMessage>()
 
     init {
@@ -258,14 +268,25 @@ class DirectMessagesViewModel : ViewModel() {
         viewModelScope.launch { repository.markDirectConversationRead(conversationId) }
     }
 
-    fun hideConversation(
+    fun clearConversation(
         conversationId: String,
+        removeFromInbox: Boolean,
         onComplete: (Boolean) -> Unit = {}
     ) {
+        if (observedConversationId == conversationId) {
+            pendingMessages.clear()
+            _messages.value = emptyList()
+        }
         viewModelScope.launch {
-            when (val result = repository.hideDirectConversation(conversationId)) {
+            when (val result = repository.clearDirectConversation(conversationId, removeFromInbox)) {
                 is AppResult.Success -> {
-                    _conversations.value = _conversations.value.filterNot { it.id == conversationId }
+                    if (removeFromInbox) {
+                        _conversations.value = _conversations.value.filterNot { it.id == conversationId }
+                    } else {
+                        _conversations.value = _conversations.value.map {
+                            if (it.id == conversationId) it.copy(lastMessage = "", unreadCount = 0) else it
+                        }
+                    }
                     _error.value = null
                     onComplete(true)
                 }
@@ -277,8 +298,14 @@ class DirectMessagesViewModel : ViewModel() {
         }
     }
 
+    fun hideConversation(
+        conversationId: String,
+        onComplete: (Boolean) -> Unit = {}
+    ) = clearConversation(conversationId, removeFromInbox = true, onComplete = onComplete)
+
     private fun observeConversation(id: String) {
         conversationJob?.cancel()
+        observedConversationId = id
         pendingMessages.clear()
         _messages.value = emptyList()
         _error.value = null
@@ -424,6 +451,32 @@ class DirectMessagesViewModel : ViewModel() {
             when (val result = repository.deleteDirectMessage(conversationId, messageId)) {
                 is AppResult.Success -> _error.value = null
                 is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }
+
+    fun deleteMessages(
+        conversationId: String,
+        messageIds: List<String>,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val targetSet = messageIds.toSet()
+        if (targetSet.isEmpty()) {
+            onComplete(true)
+            return
+        }
+        targetSet.forEach(pendingMessages::remove)
+        _messages.value = _messages.value.filterNot { it.id in targetSet }
+        viewModelScope.launch {
+            when (val result = repository.deleteDirectMessages(conversationId, messageIds)) {
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(true)
+                }
+                is AppResult.Error -> {
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
             }
         }
     }
@@ -641,6 +694,8 @@ fun DirectMessagesScreen(
             onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(liveConv.id, url, type, text, reply, onComplete) },
             onEdit = { id, text -> viewModel.edit(liveConv.id, id, text) },
             onDelete = { id -> viewModel.delete(liveConv.id, id) },
+            onDeleteBatch = { ids, done -> viewModel.deleteMessages(liveConv.id, ids, done) },
+            onClearConversation = { done -> viewModel.clearConversation(liveConv.id, removeFromInbox = false, onComplete = done) },
             onReaction = { id, emoji -> viewModel.react(liveConv.id, id, emoji) },
             onMarkRead = { viewModel.markRead(liveConv.id) },
             onForwardMessage = { msg, targetConv, toGlobal, done ->
@@ -672,6 +727,8 @@ fun DirectMessagesScreen(
             onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendMedia(user.uid, url, type, text, reply, onComplete) },
             onEdit = { id, text -> viewModel.edit(dmConvId, id, text) },
             onDelete = { id -> viewModel.delete(dmConvId, id) },
+            onDeleteBatch = { ids, done -> viewModel.deleteMessages(dmConvId, ids, done) },
+            onClearConversation = { done -> viewModel.clearConversation(dmConvId, removeFromInbox = false, onComplete = done) },
             onReaction = { id, emoji -> viewModel.react(dmConvId, id, emoji) },
             onMarkRead = { viewModel.markRead(dmConvId) },
             onForwardMessage = { msg, targetConv, toGlobal, done ->
@@ -1164,20 +1221,21 @@ fun DirectMessagesScreen(
         val label = if (targetConv.isGroup) targetConv.groupName.ifBlank { "bu grubu" } else targetConv.otherUserName.ifBlank { "bu sohbeti" }
         AlertDialog(
             onDismissRequest = { confirmDeleteConversation = null },
-            title = { Text("Sohbeti Sil") },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Sohbeti Kalıcı Sil", fontWeight = FontWeight.Bold) },
             text = {
-                Text("\"$label\" sohbetini mesaj kutundan kaldırmak istiyor musun? Yeni mesaj geldiğinde sohbet tekrar görünür.")
+                Text("\"$label\" sohbetindeki tüm mesajların ve medyaların kalıcı olarak silinecek, geçmiş tamamen sıfırlanacak. Sohbeti tekrar açtığında sıfırdan başlar.")
             },
             confirmButton = {
                 Button(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     onClick = {
-                        viewModel.hideConversation(targetConv.id) { ok ->
-                            if (ok) Toast.makeText(context, "Sohbet kaldırıldı.", Toast.LENGTH_SHORT).show()
+                        viewModel.clearConversation(targetConv.id, removeFromInbox = true) { ok ->
+                            if (ok) Toast.makeText(context, "Sohbet tamamen silindi.", Toast.LENGTH_SHORT).show()
                         }
                         confirmDeleteConversation = null
                     }
-                ) { Text("Kaldır") }
+                ) { Text("Kalıcı Sil") }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDeleteConversation = null }) { Text("Vazgeç") }
@@ -1430,6 +1488,8 @@ private fun DirectConversationScreen(
     onSendMedia: (String, String, String, DirectMessage?, (Boolean) -> Unit) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    onDeleteBatch: (List<String>, (Boolean) -> Unit) -> Unit = { ids, done -> ids.forEach(onDelete); done(true) },
+    onClearConversation: ((Boolean) -> Unit) -> Unit = { it(false) },
     onReaction: (String, String) -> Unit,
     onMarkRead: () -> Unit = {},
     onForwardMessage: (DirectMessage, DirectConversation?, Boolean, (Boolean) -> Unit) -> Unit,
@@ -1437,8 +1497,6 @@ private fun DirectConversationScreen(
     canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
-
     val darkTheme = isSystemInDarkTheme()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -1451,6 +1509,20 @@ private fun DirectConversationScreen(
     var editingMessage by remember { mutableStateOf<DirectMessage?>(null) }
     var actionMessage by remember { mutableStateOf<DirectMessage?>(null) }
     var shareTargetMessage by remember { mutableStateOf<DirectMessage?>(null) }
+
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var showClearChatConfirm by remember { mutableStateOf(false) }
+    var showConversationMenu by remember { mutableStateOf(false) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var highlightNonce by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedMessageIds = emptySet()
+    }
+    BackHandler(enabled = !isSelectionMode, onBack = onBack)
 
     var mediaUploading by remember { mutableStateOf(false) }
     var mediaProgress by remember { mutableIntStateOf(0) }
@@ -1466,6 +1538,18 @@ private fun DirectConversationScreen(
 
     val conversationId = conversationIdOverride ?: remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
+
+    fun toggleMessageSelection(messageId: String) {
+        if (messageId.isBlank() || messageId.startsWith("local-")) return
+        runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+        val updated = if (messageId in selectedMessageIds) {
+            selectedMessageIds - messageId
+        } else {
+            selectedMessageIds + messageId
+        }
+        selectedMessageIds = updated
+        if (updated.isEmpty()) isSelectionMode = false
+    }
 
     fun startImageUpload(uri: Uri) {
         mediaUploadJob?.cancel()
@@ -1563,14 +1647,38 @@ private fun DirectConversationScreen(
     }
 
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val lastMessageId = messages.lastOrNull()?.id.orEmpty()
+    val selectableMessageIds = remember(messages) {
+        messages.filter { !it.id.startsWith("local-") }.map { it.id }.toSet()
+    }
+    val showScrollToBottom by remember {
+        derivedStateOf { listState.canScrollForward }
+    }
 
-    LaunchedEffect(messages.size, imeBottomPx) {
-        if (messages.isNotEmpty()) {
+    LaunchedEffect(lastMessageId, imeBottomPx) {
+        if (messages.isNotEmpty() && !isSelectionMode) {
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
 
-    LaunchedEffect(conversationId, messages.lastOrNull()?.id) {
+    LaunchedEffect(messages) {
+        if (selectedMessageIds.isNotEmpty()) {
+            val pruned = selectedMessageIds.intersect(selectableMessageIds)
+            if (pruned != selectedMessageIds) {
+                selectedMessageIds = pruned
+                if (pruned.isEmpty()) isSelectionMode = false
+            }
+        }
+    }
+
+    LaunchedEffect(highlightedMessageId, highlightNonce) {
+        if (highlightedMessageId != null) {
+            delay(1700L)
+            highlightedMessageId = null
+        }
+    }
+
+    LaunchedEffect(conversationId, lastMessageId) {
         val lastMessage = messages.lastOrNull()
         if (lastMessage != null && lastMessage.senderId != currentUid) {
             onMarkRead()
@@ -1592,65 +1700,177 @@ private fun DirectConversationScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Aesthetic Top Header
+        // Aesthetic Top Header (transforms into contextual batch-action bar in selection mode)
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface
+            color = if (isSelectionMode) {
+                if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
         ) {
             Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-                    }
-                    UserAvatar(
-                        photoUrl = user.profileImageUrl,
-                        initials = user.initials,
-                        size = 42.dp,
-                        onClick = { if (!isGroup) onOpenProfile() }
-                    )
-                    Column(
+                if (isSelectionMode) {
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 10.dp)
-                            .let { mod -> if (isGroup) mod else mod.clickable(onClick = onOpenProfile) }
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = user.displayName.ifBlank { "Libra Üyesi" },
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = if (isGroup) {
-                                if (groupMemberCount > 0) "$groupMemberCount katılımcı • Grup sohbeti" else "Grup sohbeti"
-                            } else {
-                                user.handle
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (!isGroup) {
                         IconButton(
-                            onClick = onOpenProfile,
-                            modifier = Modifier.appleBouncy(pressedScale = 0.88f, onClick = onOpenProfile)
+                            onClick = {
+                                isSelectionMode = false
+                                selectedMessageIds = emptySet()
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Seçimi Kapat")
+                        }
+                        Text(
+                            text = "${selectedMessageIds.size} seçildi",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 6.dp)
+                        )
+                        val allSelected = selectableMessageIds.isNotEmpty() &&
+                            selectedMessageIds.size == selectableMessageIds.size
+                        TextButton(
+                            enabled = selectableMessageIds.isNotEmpty(),
+                            onClick = {
+                                selectedMessageIds = if (allSelected) emptySet() else selectableMessageIds
+                            }
+                        ) {
+                            Text(
+                                text = if (allSelected) "Temizle" else "Tümü",
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                            )
+                        }
+                        IconButton(
+                            enabled = selectedMessageIds.isNotEmpty(),
+                            onClick = {
+                                val chosen = messages.filter { it.id in selectedMessageIds }
+                                val formatted = formatSelectedMessagesForCopy(
+                                    messages = chosen,
+                                    currentUid = currentUid,
+                                    peerFallbackName = user.displayName
+                                )
+                                if (formatted.isNotBlank()) {
+                                    clipboard.setText(AnnotatedString(formatted))
+                                    Toast.makeText(context, "${chosen.size} mesaj kopyalandı.", Toast.LENGTH_SHORT).show()
+                                }
+                                isSelectionMode = false
+                                selectedMessageIds = emptySet()
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Kopyala")
+                        }
+                        IconButton(
+                            enabled = selectedMessageIds.isNotEmpty(),
+                            onClick = { showBatchDeleteConfirm = true }
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Profili Gör",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = "Seçilenleri Sil",
+                                tint = MaterialTheme.colorScheme.error
                             )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        }
+                        UserAvatar(
+                            photoUrl = user.profileImageUrl,
+                            initials = user.initials,
+                            size = 42.dp,
+                            onClick = { if (!isGroup) onOpenProfile() }
+                        )
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 10.dp)
+                                .let { mod -> if (isGroup) mod else mod.clickable(onClick = onOpenProfile) }
+                        ) {
+                            Text(
+                                text = user.displayName.ifBlank { "Libra Üyesi" },
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (isGroup) {
+                                    if (groupMemberCount > 0) "$groupMemberCount katılımcı • Grup sohbeti" else "Grup sohbeti"
+                                } else {
+                                    user.handle
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (!isGroup) {
+                            IconButton(
+                                onClick = onOpenProfile,
+                                modifier = Modifier.appleBouncy(pressedScale = 0.88f, onClick = onOpenProfile)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Profili Gör",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showConversationMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Sohbet seçenekleri",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showConversationMenu,
+                                onDismissRequest = { showConversationMenu = false },
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ) {
+                                if (selectableMessageIds.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Mesajları Seç") },
+                                        leadingIcon = { Icon(Icons.Default.CheckCircleOutline, contentDescription = null) },
+                                        onClick = {
+                                            showConversationMenu = false
+                                            isSelectionMode = true
+                                        }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Sohbeti Sıfırla", color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.DeleteOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    },
+                                    onClick = {
+                                        showConversationMenu = false
+                                        showClearChatConfirm = true
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -1675,16 +1895,46 @@ private fun DirectConversationScreen(
             }
         }
 
-        // Messages List
-        LazyColumn(
-            state = listState,
+        // Messages List + Empty Slate + Floating Scroll-to-Bottom Pill
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+                .fillMaxWidth()
         ) {
-            itemsIndexed(messages, key = { _, msg -> msg.id }) { index, message ->
+            if (messages.isEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 28.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Sohbet sıfırdan başlıyor ✨",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = "Burada henüz mesaj yok. İlk mesajı yazarak konuşmayı başlatabilirsin.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                itemsIndexed(messages, key = { _, msg -> msg.id }) { index, message ->
                 val groupPos = remember(messages, index, currentUid, isGroup) {
                     computeDirectMessageGrouping(
                         messages = messages,
@@ -1696,6 +1946,17 @@ private fun DirectConversationScreen(
                 val mine = message.senderId == currentUid
                 val replyPreview = message.replyToMessageId.isNotBlank()
                 val myReaction = message.reactions[currentUid]
+                val isSelected = message.id in selectedMessageIds
+                val isHighlighted = highlightedMessageId == message.id
+
+                val highlightContainerColor by animateColorAsState(
+                    targetValue = when {
+                        isHighlighted -> if (darkTheme) Color(0xFF4C1D95) else Color(0xFFEDE9FE)
+                        isSelected -> if (darkTheme) Color(0xFF2E1065) else Color(0xFFF3E8FF)
+                        else -> Color.Transparent
+                    },
+                    label = "message_highlight_bg"
+                )
 
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
                 var swipeHapticFired by remember(message.id) { mutableStateOf(false) }
@@ -1745,32 +2006,44 @@ private fun DirectConversationScreen(
                 }
 
                 val openActionMenu = {
-                    runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
-                    actionMessage = message
+                    if (isSelectionMode) {
+                        toggleMessageSelection(message.id)
+                    } else {
+                        runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                        actionMessage = message
+                    }
                 }
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .pointerInput(message.id) {
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { _, amount ->
-                                    dragX = (dragX + amount).coerceIn(0f, 96f)
-                                    if (dragX >= 58f && !swipeHapticFired) {
-                                        swipeHapticFired = true
-                                        runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
-                                    }
-                                },
-                                onDragCancel = {
-                                    dragX = 0f
-                                    swipeHapticFired = false
-                                },
-                                onDragEnd = {
-                                    if (dragX >= 58f) replyTarget = message
-                                    dragX = 0f
-                                    swipeHapticFired = false
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(highlightContainerColor)
+                        .let { mod ->
+                            if (isSelectionMode) {
+                                mod.clickable { toggleMessageSelection(message.id) }
+                            } else {
+                                mod.pointerInput(message.id) {
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { _, amount ->
+                                            dragX = (dragX + amount).coerceIn(0f, 96f)
+                                            if (dragX >= 58f && !swipeHapticFired) {
+                                                swipeHapticFired = true
+                                                runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            dragX = 0f
+                                            swipeHapticFired = false
+                                        },
+                                        onDragEnd = {
+                                            if (dragX >= 58f) replyTarget = message
+                                            dragX = 0f
+                                            swipeHapticFired = false
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                 ) {
                     if (dragX > 10f) {
@@ -1797,17 +2070,48 @@ private fun DirectConversationScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(vertical = 1.dp)
                             .offset { IntOffset(dragX.roundToInt(), 0) },
                         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
                         verticalAlignment = Alignment.Bottom
                     ) {
+                        if (isSelectionMode) {
+                            Surface(
+                                modifier = Modifier
+                                    .padding(start = 4.dp, end = 8.dp, bottom = 6.dp)
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .clickable { toggleMessageSelection(message.id) },
+                                shape = CircleShape,
+                                color = if (isSelected) LibraLavender else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    1.5.dp,
+                                    if (isSelected) LibraLavender else MaterialTheme.colorScheme.outline
+                                )
+                            ) {
+                                if (isSelected) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Seçili",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         if (!mine) {
                             if (groupPos.showAvatar) {
                                 UserAvatar(
                                     photoUrl = message.senderPhotoUrl.ifBlank { user.profileImageUrl },
                                     initials = (message.senderName.ifBlank { user.displayName }).take(1).uppercase(),
                                     size = 30.dp,
-                                    onClick = { if (!isGroup) onOpenProfile() }
+                                    onClick = {
+                                        if (isSelectionMode) toggleMessageSelection(message.id)
+                                        else if (!isGroup) onOpenProfile()
+                                    }
                                 )
                             } else {
                                 Spacer(Modifier.width(30.dp))
@@ -1835,16 +2139,26 @@ private fun DirectConversationScreen(
                                 modifier = Modifier
                                     .clip(bubbleShape)
                                     .combinedClickable(
-                                        onClick = {},
+                                        onClick = {
+                                            if (isSelectionMode) toggleMessageSelection(message.id)
+                                        },
                                         onDoubleClick = {
-                                            runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
-                                            onReaction(message.id, "❤️")
+                                            if (isSelectionMode) {
+                                                toggleMessageSelection(message.id)
+                                            } else {
+                                                runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                                onReaction(message.id, "❤️")
+                                            }
                                         },
                                         onLongClick = openActionMenu
                                     ),
                                 color = if (mine) sentBubbleColor else receivedBubbleColor,
                                 shape = bubbleShape,
-                                border = if (mine) null else receivedBubbleBorder
+                                border = when {
+                                    isSelected -> BorderStroke(2.dp, if (mine) Color.White else LibraLavender)
+                                    mine -> null
+                                    else -> receivedBubbleBorder
+                                }
                             ) {
                                 val primaryTextColor = if (mine) sentBubbleTextColor else MaterialTheme.colorScheme.onSurface
                                 val secondaryTextColor = if (mine) sentTimestampColor else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1867,7 +2181,32 @@ private fun DirectConversationScreen(
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(bottom = 6.dp),
+                                                .padding(bottom = 6.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    if (isSelectionMode) {
+                                                        toggleMessageSelection(message.id)
+                                                    } else {
+                                                        val targetIdx = findReplyTargetIndex(
+                                                            messages = messages,
+                                                            replyToMessageId = message.replyToMessageId
+                                                        ) { it.id }
+                                                        if (targetIdx >= 0) {
+                                                            runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                                                            scope.launch {
+                                                                listState.animateScrollToItem(targetIdx)
+                                                                highlightedMessageId = message.replyToMessageId
+                                                                highlightNonce++
+                                                            }
+                                                        } else {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "Alıntılanan mesaj silinmiş veya sohbet geçmişinde yok.",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    }
+                                                },
                                             shape = RoundedCornerShape(12.dp),
                                             color = quoteBg
                                         ) {
@@ -1951,8 +2290,14 @@ private fun DirectConversationScreen(
                                                             .height(140.dp)
                                                             .clip(RoundedCornerShape(10.dp))
                                                             .combinedClickable(
-                                                                onClick = { showSharedImageFullscreen = true },
-                                                                onDoubleClick = { onReaction(message.id, "❤️") },
+                                                                onClick = {
+                                                                    if (isSelectionMode) toggleMessageSelection(message.id)
+                                                                    else showSharedImageFullscreen = true
+                                                                },
+                                                                onDoubleClick = {
+                                                                    if (isSelectionMode) toggleMessageSelection(message.id)
+                                                                    else onReaction(message.id, "❤️")
+                                                                },
                                                                 onLongClick = openActionMenu
                                                             ),
                                                         contentScale = ContentScale.Crop
@@ -2079,10 +2424,17 @@ private fun DirectConversationScreen(
                                                         .heightIn(min = 120.dp, max = 290.dp)
                                                         .clip(imgShape)
                                                         .combinedClickable(
-                                                            onClick = { showDmImageFullscreen = true },
+                                                            onClick = {
+                                                                if (isSelectionMode) toggleMessageSelection(message.id)
+                                                                else showDmImageFullscreen = true
+                                                            },
                                                             onDoubleClick = {
-                                                                runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
-                                                                onReaction(message.id, "❤️")
+                                                                if (isSelectionMode) {
+                                                                    toggleMessageSelection(message.id)
+                                                                } else {
+                                                                    runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                                                    onReaction(message.id, "❤️")
+                                                                }
                                                             },
                                                             onLongClick = openActionMenu
                                                         ),
@@ -2229,6 +2581,42 @@ private fun DirectConversationScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+            }
+
+            AnimatedVisibility(
+                visible = showScrollToBottom && messages.isNotEmpty(),
+                enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                exit = fadeOut() + scaleOut(targetScale = 0.85f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 14.dp, bottom = 12.dp)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(
+                            pressedScale = 0.86f,
+                            onClick = {
+                                if (messages.isNotEmpty()) {
+                                    scope.launch { listState.animateScrollToItem(messages.lastIndex) }
+                                }
+                            }
+                        ),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    shadowElevation = 4.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "En alta git",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
@@ -2547,10 +2935,11 @@ private fun DirectConversationScreen(
 
     actionMessage?.let { message ->
         val mine = message.senderId == currentUid
+        val isPendingLocal = message.id.startsWith("local-")
         val shareableText = resolveShareableMessageText(message)
         RichMessageActionSheet(
-            canEdit = mine && message.mediaUrl.isBlank() && message.sharedContent == null,
-            canDelete = mine,
+            canEdit = mine && !isPendingLocal && message.mediaUrl.isBlank() && message.sharedContent == null,
+            canDelete = !isPendingLocal,
             previewText = message.text,
             previewMediaUrl = message.mediaUrl.ifBlank { message.sharedContent?.mediaUrl.orEmpty() },
             previewSharedTitle = message.sharedContent?.title.orEmpty(),
@@ -2568,6 +2957,13 @@ private fun DirectConversationScreen(
                 replyTarget = message
                 actionMessage = null
             },
+            onSelectMultiple = if (!isPendingLocal) {
+                {
+                    actionMessage = null
+                    isSelectionMode = true
+                    selectedMessageIds = setOf(message.id)
+                }
+            } else null,
             onReaction = { emoji ->
                 onReaction(message.id, emoji)
                 actionMessage = null
@@ -2591,8 +2987,69 @@ private fun DirectConversationScreen(
             },
             onDelete = {
                 onDelete(message.id)
-                Toast.makeText(context, "Mesaj silindi.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Mesaj kalıcı olarak silindi.", Toast.LENGTH_SHORT).show()
                 actionMessage = null
+            }
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        val chosen = messages.filter { it.id in selectedMessageIds }
+        val ownCount = chosen.count { it.senderId == currentUid }
+        val peerCount = (chosen.size - ownCount).coerceAtLeast(0)
+        val confirmBody = when {
+            peerCount == 0 -> "Seçilen $ownCount mesajın ve varsa medyaları kalıcı olarak herkesten silinecek."
+            ownCount == 0 -> "Seçilen $peerCount gelen mesaj sohbetinden kalıcı olarak temizlenecek."
+            else -> "Seçilen mesajlardan senin gönderdiğin $ownCount mesaj herkesten kalıcı silinecek, gelen $peerCount mesaj ise sohbetinden temizlenecek."
+        }
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Seçilen Mesajları Sil (${chosen.size})", fontWeight = FontWeight.Bold) },
+            text = { Text(confirmBody) },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        val ids = selectedMessageIds.toList()
+                        showBatchDeleteConfirm = false
+                        isSelectionMode = false
+                        selectedMessageIds = emptySet()
+                        onDeleteBatch(ids) { ok ->
+                            if (ok) Toast.makeText(context, "${ids.size} mesaj silindi.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) { Text("Kalıcı Sil") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("Vazgeç") }
+            }
+        )
+    }
+
+    if (showClearChatConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearChatConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Sohbeti Sıfırla", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Bu sohbette gönderdiğin tüm mesajlar ve fotoğraflar kalıcı olarak silinecek, tüm sohbet geçmişin sıfırlanacak.")
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        showClearChatConfirm = false
+                        onClearConversation { ok ->
+                            if (ok) {
+                                Toast.makeText(context, "Sohbet tamamen sıfırlandı.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                ) { Text("Sıfırla") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearChatConfirm = false }) { Text("Vazgeç") }
             }
         )
     }

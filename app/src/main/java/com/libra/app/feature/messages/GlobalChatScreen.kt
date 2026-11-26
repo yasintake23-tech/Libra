@@ -1,29 +1,45 @@
 package com.libra.app.feature.messages
 
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -35,7 +51,13 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.GlobalChatMessage
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.theme.LibraLavender
+import com.libra.app.ui.theme.LibraLavenderDarkSurface
+import com.libra.app.ui.theme.LibraLavenderDarkText
+import com.libra.app.ui.theme.LibraLavenderSurface
+import com.libra.app.ui.theme.LibraLavenderText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -89,6 +111,19 @@ class GlobalChatViewModel : ViewModel() {
         }
     }
 
+    fun deleteBatch(ids: List<String>, onComplete: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        when (val result = repository.deleteGlobalMessages(ids)) {
+            is AppResult.Success -> {
+                _error.value = null
+                onComplete(true)
+            }
+            is AppResult.Error -> {
+                _error.value = result.error.message
+                onComplete(false)
+            }
+        }
+    }
+
     fun react(id: String, emoji: String) = viewModelScope.launch {
         when (val result = repository.toggleGlobalMessageReaction(id, emoji)) {
             is AppResult.Success -> _error.value = null
@@ -103,10 +138,12 @@ fun GlobalChatScreen(
     viewModel: GlobalChatViewModel = viewModel(),
     onOpenProfile: (String) -> Unit = {},
     canMessage: Boolean = true,
+    isAdminModerator: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
+    val darkTheme = isSystemInDarkTheme()
     var draft by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<GlobalChatMessage?>(null) }
     var actionMessage by remember { mutableStateOf<GlobalChatMessage?>(null) }
@@ -117,10 +154,29 @@ fun GlobalChatScreen(
     var uploading by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
     var mediaError by remember { mutableStateOf<String?>(null) }
+
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var highlightNonce by remember { mutableIntStateOf(0) }
+
     val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
+
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedMessageIds = emptySet()
+    }
+
+    fun toggleSelection(messageId: String) {
+        val next = if (messageId in selectedMessageIds) selectedMessageIds - messageId else selectedMessageIds + messageId
+        selectedMessageIds = next
+        if (next.isEmpty()) isSelectionMode = false
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -152,16 +208,80 @@ fun GlobalChatScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val lastMessageId = messages.lastOrNull()?.id.orEmpty()
+    LaunchedEffect(lastMessageId, imeBottomPx) {
+        if (messages.isNotEmpty() && !isSelectionMode) listState.animateScrollToItem(messages.lastIndex)
+    }
+
+    LaunchedEffect(highlightedMessageId, highlightNonce) {
+        if (highlightedMessageId != null) {
+            delay(1700L)
+            highlightedMessageId = null
+        }
+    }
+
+    val deletableSelectedIds = remember(messages, selectedMessageIds, currentUid, isAdminModerator) {
+        messages.filter { it.id in selectedMessageIds && (it.senderId == currentUid || isAdminModerator) }.map { it.id }
     }
 
     Column(modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
-            Column(Modifier.weight(1f)) {
-                Text("Genel Chat", fontWeight = FontWeight.Bold)
-                Text("Tüm Libra üyeleri", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (isSelectionMode) {
+                if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ) {
+            if (isSelectionMode) {
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { isSelectionMode = false; selectedMessageIds = emptySet() }) {
+                        Icon(Icons.Default.Close, "Seçimi Kapat")
+                    }
+                    Text("${selectedMessageIds.size} seçildi", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(
+                        enabled = selectedMessageIds.isNotEmpty(),
+                        onClick = {
+                            val copied = messages.filter { it.id in selectedMessageIds }
+                                .sortedBy { it.createdAt }
+                                .mapNotNull { m -> m.text.trim().takeIf { it.isNotBlank() }?.let { "${m.senderName.ifBlank { "Üye" }}: $it" } }
+                                .joinToString("\n")
+                            if (copied.isNotBlank()) {
+                                clipboard.setText(AnnotatedString(copied))
+                                Toast.makeText(context, "Seçilen mesajlar kopyalandı.", Toast.LENGTH_SHORT).show()
+                            }
+                            isSelectionMode = false
+                            selectedMessageIds = emptySet()
+                        }
+                    ) { Icon(Icons.Default.ContentCopy, "Kopyala") }
+                    IconButton(
+                        enabled = deletableSelectedIds.isNotEmpty(),
+                        onClick = { showBatchDeleteConfirm = true }
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            "Sil",
+                            tint = if (deletableSelectedIds.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
+                    Column(Modifier.weight(1f)) {
+                        Text("Genel Chat", fontWeight = FontWeight.Bold)
+                        Text("Tüm Libra üyeleri", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (messages.isNotEmpty()) {
+                        IconButton(onClick = { isSelectionMode = true }) {
+                            Icon(Icons.Default.CheckCircleOutline, "Mesajları Seç")
+                        }
+                    }
+                }
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
@@ -181,36 +301,103 @@ fun GlobalChatScreen(
         LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages, key = { it.id }) { message ->
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
+                val isSelected = message.id in selectedMessageIds
+                val isHighlighted = highlightedMessageId == message.id
+                val rowBg by animateColorAsState(
+                    targetValue = when {
+                        isHighlighted -> if (darkTheme) Color(0xFF4C1D95) else Color(0xFFEDE9FE)
+                        isSelected -> if (darkTheme) Color(0xFF2E1065) else Color(0xFFF3E8FF)
+                        else -> Color.Transparent
+                    },
+                    label = "global_msg_highlight"
+                )
                 Row(
                     Modifier.fillMaxWidth()
-                        .pointerInput(message.id + "-swipe") {
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { _, amount -> dragX = (dragX + amount).coerceIn(0f, 96f) },
-                                onDragEnd = { if (dragX >= 64f) replyTarget = message; dragX = 0f }
-                            )
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(rowBg)
+                        .let { mod ->
+                            if (isSelectionMode) {
+                                mod.clickable { toggleSelection(message.id) }
+                            } else {
+                                mod.pointerInput(message.id + "-swipe") {
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { _, amount -> dragX = (dragX + amount).coerceIn(0f, 96f) },
+                                        onDragEnd = { if (dragX >= 64f) replyTarget = message; dragX = 0f }
+                                    )
+                                }
+                            }
                         }
                         .offset { IntOffset(dragX.roundToInt(), 0) },
                     horizontalArrangement = if (message.senderId == currentUid) Arrangement.End else Arrangement.Start,
                     verticalAlignment = Alignment.Bottom
                 ) {
+                    if (isSelectionMode) {
+                        Surface(
+                            modifier = Modifier.padding(end = 6.dp, bottom = 6.dp).size(20.dp),
+                            shape = CircleShape,
+                            color = if (isSelected) LibraLavender else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.5.dp, if (isSelected) LibraLavender else MaterialTheme.colorScheme.outline)
+                        ) {
+                            if (isSelected) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                }
+                            }
+                        }
+                    }
                     if (message.senderId != currentUid) {
-                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp, onClick = { onOpenProfile(message.senderId) })
+                        UserAvatar(message.senderPhotoUrl, message.senderName.take(1).uppercase(), size = 30.dp, onClick = {
+                            if (isSelectionMode) toggleSelection(message.id) else onOpenProfile(message.senderId)
+                        })
                         Spacer(Modifier.width(6.dp))
                     }
                     Surface(
                         color = if (message.senderId == currentUid) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.pointerInput(message.id + "-tap") {
-                            detectTapGestures(onDoubleTap = { viewModel.react(message.id, "❤️") }, onLongPress = { actionMessage = message })
+                        border = if (isSelected) BorderStroke(2.dp, LibraLavender) else null,
+                        modifier = Modifier.pointerInput(message.id + "-tap", isSelectionMode) {
+                            detectTapGestures(
+                                onTap = { if (isSelectionMode) toggleSelection(message.id) },
+                                onDoubleTap = {
+                                    if (isSelectionMode) toggleSelection(message.id)
+                                    else viewModel.react(message.id, "❤️")
+                                },
+                                onLongPress = {
+                                    if (isSelectionMode) toggleSelection(message.id)
+                                    else actionMessage = message
+                                }
+                            )
                         }
                     ) {
                         Column(Modifier.widthIn(max = 320.dp).padding(6.dp)) {
                             if (message.senderId != currentUid) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp, 4.dp).clickable { onOpenProfile(message.senderId) })
                             if (message.replyToMessageId.isNotBlank()) {
-                                Surface(color = androidx.compose.ui.graphics.Color(0xFFFFE8D5), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                Surface(
+                                    color = Color(0xFFFFE8D5),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            if (isSelectionMode) {
+                                                toggleSelection(message.id)
+                                            } else {
+                                                val idx = findReplyTargetIndex(messages, message.replyToMessageId) { it.id }
+                                                if (idx >= 0) {
+                                                    scope.launch {
+                                                        listState.animateScrollToItem(idx)
+                                                        highlightedMessageId = message.replyToMessageId
+                                                        highlightNonce++
+                                                    }
+                                                } else {
+                                                    Toast.makeText(context, "Alıntılanan mesaj silinmiş veya görünmüyor.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                ) {
                                     Column(Modifier.padding(8.dp)) {
-                                        Text(message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" }, color = androidx.compose.ui.graphics.Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                                        Text(message.replyToText.ifBlank { "📷 Fotoğraf" }, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                        Text(message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" }, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                        Text(message.replyToText.ifBlank { "📷 Fotoğraf" }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 Spacer(Modifier.height(5.dp))
@@ -255,7 +442,13 @@ fun GlobalChatScreen(
             RichReplyBanner("Mesaj düzenleniyor", it.text, { editingMessage = null; draft = "" })
         }
 
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(enabled = canMessage && !uploading && editingMessage == null, onClick = { picker.launch("image/*") }) { Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf") }
             OutlinedTextField(
                 value = draft,
@@ -279,14 +472,54 @@ fun GlobalChatScreen(
     }
 
     actionMessage?.let { message ->
+        val canDelete = message.senderId == currentUid || isAdminModerator
         RichMessageActionSheet(
             canEdit = message.senderId == currentUid && message.mediaUrl.isBlank(),
-            canDelete = message.senderId == currentUid,
+            canDelete = canDelete,
+            previewText = message.text,
+            previewMediaUrl = message.mediaUrl,
+            isOwnMessage = message.senderId == currentUid,
+            selectedReaction = message.reactions[currentUid],
             onDismiss = { actionMessage = null },
             onReply = { replyTarget = message; actionMessage = null },
+            onSelectMultiple = {
+                actionMessage = null
+                isSelectionMode = true
+                selectedMessageIds = setOf(message.id)
+            },
             onReaction = { emoji -> viewModel.react(message.id, emoji); actionMessage = null },
             onEdit = { editingMessage = message; draft = message.text; actionMessage = null },
             onDelete = { viewModel.delete(message.id); actionMessage = null }
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Mesajları Sil (${deletableSelectedIds.size})", fontWeight = FontWeight.Bold) },
+            text = {
+                val skipped = selectedMessageIds.size - deletableSelectedIds.size
+                val note = if (skipped > 0) " Yetkin olmayan $skipped mesaj atlanacak." else ""
+                Text("Seçilen ${deletableSelectedIds.size} mesaj kalıcı olarak silinecek.$note")
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        val ids = deletableSelectedIds
+                        showBatchDeleteConfirm = false
+                        isSelectionMode = false
+                        selectedMessageIds = emptySet()
+                        viewModel.deleteBatch(ids) { ok ->
+                            if (ok) Toast.makeText(context, "${ids.size} mesaj silindi.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) { Text("Sil") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("Vazgeç") }
+            }
         )
     }
 }

@@ -146,6 +146,7 @@ fun AppNavHost(
     var activeInAppBanner by remember { mutableStateOf<AppNotification?>(null) }
     var announcementNotification by remember { mutableStateOf<AppNotification?>(null) }
     var showNotificationRationale by remember { mutableStateOf(false) }
+    var showBatteryOptPrompt by remember { mutableStateOf(false) }
 
     val notificationStore = remember(context) { NotificationPreferencesStore(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -160,6 +161,10 @@ fun AppNavHost(
                 uid = uid,
                 allowStartForegroundService = true
             )
+            if (!LibraNotificationHelper.isIgnoringBatteryOptimizations(context) && !notificationStore.wasBatteryPrompted()) {
+                notificationStore.markBatteryPrompted()
+                showBatteryOptPrompt = true
+            }
         }
     }
 
@@ -218,6 +223,14 @@ fun AppNavHost(
             } else {
                 notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        } else if (
+            LibraNotificationHelper.hasNotificationPermission(context) &&
+            !LibraNotificationHelper.isIgnoringBatteryOptimizations(context) &&
+            !notificationStore.wasBatteryPrompted()
+        ) {
+            delay(500L)
+            notificationStore.markBatteryPrompted()
+            showBatteryOptPrompt = true
         }
     }
 
@@ -372,6 +385,41 @@ fun AppNavHost(
                 }
             },
             onDismiss = { showNotificationRationale = false }
+        )
+    }
+
+    if (showBatteryOptPrompt) {
+        AlertDialog(
+            onDismissRequest = { showBatteryOptPrompt = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "Kapalıyken Mesaj Bildirimleri",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Uygulama tamamen kapalıyken Android/Samsung pil tasarrufunun mesaj bildirimlerini durdurmaması için pil iznini 'Kısıtlanmamış' yapabilirsin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBatteryOptPrompt = false
+                        LibraNotificationHelper.openBatteryOptimizationSettings(context)
+                    }
+                ) {
+                    Text("İzin Ver")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatteryOptPrompt = false }) {
+                    Text("Şimdi Değil")
+                }
+            }
         )
     }
 
@@ -795,6 +843,7 @@ fun AppNavHost(
                     onBack = { showGlobalChat = false },
                     onOpenProfile = ::openPublicProfile,
                     canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                    isAdminModerator = hasAdminAccess && adminPermissions.manageGlobalChat,
                     modifier = Modifier.fillMaxSize()
                 )
             }

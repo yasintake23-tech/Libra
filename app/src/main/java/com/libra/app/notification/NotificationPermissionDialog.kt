@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.AlertDialog
@@ -29,12 +31,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun NotificationPermissionRationaleDialog(
@@ -100,9 +111,24 @@ fun NotificationPreferencesBottomSheet(
     onRequestOrOpenSystemPermission: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val ignoringBattery = remember(context) {
-        LibraNotificationHelper.isIgnoringBatteryOptimizations(context)
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var ignoringBattery by remember {
+        mutableStateOf(LibraNotificationHelper.isIgnoringBatteryOptimizations(context))
+    }
+    var exactAlarmGranted by remember {
+        mutableStateOf(LibraNotificationHelper.canScheduleExactAlarms(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                ignoringBattery = LibraNotificationHelper.isIgnoringBatteryOptimizations(context)
+                exactAlarmGranted = LibraNotificationHelper.canScheduleExactAlarms(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     ModalBottomSheet(
@@ -112,6 +138,7 @@ fun NotificationPreferencesBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -173,11 +200,11 @@ fun NotificationPreferencesBottomSheet(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Pil Kısıtlaması (Arka Plan)",
+                                text = "Pil Kısıtlaması (Kapalıyken Bildirim)",
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
-                                text = "Uygulama kapalıyken anlık bildirimler için 'Kısıtlanmamış' yapın",
+                                text = "Uygulama kapalıyken uyandırma kontrolü için 'Kısıtlanmamış' yap",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -187,7 +214,42 @@ fun NotificationPreferencesBottomSheet(
                             onClick = { LibraNotificationHelper.openBatteryOptimizationSettings(context) },
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("Pil Ayarı")
+                            Text("Aç")
+                        }
+                    }
+                }
+            }
+
+            if (!exactAlarmGranted) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Tam Zamanlı Uyanma İzni",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = "Kapalıyken gecikmesiz uyanma döngüsü için izin ver",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(
+                            onClick = { LibraNotificationHelper.openExactAlarmSettings(context) },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("İzin Ver")
                         }
                     }
                 }
@@ -202,8 +264,8 @@ fun NotificationPreferencesBottomSheet(
                 }
             )
             NotificationToggleItem(
-                title = "Kesintisiz Canlı Dinleyici (İsteğe Bağlı)",
-                subtitle = "Kapalıyken uygulama sürekli çalışmaz; yalnızca bildirim kontrolünde kısa süre uyanıp kapanır",
+                title = "Anlık Canlı Bağlantı (İsteğe Bağlı)",
+                subtitle = "Kapalıyken uygulama yalnızca bildirim kontrolünde kısa süre uyanıp kapanır; kesintisiz anlık iletim için açabilirsin",
                 checked = preferences.backgroundServiceEnabled,
                 enabled = preferences.masterEnabled,
                 onCheckedChange = {
@@ -239,7 +301,21 @@ fun NotificationPreferencesBottomSheet(
                 }
             )
 
-            Spacer(Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = {
+                    if (!LibraNotificationHelper.hasNotificationPermission(context)) {
+                        onRequestOrOpenSystemPermission()
+                    } else {
+                        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+                        LibraNotificationHelper.sendTestNotification(context, uid)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("Test Bildirimi Gönder (Yanıtla + Okundu İşaretle)")
+            }
+
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),

@@ -4,10 +4,13 @@ import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.feature.messages.buildForwardSharedContent
 import com.libra.app.feature.messages.computeDirectMessageGrouping
+import com.libra.app.feature.messages.filterVisibleDirectMessages
+import com.libra.app.feature.messages.findReplyTargetIndex
 import com.libra.app.feature.messages.formatChatTimeHeader
 import com.libra.app.feature.messages.formatConversationRelativeTime
 import com.libra.app.feature.messages.formatMessageHour
 import com.libra.app.feature.messages.formatReadableByteSize
+import com.libra.app.feature.messages.formatSelectedMessagesForCopy
 import com.libra.app.feature.messages.isMessageSeenByPeer
 import com.libra.app.feature.messages.resolveShareableMessageText
 import org.junit.Assert.assertEquals
@@ -126,5 +129,77 @@ class DirectMessagesUiAndLogicTest {
         assertFalse(isMessageSeenByPeer(sentMsg, peerLastReadAt = 0L, currentUid = "me"))
         assertFalse(isMessageSeenByPeer(pendingMsg, peerLastReadAt = baseMs + 5_000L, currentUid = "me"))
         assertFalse(isMessageSeenByPeer(peerMsg, peerLastReadAt = baseMs + 5_000L, currentUid = "me"))
+    }
+
+    @Test
+    fun findReplyTargetIndex_locatesQuotedMessageAcrossPresentAndDeletedIds() {
+        val list = listOf(
+            DirectMessage(id = "m_1", text = "Bir"),
+            DirectMessage(id = "m_2", text = "İki"),
+            DirectMessage(id = "m_3", text = "Üç")
+        )
+        assertEquals(0, findReplyTargetIndex(list, "m_1") { it.id })
+        assertEquals(2, findReplyTargetIndex(list, "m_3") { it.id })
+        assertEquals(-1, findReplyTargetIndex(list, "deleted_id") { it.id })
+        assertEquals(-1, findReplyTargetIndex(list, "") { it.id })
+    }
+
+    @Test
+    fun filterVisibleDirectMessages_enforcesClearWatermarkAndPerMessageDeletion() {
+        val m1 = DirectMessage(id = "m_1", senderId = "me", createdAt = baseMs - 5_000L, text = "Eski 1")
+        val m2 = DirectMessage(id = "m_2", senderId = "peer", createdAt = baseMs, text = "Tam sıfır anı")
+        val m3 = DirectMessage(id = "m_3", senderId = "peer", createdAt = baseMs + 1_000L, text = "Tekil silinen")
+        val m4 = DirectMessage(id = "m_4", senderId = "me", createdAt = baseMs + 2_000L, text = "Sıfırdan yeni")
+
+        val all = listOf(m1, m2, m3, m4)
+        val filtered = filterVisibleDirectMessages(
+            messages = all,
+            clearedAtMs = baseMs,
+            deletedMessageIds = setOf("m_3")
+        )
+        assertEquals(listOf("m_4"), filtered.map { it.id })
+
+        // Completely fresh empty state when all messages happened before clear watermark
+        val cleanSlate = filterVisibleDirectMessages(
+            messages = listOf(m1, m2),
+            clearedAtMs = baseMs,
+            deletedMessageIds = emptySet()
+        )
+        assertTrue(cleanSlate.isEmpty())
+    }
+
+    @Test
+    fun formatSelectedMessagesForCopy_formatsChronologicallyWithSenderLabels() {
+        val late = DirectMessage(
+            id = "m_late",
+            senderId = "me",
+            text = "Görüşürüz",
+            createdAt = baseMs + 120_000L
+        )
+        val early = DirectMessage(
+            id = "m_early",
+            senderId = "peer",
+            senderName = "Ece",
+            text = "Kitabı okudun mu?",
+            createdAt = baseMs
+        )
+        val blankPhotoOnly = DirectMessage(
+            id = "m_photo",
+            senderId = "peer",
+            senderName = "Ece",
+            mediaUrl = "users/peer/a.jpg",
+            createdAt = baseMs + 60_000L
+        )
+
+        val formatted = formatSelectedMessagesForCopy(
+            messages = listOf(late, blankPhotoOnly, early),
+            currentUid = "me",
+            peerFallbackName = "Ece"
+        )
+        val lines = formatted.lines()
+        assertEquals(3, lines.size)
+        assertTrue(lines[0].contains("Ece: Kitabı okudun mu?"))
+        assertTrue(lines[1].contains("Ece: Libra sohbetinden fotoğraf"))
+        assertTrue(lines[2].contains("Sen: Görüşürüz"))
     }
 }

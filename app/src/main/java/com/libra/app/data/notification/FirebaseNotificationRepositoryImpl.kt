@@ -1,6 +1,7 @@
 package com.libra.app.data.notification
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
@@ -76,9 +77,12 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         if (uid.isBlank()) return AppResult.Success(emptyList())
         val safeLimit = limit.coerceIn(1L, 150L).toInt()
         return try {
-            val snapshot = ref.whereEqualTo("recipientId", uid)
-                .get()
-                .await()
+            val query = ref.whereEqualTo("recipientId", uid)
+            val snapshot = try {
+                query.get(Source.SERVER).await()
+            } catch (_: Exception) {
+                query.get().await()
+            }
             val unread = snapshot.documents
                 .mapNotNull { doc ->
                     runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()

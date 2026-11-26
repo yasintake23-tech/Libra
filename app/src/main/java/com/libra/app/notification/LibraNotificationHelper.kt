@@ -119,22 +119,68 @@ object LibraNotificationHelper {
         return runCatching { pm.isIgnoringBatteryOptimizations(context.packageName) }.getOrDefault(false)
     }
 
+    fun canScheduleExactAlarms(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager ?: return false
+        return runCatching { am.canScheduleExactAlarms() }.getOrDefault(false)
+    }
+
+    @SuppressLint("BatteryLife")
     fun openBatteryOptimizationSettings(context: Context) {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val packageUri = Uri.fromParts("package", context.packageName, null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isIgnoringBatteryOptimizations(context)) {
+            val directIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = packageUri
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (runCatching { context.startActivity(directIntent) }.isSuccess) return
+        }
+
+        val listIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
         } else {
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-            }
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = packageUri }
         }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(intent) }.onFailure {
+        listIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(listIntent) }.onFailure {
             val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
+                data = packageUri
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             runCatching { context.startActivity(fallback) }
         }
+    }
+
+    fun openExactAlarmSettings(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val packageUri = Uri.fromParts("package", context.packageName, null)
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = packageUri
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(intent) }.onFailure {
+            openAppNotificationSettings(context)
+        }
+    }
+
+    fun sendTestNotification(context: Context, uid: String) {
+        val now = System.currentTimeMillis()
+        dispatchSystemNotification(
+            context = context,
+            notification = AppNotification(
+                id = "test_$now",
+                recipientId = uid,
+                actorId = "",
+                actorName = "Libra Bildirim Testi",
+                actorUsername = "libra",
+                type = LibraNotificationTypes.MESSAGE,
+                title = "Libra Bildirim Testi",
+                body = "Kapalıyken bildirim, Yanıtla ve Okundu İşaretle çalışıyor.",
+                referenceId = "",
+                createdAt = now,
+                read = false
+            )
+        )
     }
 
     fun openAppNotificationSettings(context: Context) {

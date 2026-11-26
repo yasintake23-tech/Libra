@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -103,7 +104,8 @@ fun RichMessageActionSheet(
     isOwnMessage: Boolean = false,
     selectedReaction: String? = null,
     onCopy: (() -> Unit)? = null,
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    onSelectMultiple: (() -> Unit)? = null
 ) {
     val darkTheme = isSystemInDarkTheme()
     var visible by remember { mutableStateOf(false) }
@@ -149,6 +151,18 @@ fun RichMessageActionSheet(
                 onClick = onReply
             )
         )
+        if (onSelectMultiple != null) {
+            add(
+                SpotlightCircularAction(
+                    label = "Seç",
+                    icon = Icons.Default.CheckCircleOutline,
+                    circleColor = neutralCircleBg,
+                    iconTint = neutralIconTint,
+                    borderColor = neutralCircleBorder,
+                    onClick = onSelectMultiple
+                )
+            )
+        }
         if (onShare != null) {
             add(
                 SpotlightCircularAction(

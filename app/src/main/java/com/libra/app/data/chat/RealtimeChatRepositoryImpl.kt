@@ -364,7 +364,7 @@ class RealtimeChatRepositoryImpl(
                             .getValue(String::class.java)
                             .orEmpty()
 
-                        if (child.key.isNullOrBlank() || otherUid.isBlank()) {
+                        if (child.key.isNullOrBlank()) {
                             return@mapNotNull null
                         }
 
@@ -613,24 +613,37 @@ class RealtimeChatRepositoryImpl(
         }
 
         val safeLimit = limit.coerceIn(1L, 200L).toInt()
-        val query = ref("directMessages/$conversationId")
-            ?.orderByChild("createdAt")
-            ?.limitToLast(safeLimit)
+        val messagesRef = ref("directMessages/$conversationId")
+        val clearedRef = ref("notifications/$uid/chatClearedAt/$conversationId")
+        val deletedIdsRef = ref("notifications/$uid/deletedMessageIds/$conversationId")
 
-        if (query == null) {
+        if (messagesRef == null || clearedRef == null || deletedIdsRef == null) {
             trySend(error("Realtime Database yapılandırması bulunamadı."))
             close()
             return@callbackFlow
         }
 
-        val listener = object : com.google.firebase.database.ValueEventListener {
+        val query = messagesRef.orderByChild("createdAt").limitToLast(safeLimit)
+        var latestRawMessages: List<DirectMessage> = emptyList()
+        var clearedAtMs = 0L
+        var deletedMessageIds = emptySet<String>()
+
+        fun emitFiltered() {
+            val filtered = com.libra.app.feature.messages.filterVisibleDirectMessages(
+                messages = latestRawMessages,
+                clearedAtMs = clearedAtMs,
+                deletedMessageIds = deletedMessageIds
+            )
+            trySend(AppResult.Success(filtered))
+        }
+
+        val msgListener = object : com.google.firebase.database.ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val messages = snapshot.children
+                latestRawMessages = snapshot.children
                     .mapNotNull(::directMessageFrom)
                     .filter { isGroup || it.senderId == uid || it.recipientId == uid }
                     .sortedBy { it.createdAt }
-
-                trySend(AppResult.Success(messages))
+                emitFiltered()
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -638,8 +651,38 @@ class RealtimeChatRepositoryImpl(
             }
         }
 
-        query.addValueEventListener(listener)
-        awaitClose { query.removeEventListener(listener) }
+        val clearedListener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                clearedAtMs = snapshot.getValue(Long::class.java) ?: 0L
+                emitFiltered()
+            }
+
+            override fun onCancelled(error: DatabaseError) = Unit
+        }
+
+        val deletedIdsListener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                deletedMessageIds = snapshot.children.mapNotNull { it.key }.toSet()
+                emitFiltered()
+            }
+
+            override fun onCancelled(error: DatabaseError) = Unit
+        }
+
+        // Seed watermark/deleted IDs first when available so old messages never flash briefly on reopen
+        clearedAtMs = runCatching { clearedRef.get().await().getValue(Long::class.java) ?: 0L }.getOrDefault(0L)
+        deletedMessageIds = runCatching {
+            deletedIdsRef.get().await().children.mapNotNull { it.key }.toSet()
+        }.getOrDefault(emptySet())
+
+        clearedRef.addValueEventListener(clearedListener)
+        deletedIdsRef.addValueEventListener(deletedIdsListener)
+        query.addValueEventListener(msgListener)
+        awaitClose {
+            query.removeEventListener(msgListener)
+            clearedRef.removeEventListener(clearedListener)
+            deletedIdsRef.removeEventListener(deletedIdsListener)
+        }
     }
 
     override suspend fun sendDirectMessage(
@@ -841,14 +884,111 @@ class RealtimeChatRepositoryImpl(
     override suspend fun deleteDirectMessage(
         conversationId: String,
         messageId: String
+    ): AppResult<Unit> = deleteDirectMessages(conversationId, listOf(messageId))
+
+    override suspend fun deleteDirectMessages(
+        conversationId: String,
+        messageIds: List<String>
     ): AppResult<Unit> {
-        val result = deleteMessage(
-            ref("directMessages/$conversationId/$messageId")
-        )
-        if (result is AppResult.Success) {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val distinctIds = messageIds.map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("local-") }.distinct()
+        if (conversationId.isBlank() || distinctIds.isEmpty()) return AppResult.Success(Unit)
+
+        val root = database()?.reference
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+        return try {
+            val mediaToCleanup = mutableListOf<String>()
+            val updates = linkedMapOf<String, Any?>()
+
+            for (msgId in distinctIds) {
+                val msgRef = ref("directMessages/$conversationId/$msgId") ?: continue
+                val snapshot = msgRef.get().await()
+                if (!snapshot.exists()) continue
+
+                val senderId = snapshot.child("senderId").getValue(String::class.java).orEmpty()
+                if (senderId == uid) {
+                    updates["directMessages/$conversationId/$msgId"] = null
+                    val mediaKey = snapshot.child("mediaUrl").getValue(String::class.java).orEmpty()
+                    if (mediaKey.isNotBlank()) mediaToCleanup += mediaKey
+                } else {
+                    // Peer's messages cannot be removed from peer's node under security rules,
+                    // so mark deleted for the current user under owner-writable path.
+                    updates["notifications/$uid/deletedMessageIds/$conversationId/$msgId"] = true
+                }
+            }
+
+            if (updates.isNotEmpty()) {
+                root.updateChildren(updates).await()
+            }
+            mediaToCleanup.forEach { key -> cleanupMedia(key) }
             runCatching { refreshDirectConversationSummary(conversationId) }
+
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Mesajlar silinemedi.", e)
         }
-        return result
+    }
+
+    override suspend fun clearDirectConversation(
+        conversationId: String,
+        removeFromInbox: Boolean
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (conversationId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Sohbet bulunamadı."))
+        }
+
+        val root = database()?.reference
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+        return try {
+            val now = System.currentTimeMillis()
+            val allMessagesSnap = ref("directMessages/$conversationId")?.get()?.await()
+            val ownMessageUpdates = linkedMapOf<String, Any?>()
+            val mediaToCleanup = mutableListOf<String>()
+
+            allMessagesSnap?.children?.forEach { child ->
+                val msgId = child.key.orEmpty()
+                val senderId = child.child("senderId").getValue(String::class.java).orEmpty()
+                if (msgId.isNotBlank() && senderId == uid) {
+                    ownMessageUpdates["directMessages/$conversationId/$msgId"] = null
+                    val mediaKey = child.child("mediaUrl").getValue(String::class.java).orEmpty()
+                    if (mediaKey.isNotBlank()) mediaToCleanup += mediaKey
+                }
+            }
+
+            // Delete own messages BEFORE removing directConversations summary (required for group rules).
+            if (ownMessageUpdates.isNotEmpty()) {
+                ownMessageUpdates.entries.chunked(250).forEach { chunk ->
+                    val batch = linkedMapOf<String, Any?>()
+                    chunk.forEach { batch[it.key] = it.value }
+                    root.updateChildren(batch).await()
+                }
+            }
+            mediaToCleanup.forEach { key -> cleanupMedia(key) }
+
+            val summaryRef = ref("directConversations/$uid/$conversationId")
+            val summarySnap = summaryRef?.get()?.await()
+            val metaUpdates = linkedMapOf<String, Any?>(
+                "notifications/$uid/chatClearedAt/$conversationId" to now,
+                "notifications/$uid/deletedMessageIds/$conversationId" to null
+            )
+            if (removeFromInbox) {
+                metaUpdates["directConversations/$uid/$conversationId"] = null
+            } else if (summarySnap?.exists() == true) {
+                metaUpdates["directConversations/$uid/$conversationId/lastMessage"] = ""
+                metaUpdates["directConversations/$uid/$conversationId/unreadCount"] = 0
+                metaUpdates["directConversations/$uid/$conversationId/myLastReadAt"] = now
+            }
+
+            root.updateChildren(metaUpdates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Sohbet temizlenemedi.", e)
+        }
     }
 
     override suspend fun toggleDirectMessageReaction(
@@ -912,23 +1052,8 @@ class RealtimeChatRepositoryImpl(
         }
     }
 
-    override suspend fun hideDirectConversation(conversationId: String): AppResult<Unit> {
-        val uid = currentUid()
-            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
-        if (conversationId.isBlank()) {
-            return AppResult.Error(AppError.Validation("Sohbet bulunamadı."))
-        }
-
-        val summaryRef = ref("directConversations/$uid/$conversationId")
-            ?: return error("Realtime Database yapılandırması bulunamadı.")
-
-        return try {
-            summaryRef.removeValue().await()
-            AppResult.Success(Unit)
-        } catch (e: Exception) {
-            error("Sohbet gizlenemedi.", e)
-        }
-    }
+    override suspend fun hideDirectConversation(conversationId: String): AppResult<Unit> =
+        clearDirectConversation(conversationId, removeFromInbox = true)
 
     override fun observeServerMessages(
         serverId: String,
@@ -1255,38 +1380,66 @@ class RealtimeChatRepositoryImpl(
 
     private suspend fun refreshDirectConversationSummary(conversationId: String) {
         val uid = currentUid() ?: return
+        val summarySnap = ref("directConversations/$uid/$conversationId")?.get()?.await()
+        val isGroup = summarySnap?.child("isGroup")?.getValue(Boolean::class.java) == true
         val participants = conversationId.split("_")
-        if (participants.size != 2 || uid !in participants) return
+        if (!isGroup && (participants.size != 2 || uid !in participants)) return
 
-        val otherUid = participants.first { it != uid }
-        val latest = ref("directMessages/$conversationId")
+        val clearedAtMs = runCatching {
+            ref("notifications/$uid/chatClearedAt/$conversationId")?.get()?.await()?.getValue(Long::class.java) ?: 0L
+        }.getOrDefault(0L)
+        val deletedIds = runCatching {
+            ref("notifications/$uid/deletedMessageIds/$conversationId")?.get()?.await()?.children?.mapNotNull { it.key }?.toSet()
+        }.getOrNull().orEmpty()
+
+        val recentMessages = ref("directMessages/$conversationId")
             ?.orderByChild("createdAt")
-            ?.limitToLast(1)
+            ?.limitToLast(60)
             ?.get()
             ?.await()
             ?.children
             ?.mapNotNull(::directMessageFrom)
-            ?.maxByOrNull { it.createdAt }
+            .orEmpty()
+
+        val visibleMessages = com.libra.app.feature.messages.filterVisibleDirectMessages(
+            messages = recentMessages,
+            clearedAtMs = clearedAtMs,
+            deletedMessageIds = deletedIds
+        )
+        val latest = visibleMessages.maxByOrNull { it.createdAt }
 
         val lastMessage = latest?.let {
             lastMessage(it.text, it.mediaUrl, it.sharedContent)
         }.orEmpty()
-        val updatedAt = latest?.createdAt ?: 0L
+        val updatedAt = latest?.createdAt ?: (summarySnap?.child("updatedAt")?.getValue(Long::class.java) ?: 0L)
 
-        val otherProfile = profileOrFallback(otherUid)
         val root = database()?.reference ?: return
-
-        runCatching {
-            root.updateChildren(
-                mapOf(
-                    "directConversations/$uid/$conversationId/lastMessage" to lastMessage,
-                    "directConversations/$uid/$conversationId/updatedAt" to updatedAt,
-                    "directConversations/$uid/$conversationId/otherUserId" to otherUid,
-                    "directConversations/$uid/$conversationId/otherUserName" to otherProfile.displayName,
-                    "directConversations/$uid/$conversationId/otherUserUsername" to otherProfile.username,
-                    "directConversations/$uid/$conversationId/otherUserPhotoUrl" to otherProfile.profileImageUrl
-                )
-            ).await()
+        if (isGroup) {
+            if (summarySnap?.exists() == true) {
+                runCatching {
+                    root.updateChildren(
+                        mapOf(
+                            "directConversations/$uid/$conversationId/lastMessage" to lastMessage,
+                            "directConversations/$uid/$conversationId/updatedAt" to updatedAt
+                        )
+                    ).await()
+                }
+            }
+        } else {
+            val otherUid = participants.first { it != uid }
+            val otherProfile = profileOrFallback(otherUid)
+            runCatching {
+                root.updateChildren(
+                    mapOf(
+                        "directConversations/$uid/$conversationId/lastMessage" to lastMessage,
+                        "directConversations/$uid/$conversationId/updatedAt" to updatedAt,
+                        "directConversations/$uid/$conversationId/otherUserId" to otherUid,
+                        "directConversations/$uid/$conversationId/otherUserName" to otherProfile.displayName,
+                        "directConversations/$uid/$conversationId/otherUserUsername" to otherProfile.username,
+                        "directConversations/$uid/$conversationId/otherUserPhotoUrl" to otherProfile.profileImageUrl
+                    )
+                ).await()
+            }
         }
     }
 

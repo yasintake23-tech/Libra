@@ -14,6 +14,7 @@ import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.CosmeticRole
+import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.model.Post
 import com.libra.app.domain.model.PostComment
@@ -36,6 +37,7 @@ import com.libra.app.feature.admin.resolveAdminNotificationRecipients
 import com.libra.app.notification.LibraNotificationHelper
 import com.libra.app.notification.NotificationPreferenceCategory
 import com.libra.app.notification.NotificationPreferencesState
+import com.libra.app.notification.buildRtdbFallbackDmNotifications
 import com.libra.app.notification.classifyNotificationCategory
 import com.libra.app.notification.selectNewNotificationsForDelivery
 import com.libra.app.notification.shouldSuppressActiveNotification
@@ -466,6 +468,74 @@ class NotificationSystemTest {
         advanceUntilIdle()
         assertTrue(deleted)
         assertTrue(vm.notificationDrafts.value.isEmpty())
+    }
+
+    @Test
+    fun buildRtdbFallbackDmNotifications_deduplicatesFirestoreAndRespectsClearedChats() {
+        val now = 1_795_700_000_000L
+        val prefs = NotificationPreferencesState(
+            masterEnabled = true,
+            messagesEnabled = true,
+            socialEnabled = true,
+            announcementsEnabled = true,
+            backgroundServiceEnabled = false
+        )
+        val unreadDm = DirectConversation(
+            id = "me_peer1",
+            otherUserId = "peer1",
+            otherUserName = "Deniz",
+            otherUserUsername = "deniz",
+            lastMessage = "Naber?",
+            updatedAt = now - 5_000L,
+            unreadCount = 1
+        )
+        val alreadyCoveredByFirestore = DirectConversation(
+            id = "me_peer2",
+            otherUserId = "peer2",
+            otherUserName = "Mert",
+            lastMessage = "Bunu gördüm",
+            updatedAt = now - 3_000L,
+            unreadCount = 2
+        )
+        val clearedConv = DirectConversation(
+            id = "me_peer3",
+            otherUserId = "peer3",
+            otherUserName = "Eski",
+            lastMessage = "Eski mesaj",
+            updatedAt = now - 20_000L,
+            unreadCount = 1
+        )
+        val unreadGroup = DirectConversation(
+            id = "grp_1",
+            isGroup = true,
+            groupName = "Kitap Kulübü",
+            lastMessage = "Yeni bölüm çıktı",
+            updatedAt = now - 2_000L,
+            unreadCount = 3
+        )
+        val existingFs = listOf(
+            AppNotification(
+                id = "fs_1",
+                type = LibraNotificationTypes.MESSAGE,
+                referenceId = "me_peer2",
+                createdAt = now - 2_500L,
+                read = false
+            )
+        )
+
+        val fallback = buildRtdbFallbackDmNotifications(
+            uid = "me",
+            conversations = listOf(unreadDm, alreadyCoveredByFirestore, clearedConv, unreadGroup),
+            existingFirestoreChatNotifications = existingFs,
+            getLastDmNotifiedAt = { 0L },
+            getClearedAt = { convId -> if (convId == "me_peer3") now - 10_000L else 0L },
+            preferences = prefs,
+            nowMs = now
+        )
+
+        assertEquals(listOf("grp_1", "me_peer1"), fallback.map { it.referenceId })
+        assertEquals(LibraNotificationTypes.GROUP_MESSAGE, fallback[0].type)
+        assertEquals(LibraNotificationTypes.MESSAGE, fallback[1].type)
     }
 
     // --- Fakes ---

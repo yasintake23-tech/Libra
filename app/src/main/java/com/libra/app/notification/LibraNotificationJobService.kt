@@ -34,22 +34,12 @@ class LibraNotificationJobService : JobService() {
         serviceScope = scope
         syncJob = scope.launch {
             try {
-                val prefs = NotificationPreferencesStore(applicationContext).readPreferences()
-                if (!prefs.masterEnabled) return@launch
-
-                when (val res = ServiceLocator.notificationRepository.fetchUnreadNotifications(uid, limit = 100)) {
-                    is AppResult.Success -> {
-                        NotificationSyncCoordinator.processIncomingNotifications(
-                            context = applicationContext,
-                            uid = uid,
-                            notifications = res.data,
-                            updateUnreadBadgeCount = false
-                        )
-                    }
-                    is AppResult.Error -> Unit
+                val shouldKeepSyncing = runCatching {
+                    NotificationSyncCoordinator.runBackgroundSyncOnce(applicationContext)
+                }.getOrDefault(true)
+                if (shouldKeepSyncing) {
+                    LibraNotificationReceiver.scheduleBackupAlarm(applicationContext)
                 }
-
-                LibraNotificationReceiver.scheduleBackupAlarm(applicationContext)
             } finally {
                 jobFinished(params, false)
             }
