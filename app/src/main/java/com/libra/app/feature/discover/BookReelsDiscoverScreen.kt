@@ -14,12 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -32,29 +29,22 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
 import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.animation.appleGlassSurface
@@ -85,6 +75,8 @@ import coil.request.ImageRequest
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
 import com.libra.app.ui.components.BookCover
+import com.libra.app.ui.components.LibraCommentItem
+import com.libra.app.ui.components.LibraCommentsBottomSheet
 import com.libra.app.ui.components.UserAvatar
 
 /**
@@ -109,6 +101,7 @@ fun BookDiscoverySection(
     viewModel: BookReelsDiscoverViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val currentUser by ServiceLocator.authRepository.currentUser.collectAsState()
 
     Box(modifier = modifier.fillMaxSize()) {
         BookReelsFeed(
@@ -138,124 +131,53 @@ fun BookDiscoverySection(
             topBar(viewModel::refreshBooks)
         }
 
-        // Reader Comments Bottom Sheet
-        if (state.activeCommentsBookId != null) {
-            val bookId = state.activeCommentsBookId!!
-            var commentInput by remember { mutableStateOf("") }
-
-            ModalBottomSheet(
-                onDismissRequest = { viewModel.closeComments() },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .navigationBarsPadding()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Okur Yorumları (${state.comments.size})",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                        IconButton(onClick = { viewModel.closeComments() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Kapat")
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    if (state.isLoadingComments) {
-                        Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                        }
-                    } else if (state.comments.isEmpty()) {
-                        Box(Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Bu kitap için henüz yorum yapılmamış.\nİlk yorumu sen yaz!",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(260.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(state.comments, key = { it.id }) { comment ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    UserAvatar(
-                                        photoUrl = comment.authorPhotoUrl,
-                                        initials = comment.authorName.take(1).uppercase().ifBlank { "L" },
-                                        size = 32.dp
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = comment.authorName.ifBlank { "Libra Okuru" },
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                                        )
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            text = comment.text,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = commentInput,
-                            onValueChange = { commentInput = it },
-                            placeholder = { Text("Yorum ekle...", style = MaterialTheme.typography.bodySmall) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                            )
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
-                            onClick = {
-                                if (commentInput.trim().isNotBlank()) {
-                                    val text = commentInput
-                                    commentInput = ""
-                                    viewModel.addComment(bookId, text)
-                                }
-                            },
-                            enabled = commentInput.trim().isNotBlank()
-                        ) {
-                            Icon(
-                                Icons.Default.Send,
-                                contentDescription = "Gönder",
-                                tint = if (commentInput.trim().isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
+        // Instagram-inspired Book Comments Sheet
+        state.activeCommentsBookId?.let { bookId ->
+            val activeBook = state.books.firstOrNull { it.id == bookId }
+            val currentUid = currentUser?.uid.orEmpty()
+            val mappedComments = remember(state.comments, activeBook?.ownerId, currentUid) {
+                state.comments.map { comment ->
+                    LibraCommentItem(
+                        id = comment.id,
+                        authorId = comment.userId,
+                        authorName = comment.authorName,
+                        authorUsername = comment.authorUsername,
+                        authorPhotoUrl = comment.authorPhotoUrl,
+                        text = comment.text,
+                        parentCommentId = comment.parentCommentId,
+                        createdAt = comment.createdAt,
+                        isContentAuthor = activeBook != null && comment.userId == activeBook.ownerId,
+                        canDelete = currentUid.isNotBlank() &&
+                            (comment.userId == currentUid || activeBook?.ownerId == currentUid)
+                    )
                 }
             }
+            var commentDraft by remember(bookId) { mutableStateOf("") }
+
+            LibraCommentsBottomSheet(
+                comments = mappedComments,
+                currentUser = currentUser,
+                text = commentDraft,
+                onTextChanged = { commentDraft = it },
+                onSend = { parentId ->
+                    val trimmed = commentDraft.trim()
+                    if (trimmed.isNotEmpty()) {
+                        commentDraft = ""
+                        viewModel.addComment(bookId, trimmed, parentId)
+                    }
+                },
+                onDismiss = { viewModel.closeComments() },
+                contextTitle = activeBook?.title.orEmpty(),
+                isLoading = state.isLoadingComments,
+                isSending = state.isSendingComment,
+                canComment = currentUser?.moderation?.canComment != false,
+                repliesEnabled = true,
+                maxChars = 1000,
+                error = state.commentError,
+                onClearError = { viewModel.clearCommentError() },
+                onDeleteComment = { item -> viewModel.deleteComment(bookId, item.id) },
+                onOpenProfile = onOpenProfile
+            )
         }
     }
 }

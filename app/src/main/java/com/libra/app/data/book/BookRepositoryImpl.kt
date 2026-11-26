@@ -10,6 +10,7 @@ import com.google.firebase.database.Transaction
 import com.google.firebase.database.ValueEventListener
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
+import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.Book
 import com.libra.app.domain.model.BookCategory
 import com.libra.app.domain.model.BookStatus
@@ -20,6 +21,8 @@ import com.libra.app.domain.model.ReadingProgress
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserShelfItem
 import com.libra.app.domain.repository.BookRepository
+import com.libra.app.domain.repository.NotificationRepository
+import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -42,7 +45,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * /chapters/{bookId}/{chapterId}
  * /libraries/{uid}/{shelfType}/{bookId} -> { progressPercent, addedAt, updatedAt }
  */
-class BookRepositoryImpl : BookRepository {
+class BookRepositoryImpl(
+    private val userRepository: UserRepository? = null,
+    private val notificationRepository: NotificationRepository? = null
+) : BookRepository {
 
     private val database: FirebaseDatabase? by lazy {
         // This project uses the europe-west1 regional RTDB. Firebase's
@@ -710,9 +716,31 @@ class BookRepositoryImpl : BookRepository {
         if (text.isBlank()) return AppResult.Error(AppError.Validation("Yorum boş olamaz."))
         if (text.length > 1000) return AppResult.Error(AppError.Validation("Yorum en fazla 1000 karakter olabilir."))
         return try {
-            if (!booksRef!!.child(comment.bookId).get().await().exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+            val bookSnapshot = booksRef!!.child(comment.bookId).get().await()
+            if (!bookSnapshot.exists()) return AppResult.Error(AppError.NotFound("Kitap bulunamadı."))
+
+            val profile = userRepository?.let { repo ->
+                (repo.getUserProfileFresh(comment.userId) as? AppResult.Success)?.data
+            }
+            if (profile != null && !profile.moderation.canComment) {
+                return AppResult.Error(AppError.Auth("Yorum yapma yetkiniz geçici olarak kısıtlandı."))
+            }
+
             val id = comment.id.ifBlank { ref.push().key ?: return AppResult.Error(AppError.Database("Yorum kimliği oluşturulamadı.")) }
-            val saved = comment.copy(id = id, text = text, createdAt = if (comment.createdAt == 0L) System.currentTimeMillis() else comment.createdAt)
+            val parentId = comment.parentCommentId.trim()
+            val resolvedName = profile?.displayName?.ifBlank { comment.authorName } ?: comment.authorName
+            val resolvedUsername = profile?.username?.ifBlank { comment.authorUsername } ?: comment.authorUsername
+            val resolvedPhoto = profile?.profileImageUrl?.ifBlank { comment.authorPhotoUrl } ?: comment.authorPhotoUrl
+            val now = if (comment.createdAt == 0L) System.currentTimeMillis() else comment.createdAt
+            val saved = comment.copy(
+                id = id,
+                authorName = resolvedName,
+                authorUsername = resolvedUsername,
+                authorPhotoUrl = resolvedPhoto,
+                text = text,
+                parentCommentId = parentId,
+                createdAt = now
+            )
             ref.child(id).setValue(saved).await()
             booksRef!!.child(comment.bookId).child("commentsCount").runTransactionAwait(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
@@ -721,6 +749,40 @@ class BookRepositoryImpl : BookRepository {
                 }
                 override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {}
             })
+
+            val bookOwnerId = bookSnapshot.child("ownerId").getValue(String::class.java).orEmpty()
+            val bookTitle = bookSnapshot.child("title").getValue(String::class.java).orEmpty()
+            val recipientId = if (parentId.isNotBlank()) {
+                ref.child(parentId).child("userId").get().await().getValue(String::class.java).orEmpty()
+            } else {
+                bookOwnerId
+            }
+
+            if (notificationRepository != null && recipientId.isNotBlank() && recipientId != comment.userId) {
+                runCatching {
+                    val actorDisplay = resolvedName.ifBlank { resolvedUsername.ifBlank { "Bir kullanıcı" } }
+                    notificationRepository.create(
+                        AppNotification(
+                            recipientId = recipientId,
+                            actorId = comment.userId,
+                            actorName = resolvedName,
+                            actorUsername = resolvedUsername,
+                            actorPhotoUrl = resolvedPhoto,
+                            type = if (parentId.isNotBlank()) "BOOK_COMMENT_REPLY" else "BOOK_COMMENT",
+                            title = if (parentId.isNotBlank()) "Kitap yorumuna yanıt" else "Kitabına yeni yorum",
+                            body = if (parentId.isNotBlank()) {
+                                "$actorDisplay yorumuna yanıt verdi."
+                            } else {
+                                if (bookTitle.isNotBlank()) "$actorDisplay \"$bookTitle\" kitabına yorum yaptı."
+                                else "$actorDisplay kitabına yorum yaptı."
+                            },
+                            referenceId = comment.bookId,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+
             AppResult.Success(saved)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Yorum eklenemedi: ${e.localizedMessage}", e))

@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +84,10 @@ import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.BookCover
 import com.libra.app.ui.components.CosmeticRoleBadge
 import com.libra.app.ui.components.FullScreenImageViewerDialog
+import com.libra.app.ui.components.LibraCommentItem
+import com.libra.app.ui.components.LibraCommentsBottomSheet
 import com.libra.app.ui.components.UserAvatar
+import kotlinx.coroutines.launch
 
 internal enum class ProfileSocialListType { FOLLOWERS, FOLLOWING }
 
@@ -891,6 +895,21 @@ internal fun ProfilePostDetailDialog(
 ) {
     var signedMediaUrl by remember(post.mediaUrl) { mutableStateOf<String?>(null) }
     var showFullImage by remember { mutableStateOf(false) }
+    var showCommentsSheet by remember(post.id) { mutableStateOf(false) }
+    var commentDraft by remember(post.id) { mutableStateOf("") }
+    var comments by remember(post.id) { mutableStateOf<List<com.libra.app.domain.model.PostComment>>(emptyList()) }
+    var hasLoadedComments by remember(post.id) { mutableStateOf(false) }
+    var isLoadingComments by remember(post.id) { mutableStateOf(false) }
+    var isSendingComment by remember(post.id) { mutableStateOf(false) }
+    var commentError by remember(post.id) { mutableStateOf<String?>(null) }
+    var currentUser by remember { mutableStateOf(ServiceLocator.authRepository.currentUser.value) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        ServiceLocator.authRepository.currentUser.collect { user ->
+            currentUser = user
+        }
+    }
 
     LaunchedEffect(post.mediaUrl) {
         signedMediaUrl = if (post.mediaUrl.isNotBlank()) {
@@ -899,6 +918,25 @@ internal fun ProfilePostDetailDialog(
             }.getOrNull()
         } else {
             null
+        }
+    }
+
+    LaunchedEffect(showCommentsSheet, post.id) {
+        if (showCommentsSheet) {
+            isLoadingComments = !hasLoadedComments
+            ServiceLocator.postRepository.observeComments(post.id).collect { res ->
+                isLoadingComments = false
+                when (res) {
+                    is com.libra.app.core.result.AppResult.Success -> {
+                        hasLoadedComments = true
+                        comments = res.data
+                        commentError = null
+                    }
+                    is com.libra.app.core.result.AppResult.Error -> {
+                        commentError = res.error.message
+                    }
+                }
+            }
         }
     }
 
@@ -1028,7 +1066,29 @@ internal fun ProfilePostDetailDialog(
                         )
                     }
 
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(4.dp))
+
+                    val displayCommentsCount = if (hasLoadedComments) comments.size else post.commentsCount
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .appleBouncy(pressedScale = 0.90f, onClick = { showCommentsSheet = true })
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChatBubbleOutline,
+                            contentDescription = "Yorumlar",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = displayCommentsCount.toString(),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    Spacer(Modifier.width(4.dp))
 
                     IconButton(
                         onClick = onToggleSave,
@@ -1074,6 +1134,72 @@ internal fun ProfilePostDetailDialog(
         FullScreenImageViewerDialog(
             mediaUrl = signedMediaUrl!!,
             onDismiss = { showFullImage = false }
+        )
+    }
+
+    if (showCommentsSheet) {
+        val currentUid = currentUser?.uid.orEmpty()
+        val mappedComments = remember(comments, post.authorId, currentUid) {
+            comments.map { comment ->
+                LibraCommentItem(
+                    id = comment.id,
+                    authorId = comment.authorId,
+                    authorName = comment.authorName,
+                    authorUsername = comment.authorUsername,
+                    authorPhotoUrl = comment.authorPhotoUrl,
+                    text = comment.text,
+                    parentCommentId = comment.parentCommentId,
+                    createdAt = comment.createdAt,
+                    isContentAuthor = comment.authorId == post.authorId,
+                    canDelete = currentUid.isNotBlank() && comment.authorId == currentUid
+                )
+            }
+        }
+
+        LibraCommentsBottomSheet(
+            comments = mappedComments,
+            currentUser = currentUser,
+            text = commentDraft,
+            onTextChanged = { if (it.length <= 500) commentDraft = it },
+            onSend = { parentId ->
+                val trimmed = commentDraft.trim()
+                if (trimmed.isNotEmpty() && currentUid.isNotBlank()) {
+                    commentDraft = ""
+                    isSendingComment = true
+                    commentError = null
+                    scope.launch {
+                        when (val res = ServiceLocator.postRepository.addComment(post.id, currentUid, trimmed, parentId)) {
+                            is com.libra.app.core.result.AppResult.Error -> commentError = res.error.message
+                            is com.libra.app.core.result.AppResult.Success -> Unit
+                        }
+                        isSendingComment = false
+                    }
+                }
+            },
+            onDismiss = { showCommentsSheet = false },
+            contextTitle = post.title.ifBlank { post.text.take(60) },
+            isLoading = isLoadingComments,
+            isSending = isSendingComment,
+            canComment = currentUser?.moderation?.canComment != false,
+            repliesEnabled = true,
+            maxChars = 500,
+            error = commentError,
+            onClearError = { commentError = null },
+            onDeleteComment = { item ->
+                if (currentUid.isNotBlank()) {
+                    scope.launch {
+                        when (val res = ServiceLocator.postRepository.deleteComment(post.id, item.id, currentUid)) {
+                            is com.libra.app.core.result.AppResult.Error -> commentError = res.error.message
+                            is com.libra.app.core.result.AppResult.Success -> Unit
+                        }
+                    }
+                }
+            },
+            onOpenProfile = { uid ->
+                showCommentsSheet = false
+                onDismiss()
+                onOpenAuthor(uid)
+            }
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.libra.app.feature.book.manage
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,18 +17,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Message
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,15 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.libra.app.core.di.ServiceLocator
+import androidx.compose.ui.unit.sp
 import com.libra.app.domain.model.BookComment
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.components.formatCommentRelativeTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,7 +62,6 @@ fun BookCommentsModerationScreen(
     val state by viewModel.state.collectAsState()
     val comments = state.comments
     var commentToDelete by remember { mutableStateOf<BookComment?>(null) }
-    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("tr")) }
 
     BackHandler { onBack() }
 
@@ -106,7 +99,7 @@ fun BookCommentsModerationScreen(
                         Icons.Default.Message,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
@@ -116,7 +109,7 @@ fun BookCommentsModerationScreen(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Okurlar kitabına yorum bıraktığında burada görünecek.",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -127,20 +120,20 @@ fun BookCommentsModerationScreen(
                     .fillMaxSize()
                     .padding(paddingValues),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(comments, key = { it.id }) { comment ->
-                    val userPhoto = if (comment.authorPhotoUrl.isNotBlank()) {
-                        ServiceLocator.storageRepository.getPublicCdnUrl(comment.authorPhotoUrl)
-                    } else ""
-                    val authorDisplayName = comment.authorName.ifBlank { comment.authorUsername.ifBlank { "Okur" } }
-                    val formattedDate = if (comment.createdAt > 0) dateFormat.format(Date(comment.createdAt)) else ""
+                    val authorDisplayName = comment.authorName.ifBlank { comment.authorUsername.ifBlank { "Libra Kullanıcısı" } }
+                    val formattedDate = formatCommentRelativeTime(comment.createdAt)
+                    val cardShape = RoundedCornerShape(16.dp)
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(cardShape),
+                        shape = cardShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Row(
@@ -153,31 +146,39 @@ fun BookCommentsModerationScreen(
                                         .clickable { onOpenProfile?.invoke(comment.userId) },
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (userPhoto.isNotBlank()) {
-                                        AsyncImage(
-                                            model = userPhoto,
-                                            contentDescription = authorDisplayName,
-                                            modifier = Modifier.size(36.dp).clip(CircleShape),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        Surface(Modifier.size(36.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp))
-                                            }
-                                        }
-                                    }
+                                    UserAvatar(
+                                        photoUrl = comment.authorPhotoUrl,
+                                        initials = authorDisplayName.take(1).uppercase().ifBlank { "L" },
+                                        size = 36.dp,
+                                        onClick = { onOpenProfile?.invoke(comment.userId) }
+                                    )
 
                                     Spacer(Modifier.width(10.dp))
 
                                     Column {
-                                        Text(
-                                            text = authorDisplayName,
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                                        )
-                                        if (formattedDate.isNotBlank()) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             Text(
-                                                text = formattedDate,
+                                                text = authorDisplayName,
+                                                style = MaterialTheme.typography.titleSmall.copy(
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (formattedDate.isNotBlank()) {
+                                                Text(
+                                                    text = "• $formattedDate",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        if (comment.authorUsername.isNotBlank()) {
+                                            Text(
+                                                text = "@${comment.authorUsername}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -189,7 +190,7 @@ fun BookCommentsModerationScreen(
                                     Icon(
                                         Icons.Default.Delete,
                                         contentDescription = "Yorumu Sil",
-                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -199,7 +200,10 @@ fun BookCommentsModerationScreen(
 
                             Text(
                                 text = comment.text,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 14.5.sp,
+                                    lineHeight = 21.sp
+                                ),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }

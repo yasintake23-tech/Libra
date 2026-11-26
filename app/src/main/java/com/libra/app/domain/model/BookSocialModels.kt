@@ -15,7 +15,8 @@ data class BookComment(
     val authorPhotoUrl: String = "",
     val text: String = "",
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val parentCommentId: String = ""
 )
 
 data class ReadingProgress(

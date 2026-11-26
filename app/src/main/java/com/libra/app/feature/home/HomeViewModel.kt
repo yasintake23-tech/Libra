@@ -59,6 +59,8 @@ class HomeViewModel(
 
     private val _comments = MutableStateFlow<List<PostComment>>(emptyList())
     val comments: StateFlow<List<PostComment>> = _comments.asStateFlow()
+    private val _isLoadingComments = MutableStateFlow(false)
+    val isLoadingComments: StateFlow<Boolean> = _isLoadingComments.asStateFlow()
     private val _commentError = MutableStateFlow<String?>(null)
     val commentError: StateFlow<String?> = _commentError.asStateFlow()
     private val _isCommenting = MutableStateFlow(false)
@@ -474,9 +476,11 @@ class HomeViewModel(
     fun openComments(post: Post) {
         commentsJob?.cancel()
         _comments.value = emptyList()
+        _isLoadingComments.value = true
         _commentError.value = null
         commentsJob = viewModelScope.launch {
             postRepository.observeComments(post.id).collect { result ->
+                _isLoadingComments.value = false
                 when (result) {
                     is AppResult.Success -> _comments.value = result.data
                     is AppResult.Error -> _commentError.value = result.error.message
@@ -488,6 +492,7 @@ class HomeViewModel(
     fun closeComments() {
         commentsJob?.cancel()
         commentsJob = null
+        _isLoadingComments.value = false
         _comments.value = emptyList()
         _commentError.value = null
     }

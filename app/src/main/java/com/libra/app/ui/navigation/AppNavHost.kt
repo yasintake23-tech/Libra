@@ -81,6 +81,7 @@ import com.libra.app.feature.book.BookDetailScreen
 import com.libra.app.ui.components.LoadingView
 import com.libra.app.feature.update.AppUpdatePrompt
 import com.libra.app.feature.update.AppUpdateViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -335,7 +336,9 @@ fun AppNavHost(
                                 canComment = profile.moderation.canComment,
                                 onToggleLike = homeVm::toggleLike, onToggleSave = homeVm::toggleSave,
                                 onDeletePost = homeVm::deletePost, onOpenComments = homeVm::openComments,
-                                comments = homeVm.comments.collectAsState().value, onAddComment = homeVm::addComment,
+                                comments = homeVm.comments.collectAsState().value,
+                                isLoadingComments = homeVm.isLoadingComments.collectAsState().value,
+                                onAddComment = homeVm::addComment,
                                 onDeleteComment = homeVm::deleteComment, isCommenting = homeVm.isCommenting.collectAsState().value,
                                 commentError = homeVm.commentError.collectAsState().value, onClearCommentError = homeVm::clearCommentError,
                                 onCloseComments = homeVm::closeComments, isPosting = homeVm.isPosting.collectAsState().value,
@@ -478,6 +481,20 @@ fun AppNavHost(
                             notificationPostTargetId = notification.referenceId
                             showNotifications = false
                             selectedTab = BottomNavTab.HOME
+                        } else if (
+                            notification.referenceId.isNotBlank() &&
+                            (notification.type == "BOOK_COMMENT" || notification.type == "BOOK_COMMENT_REPLY")
+                        ) {
+                            scope.launch {
+                                val res = ServiceLocator.bookRepository.getBookById(notification.referenceId).first()
+                                val targetBook = (res as? com.libra.app.core.result.AppResult.Success)?.data
+                                if (targetBook != null) {
+                                    selectedBook = targetBook
+                                    showNotifications = false
+                                } else {
+                                    Toast.makeText(context, "Kitap bulunamadı.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxSize()

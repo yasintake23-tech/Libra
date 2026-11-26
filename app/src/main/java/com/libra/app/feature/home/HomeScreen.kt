@@ -161,6 +161,7 @@ fun HomeScreen(
     onDeletePost: (Post) -> Unit = {},
     onOpenComments: (Post) -> Unit = {},
     comments: List<PostComment> = emptyList(),
+    isLoadingComments: Boolean = false,
     onAddComment: (Post, String, String) -> Unit = { _, _, _ -> },
     onDeleteComment: (Post, PostComment) -> Unit = { _, _ -> },
     isCommenting: Boolean = false,
@@ -192,7 +193,6 @@ fun HomeScreen(
             var selectedPost by remember { mutableStateOf<Post?>(null) }
             var selectedLikePost by remember { mutableStateOf<Post?>(null) }
             var commentText by remember { mutableStateOf("") }
-            var replyTarget by remember { mutableStateOf<PostComment?>(null) }
             var showCreateMenu by remember { mutableStateOf(false) }
             var selectedSection by remember(initialSection) { mutableStateOf(initialSection) }
             var selectedStoryIndex by remember { mutableStateOf<Int?>(null) }
@@ -205,7 +205,6 @@ fun HomeScreen(
                 if (targetPost != null) {
                     selectedPost = targetPost
                     commentText = ""
-                    replyTarget = null
                     onOpenComments(targetPost)
                     onInitialCommentPostConsumed()
                 }
@@ -298,12 +297,9 @@ fun HomeScreen(
                                             onLike = { onToggleLike(post) },
                                             onShowLikes = { likeUsersPost = post },
                                             onComment = {
-                                                if (canComment) {
-                                                    selectedPost = post
-                                                    commentText = ""
-                                                    replyTarget = null
-                                                    onOpenComments(post)
-                                                }
+                                                selectedPost = post
+                                                commentText = ""
+                                                onOpenComments(post)
                                             },
                                             onSave = { onToggleSave(post) },
                                             onShare = {
@@ -320,12 +316,9 @@ fun HomeScreen(
                                             },
                                             onOpenProfile = { onOpenProfile(post.authorId) },
                                             onDetailClick = {
-                                                if (canComment) {
-                                                    selectedPost = post
-                                                    commentText = ""
-                                                    replyTarget = null
-                                                    onOpenComments(post)
-                                                }
+                                                selectedPost = post
+                                                commentText = ""
+                                                onOpenComments(post)
                                             },
                                             onDelete = { onDeletePost(post) },
                                             canComment = canComment,
@@ -588,30 +581,54 @@ fun HomeScreen(
                 }
 
                 selectedPost?.let { post ->
-                    PostCommentsDialog(
-                        post = post,
-                        currentUserId = data.currentUser?.uid.orEmpty(),
-                        comments = comments,
+                    val currentUid = data.currentUser?.uid.orEmpty()
+                    val commentById = remember(comments) { comments.associateBy { it.id } }
+                    val mappedComments = remember(comments, post.authorId, currentUid) {
+                        comments.map { comment ->
+                            com.libra.app.ui.components.LibraCommentItem(
+                                id = comment.id,
+                                authorId = comment.authorId,
+                                authorName = comment.authorName,
+                                authorUsername = comment.authorUsername,
+                                authorPhotoUrl = comment.authorPhotoUrl,
+                                text = comment.text,
+                                parentCommentId = comment.parentCommentId,
+                                createdAt = comment.createdAt,
+                                isContentAuthor = comment.authorId == post.authorId,
+                                canDelete = comment.authorId == currentUid
+                            )
+                        }
+                    }
+
+                    com.libra.app.ui.components.LibraCommentsBottomSheet(
+                        comments = mappedComments,
+                        currentUser = data.currentUser,
                         text = commentText,
                         onTextChanged = { if (it.length <= 500) commentText = it },
-                        replyTarget = replyTarget,
-                        onReply = { replyTarget = it },
-                        onSend = {
-                            onAddComment(post, commentText.trim(), replyTarget?.id.orEmpty())
-                            commentText = ""
-                            replyTarget = null
+                        onSend = { parentId ->
+                            val trimmed = commentText.trim()
+                            if (trimmed.isNotEmpty()) {
+                                onAddComment(post, trimmed, parentId)
+                                commentText = ""
+                            }
                         },
-                        onDeleteComment = { onDeleteComment(post, it) },
-                        isSending = isCommenting,
-                        error = commentError,
-                        onClearError = onClearCommentError,
-                        onOpenProfile = onOpenProfile,
                         onDismiss = {
                             selectedPost = null
                             commentText = ""
-                            replyTarget = null
                             onCloseComments()
-                        }
+                        },
+                        contextTitle = post.title.ifBlank { post.text.take(60) },
+                        isLoading = isLoadingComments,
+                        isSending = isCommenting,
+                        canComment = canComment,
+                        repliesEnabled = true,
+                        maxChars = 500,
+                        error = commentError,
+                        onClearError = onClearCommentError,
+                        onDeleteComment = { item ->
+                            commentById[item.id]?.let { onDeleteComment(post, it) }
+                        },
+                        onOpenProfile = onOpenProfile
                     )
                 }
             }
@@ -1061,7 +1078,7 @@ private fun PostCard(
                         .size(44.dp)
                         .clip(CircleShape)
                         .appleBouncy(
-                            enabled = canComment,
+                            enabled = true,
                             pressedScale = 0.85f,
                             onClick = onComment
                         ),
@@ -1080,7 +1097,7 @@ private fun PostCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .appleBouncy(
-                            enabled = canComment,
+                            enabled = true,
                             pressedScale = 0.90f,
                             onClick = onComment
                         )
@@ -1405,156 +1422,6 @@ private fun PostLikersBottomSheet(
             }
 
             Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PostCommentsDialog(
-    post: Post,
-    currentUserId: String,
-    comments: List<PostComment>,
-    text: String,
-    onTextChanged: (String) -> Unit,
-    replyTarget: PostComment?,
-    onReply: (PostComment?) -> Unit,
-    onSend: () -> Unit,
-    onDeleteComment: (PostComment) -> Unit,
-    isSending: Boolean,
-    error: String?,
-    onClearError: () -> Unit,
-    onOpenProfile: (String) -> Unit = {},
-    onDismiss: () -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        modifier = Modifier.fillMaxHeight(),
-        contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) }
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight().imePadding().navigationBarsPadding()
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
-            ) {
-                Text("Yorumlar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "${comments.size} yorum",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            androidx.compose.material3.HorizontalDivider()
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (comments.isEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 50.dp), contentAlignment = Alignment.Center) {
-                            Text("Henüz yorum yok. İlk yorumu sen bırak.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                } else {
-                    items(comments, key = { it.id }) { comment ->
-                        val isReply = comment.parentCommentId.isNotBlank()
-                        Row(
-                            modifier = Modifier.padding(start = if (isReply) 38.dp else 0.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            UserAvatar(
-                                photoUrl = comment.authorPhotoUrl,
-                                initials = comment.authorName.take(1).uppercase().ifBlank { "L" },
-                                size = if (isReply) 32.dp else 36.dp,
-                                onClick = {
-                                    onDismiss()
-                                    onOpenProfile(comment.authorId)
-                                }
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                ) {
-                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                        Text(
-                                            text = comment.authorName.ifBlank { "Libra kullanıcısı" },
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.clickable {
-                                                onDismiss()
-                                                onOpenProfile(comment.authorId)
-                                            }
-                                        )
-                                        Text(comment.text, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (comment.authorId != currentUserId) {
-                                        TextButton(onClick = { onReply(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                            Text("Yanıtla")
-                                        }
-                                    }
-                                    if (comment.authorId == currentUserId) {
-                                        TextButton(onClick = { onDeleteComment(comment) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                            Text("Sil")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (replyTarget != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Yanıtlanıyor", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            Text(
-                                "@${replyTarget.authorUsername.ifBlank { replyTarget.authorName }}: ${replyTarget.text}",
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        TextButton(onClick = { onReply(null) }) { Text("Kapat") }
-                    }
-                }
-            }
-            if (error != null) {
-                TextButton(onClick = onClearError, modifier = Modifier.padding(horizontal = 14.dp)) {
-                    Text(error, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = onTextChanged,
-                        placeholder = { Text(if (replyTarget != null) "Yanıtını yaz…" else "Yorum yaz…") },
-                        modifier = Modifier.weight(1f),
-                        minLines = 1,
-                        maxLines = 4,
-                        shape = RoundedCornerShape(22.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(enabled = text.trim().isNotEmpty() && !isSending, onClick = onSend) {
-                        Text(if (isSending) "…" else "Gönder")
-                    }
-                }
-            }
         }
     }
 }

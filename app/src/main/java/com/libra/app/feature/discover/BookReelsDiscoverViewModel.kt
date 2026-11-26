@@ -10,6 +10,7 @@ import com.libra.app.domain.model.BookStatus
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.repository.AuthRepository
 import com.libra.app.domain.repository.BookRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,7 +102,9 @@ data class BookReelsState(
     val firstChapterIds: Map<String, String> = emptyMap(),
     val activeCommentsBookId: String? = null,
     val comments: List<BookComment> = emptyList(),
-    val isLoadingComments: Boolean = false
+    val isLoadingComments: Boolean = false,
+    val isSendingComment: Boolean = false,
+    val commentError: String? = null
 )
 
 class BookReelsDiscoverViewModel(
@@ -114,6 +117,7 @@ class BookReelsDiscoverViewModel(
 
     private var allBooksPool: List<Book> = emptyList()
     private var rawBooksCache: List<Book> = emptyList()
+    private var commentsJob: Job? = null
 
     init {
         loadDiscoverBooks()
@@ -146,12 +150,18 @@ class BookReelsDiscoverViewModel(
 
             val initialEngagements = _state.value.engagements.toMutableMap()
             initialBooks.forEach { b ->
-                if (!initialEngagements.containsKey(b.id)) {
-                    initialEngagements[b.id] = BookEngagementUi(
+                val existing = initialEngagements[b.id]
+                initialEngagements[b.id] = if (existing == null) {
+                    BookEngagementUi(
                         isLiked = false,
                         likesCount = b.likesCount,
                         isSaved = false,
-                        commentsCount = 0
+                        commentsCount = b.commentsCount
+                    )
+                } else {
+                    existing.copy(
+                        likesCount = b.likesCount,
+                        commentsCount = maxOf(existing.commentsCount, b.commentsCount)
                     )
                 }
             }
@@ -197,7 +207,7 @@ class BookReelsDiscoverViewModel(
                         isLiked = false,
                         likesCount = b.likesCount,
                         isSaved = false,
-                        commentsCount = 0
+                        commentsCount = b.commentsCount
                     )
                 }
             }
@@ -368,58 +378,126 @@ class BookReelsDiscoverViewModel(
     }
 
     fun openComments(bookId: String) {
+        commentsJob?.cancel()
         _state.value = _state.value.copy(
             activeCommentsBookId = bookId,
             isLoadingComments = true,
-            comments = emptyList()
+            comments = emptyList(),
+            commentError = null
         )
-        viewModelScope.launch {
-            when (val result = bookRepository.getBookComments(bookId).first()) {
-                is AppResult.Success -> {
-                    _state.value = _state.value.copy(
-                        isLoadingComments = false,
-                        comments = result.data
-                    )
-                }
-                is AppResult.Error -> {
-                    _state.value = _state.value.copy(isLoadingComments = false)
+        commentsJob = viewModelScope.launch {
+            bookRepository.getBookComments(bookId).collect { result ->
+                when (result) {
+                    is AppResult.Success -> {
+                        val updatedEngagements = _state.value.engagements.toMutableMap()
+                        val curEng = updatedEngagements[bookId] ?: BookEngagementUi()
+                        updatedEngagements[bookId] = curEng.copy(commentsCount = result.data.size)
+                        _state.value = _state.value.copy(
+                            isLoadingComments = false,
+                            comments = result.data,
+                            engagements = updatedEngagements,
+                            commentError = null
+                        )
+                    }
+                    is AppResult.Error -> {
+                        _state.value = _state.value.copy(
+                            isLoadingComments = false,
+                            commentError = result.error.message
+                        )
+                    }
                 }
             }
         }
     }
 
     fun closeComments() {
-        _state.value = _state.value.copy(activeCommentsBookId = null, comments = emptyList())
+        commentsJob?.cancel()
+        commentsJob = null
+        _state.value = _state.value.copy(
+            activeCommentsBookId = null,
+            comments = emptyList(),
+            isLoadingComments = false,
+            isSendingComment = false,
+            commentError = null
+        )
     }
 
-    fun addComment(bookId: String, text: String) {
+    fun addComment(bookId: String, text: String, parentCommentId: String = "") {
         val user = authRepository.currentUser.value ?: return
-        if (text.trim().isBlank()) return
+        val cleanText = text.trim()
+        if (cleanText.isBlank()) return
+        if (!user.moderation.canComment) {
+            _state.value = _state.value.copy(
+                commentError = "Yorum yapma yetkiniz geçici olarak kısıtlandı."
+            )
+            return
+        }
 
-        val newComment = BookComment(
-            id = "c-${System.currentTimeMillis()}",
+        val pendingComment = BookComment(
+            id = "",
             bookId = bookId,
             userId = user.uid,
-            authorName = user.displayName.ifBlank { "Libra Okuru" },
+            authorName = user.displayName.ifBlank { user.username.ifBlank { "Libra Kullanıcısı" } },
             authorUsername = user.username,
             authorPhotoUrl = user.profileImageUrl,
-            text = text.trim(),
+            text = cleanText,
+            parentCommentId = parentCommentId.trim(),
             createdAt = System.currentTimeMillis()
         )
 
-        // Optimistically append comment
-        val updatedComments = listOf(newComment) + _state.value.comments
-        val updatedEngagements = _state.value.engagements.toMutableMap()
-        val curEng = updatedEngagements[bookId] ?: BookEngagementUi()
-        updatedEngagements[bookId] = curEng.copy(commentsCount = curEng.commentsCount + 1)
-
-        _state.value = _state.value.copy(
-            comments = updatedComments,
-            engagements = updatedEngagements
-        )
+        _state.value = _state.value.copy(isSendingComment = true, commentError = null)
 
         viewModelScope.launch {
-            bookRepository.addBookComment(newComment)
+            when (val res = bookRepository.addBookComment(pendingComment)) {
+                is AppResult.Success -> {
+                    val saved = res.data
+                    val exists = _state.value.comments.any { it.id == saved.id }
+                    val mergedComments = if (exists) {
+                        _state.value.comments
+                    } else {
+                        listOf(saved) + _state.value.comments
+                    }
+                    val updatedEngagements = _state.value.engagements.toMutableMap()
+                    val curEng = updatedEngagements[bookId] ?: BookEngagementUi()
+                    updatedEngagements[bookId] = curEng.copy(commentsCount = mergedComments.size)
+                    _state.value = _state.value.copy(
+                        isSendingComment = false,
+                        comments = mergedComments,
+                        engagements = updatedEngagements
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(
+                        isSendingComment = false,
+                        commentError = res.error.message
+                    )
+                }
+            }
         }
+    }
+
+    fun deleteComment(bookId: String, commentId: String) {
+        if (bookId.isBlank() || commentId.isBlank()) return
+        viewModelScope.launch {
+            when (val res = bookRepository.deleteBookComment(bookId, commentId)) {
+                is AppResult.Success -> {
+                    val remaining = _state.value.comments.filterNot { it.id == commentId }
+                    val updatedEngagements = _state.value.engagements.toMutableMap()
+                    val curEng = updatedEngagements[bookId] ?: BookEngagementUi()
+                    updatedEngagements[bookId] = curEng.copy(commentsCount = remaining.size)
+                    _state.value = _state.value.copy(
+                        comments = remaining,
+                        engagements = updatedEngagements
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(commentError = res.error.message)
+                }
+            }
+        }
+    }
+
+    fun clearCommentError() {
+        _state.value = _state.value.copy(commentError = null)
     }
 }

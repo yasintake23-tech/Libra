@@ -28,11 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
@@ -65,20 +65,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.BookComment
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ReadingProgress
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.ui.components.BookCommentsPreviewCard
 import com.libra.app.ui.components.BookCover
+import com.libra.app.ui.components.LibraCommentItem
+import com.libra.app.ui.components.LibraCommentsBottomSheet
+import com.libra.app.ui.components.UserAvatar
 import com.libra.app.ui.animation.appleBouncy
 
 @Composable
@@ -94,6 +97,7 @@ fun BookDetailScreen(
 ) {
     val vm: BookDetailViewModel = viewModel(key = "book-detail-${book.id}")
     val state by vm.state.collectAsState()
+    val currentUser by ServiceLocator.authRepository.currentUser.collectAsState()
 
     LaunchedEffect(book.id, userId) {
         vm.load(book, userId)
@@ -133,11 +137,21 @@ fun BookDetailScreen(
                     chapters = state.chapters,
                     progress = state.progress,
                     author = state.author,
+                    currentUser = currentUser,
+                    userId = userId,
                     isLiked = state.isLiked,
                     isSaved = state.isSaved,
                     likesCount = state.likesCount,
+                    comments = state.comments,
+                    commentsCount = state.commentsCount,
+                    isLoadingComments = state.isLoadingComments,
+                    isSendingComment = state.isSendingComment,
+                    commentError = state.commentError,
                     onToggleLike = { vm.toggleLike(userId) },
                     onToggleSave = { vm.toggleSave(userId) },
+                    onAddComment = vm::addComment,
+                    onDeleteComment = vm::deleteComment,
+                    onClearCommentError = vm::clearCommentError,
                     onBack = onBack,
                     onRead = onRead,
                     onOpenChapter = onOpenChapter,
@@ -156,11 +170,21 @@ private fun BookDetailContent(
     chapters: List<Chapter>,
     progress: ReadingProgress?,
     author: UserProfile?,
+    currentUser: UserProfile?,
+    userId: String,
     isLiked: Boolean,
     isSaved: Boolean,
     likesCount: Int,
+    comments: List<BookComment>,
+    commentsCount: Int,
+    isLoadingComments: Boolean,
+    isSendingComment: Boolean,
+    commentError: String?,
     onToggleLike: () -> Unit,
     onToggleSave: () -> Unit,
+    onAddComment: (String, String) -> Unit,
+    onDeleteComment: (String) -> Unit,
+    onClearCommentError: () -> Unit,
     onBack: () -> Unit,
     onRead: (Book, Chapter?) -> Unit,
     onOpenChapter: (Book, Chapter) -> Unit,
@@ -168,8 +192,26 @@ private fun BookDetailContent(
     onShare: ((Book) -> Unit)?
 ) {
     var isDescriptionExpanded by remember { mutableStateOf(false) }
+    var showCommentsSheet by remember(book.id) { mutableStateOf(false) }
+    var commentDraft by remember(book.id) { mutableStateOf("") }
 
-    val authorPhoto = author?.profileImageUrl?.let { ServiceLocator.storageRepository.getPublicCdnUrl(it) }.orEmpty()
+    val mappedComments = remember(comments, book.ownerId, userId) {
+        comments.map { comment ->
+            LibraCommentItem(
+                id = comment.id,
+                authorId = comment.userId,
+                authorName = comment.authorName,
+                authorUsername = comment.authorUsername,
+                authorPhotoUrl = comment.authorPhotoUrl,
+                text = comment.text,
+                parentCommentId = comment.parentCommentId,
+                createdAt = comment.createdAt,
+                isContentAuthor = comment.userId == book.ownerId,
+                canDelete = userId.isNotBlank() && (comment.userId == userId || book.ownerId == userId)
+            )
+        }
+    }
+
     val progressPercent = progress?.progressPercent?.coerceIn(0, 100) ?: 0
     val continueChapter = progress?.chapterId?.let { id -> chapters.firstOrNull { it.id == id } }
         ?: progress?.chapterNumber?.let { n -> chapters.firstOrNull { it.chapterNumber == n } }
@@ -191,6 +233,16 @@ private fun BookDetailContent(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showCommentsSheet = true },
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { showCommentsSheet = true })
+                    ) {
+                        Icon(
+                            Icons.Default.ChatBubbleOutline,
+                            contentDescription = "Kitap Yorumları",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(
                         onClick = onToggleLike,
                         modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onToggleLike)
@@ -384,26 +436,18 @@ private fun BookDetailContent(
                                 .padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (authorPhoto.isNotBlank()) {
-                                AsyncImage(
-                                    model = authorPhoto,
-                                    contentDescription = author?.displayName ?: book.authorName,
-                                    modifier = Modifier.size(36.dp).clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Surface(Modifier.size(36.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
+                            val resolvedAuthorName = author?.displayName?.ifBlank { book.authorName } ?: book.authorName
+                            UserAvatar(
+                                photoUrl = author?.profileImageUrl,
+                                initials = resolvedAuthorName.take(1).uppercase().ifBlank { "L" },
+                                size = 36.dp
+                            )
 
                             Spacer(Modifier.width(10.dp))
 
                             Column {
                                 Text(
-                                    text = author?.displayName?.ifBlank { book.authorName } ?: book.authorName,
+                                    text = resolvedAuthorName,
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                                 )
                                 author?.username?.takeIf { it.isNotBlank() }?.let {
@@ -560,12 +604,28 @@ private fun BookDetailContent(
                 }
             }
 
+            // Instagram-inspired Book Comments Preview Section
+            item {
+                BookCommentsPreviewCard(
+                    comments = mappedComments,
+                    totalCount = commentsCount,
+                    canComment = currentUser?.moderation?.canComment != false,
+                    onOpenCommentsSheet = { showCommentsSheet = true },
+                    onOpenProfile = { targetUid ->
+                        if (targetUid.isNotBlank()) {
+                            onOpenAuthor?.invoke(targetUid)
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                )
+            }
+
             // Chapters List Header
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+                        .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -660,6 +720,38 @@ private fun BookDetailContent(
                 }
             }
         }
+    }
+
+    if (showCommentsSheet) {
+        LibraCommentsBottomSheet(
+            comments = mappedComments,
+            currentUser = currentUser,
+            text = commentDraft,
+            onTextChanged = { commentDraft = it },
+            onSend = { parentId ->
+                val trimmed = commentDraft.trim()
+                if (trimmed.isNotEmpty()) {
+                    commentDraft = ""
+                    onAddComment(trimmed, parentId)
+                }
+            },
+            onDismiss = { showCommentsSheet = false },
+            contextTitle = book.title,
+            isLoading = isLoadingComments,
+            isSending = isSendingComment,
+            canComment = currentUser?.moderation?.canComment != false,
+            repliesEnabled = true,
+            maxChars = 1000,
+            error = commentError,
+            onClearError = onClearCommentError,
+            onDeleteComment = { item -> onDeleteComment(item.id) },
+            onOpenProfile = { targetUid ->
+                if (targetUid.isNotBlank()) {
+                    showCommentsSheet = false
+                    onOpenAuthor?.invoke(targetUid)
+                }
+            }
+        )
     }
 }
 

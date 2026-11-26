@@ -5,16 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.BookComment
 import com.libra.app.domain.model.Chapter
 import com.libra.app.domain.model.ReadingProgress
+import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.repository.AuthRepository
+import com.libra.app.domain.repository.BookRepository
+import com.libra.app.domain.repository.UserRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-import com.libra.app.domain.model.ShelfType
 
 data class BookDetailState(
     val book: Book? = null,
@@ -24,15 +27,25 @@ data class BookDetailState(
     val isLiked: Boolean = false,
     val isSaved: Boolean = false,
     val likesCount: Int = 0,
+    val comments: List<BookComment> = emptyList(),
+    val commentsCount: Int = 0,
+    val isLoadingComments: Boolean = false,
+    val isSendingComment: Boolean = false,
+    val commentError: String? = null,
     val loading: Boolean = false,
     val error: String? = null
 )
 
-class BookDetailViewModel : ViewModel() {
+class BookDetailViewModel(
+    private val bookRepository: BookRepository = ServiceLocator.bookRepository,
+    private val userRepository: UserRepository = ServiceLocator.userRepository,
+    private val authRepository: AuthRepository = ServiceLocator.authRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(BookDetailState())
     val state: StateFlow<BookDetailState> = _state.asStateFlow()
     private var chaptersJob: Job? = null
     private var progressJob: Job? = null
+    private var commentsJob: Job? = null
     private var loadedBookId = ""
 
     fun load(book: Book, userId: String) {
@@ -44,15 +57,18 @@ class BookDetailViewModel : ViewModel() {
         loadedBookId = book.id
         chaptersJob?.cancel()
         progressJob?.cancel()
+        commentsJob?.cancel()
         _state.value = BookDetailState(
             book = book,
             likesCount = book.likesCount,
+            commentsCount = book.commentsCount,
+            isLoadingComments = true,
             loading = true
         )
 
         viewModelScope.launch {
             if (book.ownerId.isNotBlank()) {
-                when (val result = ServiceLocator.userRepository.getUserProfileFresh(book.ownerId)) {
+                when (val result = userRepository.getUserProfileFresh(book.ownerId)) {
                     is AppResult.Success -> _state.value = _state.value.copy(author = result.data)
                     is AppResult.Error -> Unit
                 }
@@ -61,7 +77,7 @@ class BookDetailViewModel : ViewModel() {
 
         viewModelScope.launch {
             if (userId.isNotBlank()) {
-                when (val engagement = ServiceLocator.bookRepository.getBookEngagement(book.id, userId)) {
+                when (val engagement = bookRepository.getBookEngagement(book.id, userId)) {
                     is AppResult.Success -> _state.value = _state.value.copy(
                         isLiked = engagement.data.liked,
                         isSaved = engagement.data.saved
@@ -72,7 +88,7 @@ class BookDetailViewModel : ViewModel() {
         }
 
         chaptersJob = viewModelScope.launch {
-            ServiceLocator.bookRepository.getBookChapters(book.id).collect { result ->
+            bookRepository.getBookChapters(book.id).collect { result ->
                 when (result) {
                     is AppResult.Success -> {
                         val allChapters = result.data.sortedBy { it.chapterNumber }
@@ -110,8 +126,29 @@ class BookDetailViewModel : ViewModel() {
         }
 
         progressJob = viewModelScope.launch {
-            ServiceLocator.bookRepository.getReadingProgress(userId, book.id).collect { result ->
+            bookRepository.getReadingProgress(userId, book.id).collect { result ->
                 if (result is AppResult.Success) _state.value = _state.value.copy(progress = result.data)
+            }
+        }
+
+        commentsJob = viewModelScope.launch {
+            bookRepository.getBookComments(book.id).collect { result ->
+                when (result) {
+                    is AppResult.Success -> {
+                        _state.value = _state.value.copy(
+                            comments = result.data,
+                            commentsCount = result.data.size,
+                            isLoadingComments = false,
+                            commentError = null
+                        )
+                    }
+                    is AppResult.Error -> {
+                        _state.value = _state.value.copy(
+                            isLoadingComments = false,
+                            commentError = result.error.message
+                        )
+                    }
+                }
             }
         }
     }
@@ -126,7 +163,7 @@ class BookDetailViewModel : ViewModel() {
         _state.value = _state.value.copy(isLiked = newLiked, likesCount = newCount)
 
         viewModelScope.launch {
-            when (val result = ServiceLocator.bookRepository.toggleBookLike(currentBook.id, userId)) {
+            when (val result = bookRepository.toggleBookLike(currentBook.id, userId)) {
                 is AppResult.Success -> _state.value = _state.value.copy(isLiked = result.data)
                 is AppResult.Error -> _state.value = _state.value.copy(isLiked = currentlyLiked, likesCount = currentCount)
             }
@@ -141,13 +178,13 @@ class BookDetailViewModel : ViewModel() {
         _state.value = _state.value.copy(isSaved = newSaved)
 
         viewModelScope.launch {
-            when (val result = ServiceLocator.bookRepository.toggleBookSave(currentBook.id, userId)) {
+            when (val result = bookRepository.toggleBookSave(currentBook.id, userId)) {
                 is AppResult.Success -> {
                     _state.value = _state.value.copy(isSaved = result.data)
                     if (result.data) {
-                        ServiceLocator.bookRepository.addBookToShelf(userId, currentBook.id, ShelfType.SAVED)
+                        bookRepository.addBookToShelf(userId, currentBook.id, ShelfType.SAVED)
                     } else {
-                        ServiceLocator.bookRepository.removeBookFromShelf(userId, currentBook.id, ShelfType.SAVED)
+                        bookRepository.removeBookFromShelf(userId, currentBook.id, ShelfType.SAVED)
                     }
                 }
                 is AppResult.Error -> _state.value = _state.value.copy(isSaved = currentlySaved)
@@ -155,9 +192,84 @@ class BookDetailViewModel : ViewModel() {
         }
     }
 
+    fun addComment(text: String, parentCommentId: String = "") {
+        val currentBook = _state.value.book ?: return
+        val user = authRepository.currentUser.value ?: return
+        val cleanText = text.trim()
+        if (cleanText.isBlank()) return
+        if (!user.moderation.canComment) {
+            _state.value = _state.value.copy(
+                commentError = "Yorum yapma yetkiniz geçici olarak kısıtlandı."
+            )
+            return
+        }
+
+        val pending = BookComment(
+            id = "",
+            bookId = currentBook.id,
+            userId = user.uid,
+            authorName = user.displayName.ifBlank { user.username.ifBlank { "Libra Kullanıcısı" } },
+            authorUsername = user.username,
+            authorPhotoUrl = user.profileImageUrl,
+            text = cleanText,
+            parentCommentId = parentCommentId.trim(),
+            createdAt = System.currentTimeMillis()
+        )
+
+        _state.value = _state.value.copy(isSendingComment = true, commentError = null)
+
+        viewModelScope.launch {
+            when (val result = bookRepository.addBookComment(pending)) {
+                is AppResult.Success -> {
+                    val saved = result.data
+                    val merged = if (_state.value.comments.any { it.id == saved.id }) {
+                        _state.value.comments
+                    } else {
+                        listOf(saved) + _state.value.comments
+                    }
+                    _state.value = _state.value.copy(
+                        isSendingComment = false,
+                        comments = merged,
+                        commentsCount = merged.size
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(
+                        isSendingComment = false,
+                        commentError = result.error.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteComment(commentId: String) {
+        val currentBook = _state.value.book ?: return
+        if (commentId.isBlank()) return
+        viewModelScope.launch {
+            when (val result = bookRepository.deleteBookComment(currentBook.id, commentId)) {
+                is AppResult.Success -> {
+                    val remaining = _state.value.comments.filterNot { it.id == commentId }
+                    _state.value = _state.value.copy(
+                        comments = remaining,
+                        commentsCount = remaining.size
+                    )
+                }
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(commentError = result.error.message)
+                }
+            }
+        }
+    }
+
+    fun clearCommentError() {
+        _state.value = _state.value.copy(commentError = null)
+    }
+
     fun clear() {
         chaptersJob?.cancel()
         progressJob?.cancel()
+        commentsJob?.cancel()
         loadedBookId = ""
         _state.value = BookDetailState()
     }
