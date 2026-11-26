@@ -533,9 +533,9 @@ class NotificationSystemTest {
             nowMs = now
         )
 
-        assertEquals(listOf("grp_1", "me_peer1"), fallback.map { it.referenceId })
-        assertEquals(LibraNotificationTypes.GROUP_MESSAGE, fallback[0].type)
-        assertEquals(LibraNotificationTypes.MESSAGE, fallback[1].type)
+        assertEquals(listOf("me_peer1", "grp_1"), fallback.map { it.referenceId })
+        assertEquals(LibraNotificationTypes.MESSAGE, fallback[0].type)
+        assertEquals(LibraNotificationTypes.GROUP_MESSAGE, fallback[1].type)
     }
 
     // --- Fakes ---
