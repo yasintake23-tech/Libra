@@ -1,64 +1,145 @@
 package com.libra.app.feature.messages
 
-import androidx.compose.foundation.background
-import coil.compose.AsyncImage
-import com.libra.app.ui.components.FullScreenImageViewerDialog
+import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.libra.app.core.di.ServiceLocator
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.model.UserProfile
-import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
+import com.libra.app.ui.components.FullScreenImageViewerDialog
+import com.libra.app.ui.components.UserAvatar
+import com.libra.app.ui.theme.LibraLavender
+import com.libra.app.ui.theme.LibraLavenderBorder
+import com.libra.app.ui.theme.LibraLavenderDarkBorder
+import com.libra.app.ui.theme.LibraLavenderDarkSurface
+import com.libra.app.ui.theme.LibraLavenderDarkText
+import com.libra.app.ui.theme.LibraLavenderSurface
+import com.libra.app.ui.theme.LibraLavenderText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
+import java.util.UUID
+import kotlin.math.roundToInt
 
 class DirectMessagesViewModel : ViewModel() {
     private val repository = ServiceLocator.chatRepository
@@ -69,7 +150,7 @@ class DirectMessagesViewModel : ViewModel() {
     val messages = _messages.asStateFlow()
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
-    private var conversationJob: kotlinx.coroutines.Job? = null
+    private var conversationJob: Job? = null
     private val pendingMessages = linkedMapOf<String, DirectMessage>()
 
     init {
@@ -95,35 +176,99 @@ class DirectMessagesViewModel : ViewModel() {
         markRead(conversation.id)
     }
 
-    fun createGroup(name: String, participantIds: List<String>, onComplete: (DirectConversation?) -> Unit = {}) {
+    fun createGroup(
+        name: String,
+        participantIds: List<String>,
+        onComplete: (DirectConversation?) -> Unit = {}
+    ) {
         viewModelScope.launch {
             when (val result = repository.createGroupConversation(name, participantIds)) {
-                is AppResult.Success -> { _error.value = null; onComplete(result.data) }
-                is AppResult.Error -> { _error.value = result.error.message; onComplete(null) }
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(result.data)
+                }
+                is AppResult.Error -> {
+                    _error.value = result.error.message
+                    onComplete(null)
+                }
             }
         }
     }
 
-    fun sendGroup(conversationId: String, text: String, replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+    fun sendGroup(
+        conversationId: String,
+        text: String,
+        replyTo: DirectMessage? = null,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
         viewModelScope.launch {
             when (val result = repository.sendGroupMessage(conversationId, text, replyTo)) {
-                is AppResult.Success -> { _error.value = null; onComplete(true) }
-                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(true)
+                }
+                is AppResult.Error -> {
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
             }
         }
     }
 
-    fun sendGroupMedia(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, onComplete: (Boolean) -> Unit = {}) {
+    fun sendGroupMedia(
+        conversationId: String,
+        mediaUrl: String,
+        mediaType: String,
+        text: String = "",
+        replyTo: DirectMessage? = null,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            when (val result = repository.sendGroupMediaMessage(conversationId, mediaUrl, mediaType, text, replyTo)) {
-                is AppResult.Success -> { _error.value = null; onComplete(true) }
-                is AppResult.Error -> { _error.value = result.error.message; onComplete(false) }
+            when (
+                val result = repository.sendGroupMediaMessage(
+                    conversationId = conversationId,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    text = text,
+                    replyTo = replyTo
+                )
+            ) {
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(true)
+                }
+                is AppResult.Error -> {
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
             }
         }
     }
 
     fun markRead(conversationId: String) {
+        _conversations.value = _conversations.value.map {
+            if (it.id == conversationId) it.copy(unreadCount = 0) else it
+        }
         viewModelScope.launch { repository.markDirectConversationRead(conversationId) }
+    }
+
+    fun hideConversation(
+        conversationId: String,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            when (val result = repository.hideDirectConversation(conversationId)) {
+                is AppResult.Success -> {
+                    _conversations.value = _conversations.value.filterNot { it.id == conversationId }
+                    _error.value = null
+                    onComplete(true)
+                }
+                is AppResult.Error -> {
+                    _error.value = result.error.message
+                    onComplete(false)
+                }
+            }
+        }
     }
 
     private fun observeConversation(id: String) {
@@ -166,11 +311,13 @@ class DirectMessagesViewModel : ViewModel() {
     ): String? {
         val sender = auth.currentUser.value ?: return null
         val now = System.currentTimeMillis()
-        val localId = "local-" + now + "-" + java.util.UUID.randomUUID()
+        val localId = "local-" + now + "-" + UUID.randomUUID()
         pendingMessages[localId] = DirectMessage(
             id = localId,
             senderId = sender.uid,
             senderPhotoUrl = sender.profileImageUrl,
+            senderName = sender.displayName,
+            senderUsername = sender.username,
             recipientId = recipientId,
             text = text.trim(),
             mediaUrl = mediaUrl,
@@ -181,8 +328,9 @@ class DirectMessagesViewModel : ViewModel() {
                 if (replyTo.mediaUrl.isNotBlank()) "📷 Fotoğraf" else ""
             }.orEmpty(),
             replyToSenderId = replyTo?.senderId.orEmpty(),
-            replyToSenderName = replyTo?.replyToSenderName.orEmpty()
-                .ifBlank { if (replyTo?.senderId == sender.uid) sender.displayName else "" }
+            replyToSenderName = replyTo?.senderName?.ifBlank {
+                if (replyTo.senderId == sender.uid) sender.displayName else replyTo.replyToSenderName
+            }.orEmpty()
         )
         mergeMessages(_messages.value)
         return localId
@@ -202,7 +350,10 @@ class DirectMessagesViewModel : ViewModel() {
         }
         viewModelScope.launch {
             when (val result = repository.sendDirectMessage(recipientId, text, replyTo)) {
-                is AppResult.Success -> { _error.value = null; onComplete(true) }
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(true)
+                }
                 is AppResult.Error -> {
                     pendingMessages.remove(localId)
                     mergeMessages(_messages.value)
@@ -228,8 +379,19 @@ class DirectMessagesViewModel : ViewModel() {
             return
         }
         viewModelScope.launch {
-            when (val result = repository.sendDirectMediaMessage(recipientId, mediaUrl, mediaType, text, replyTo)) {
-                is AppResult.Success -> { _error.value = null; onComplete(true) }
+            when (
+                val result = repository.sendDirectMediaMessage(
+                    recipientId = recipientId,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    text = text,
+                    replyTo = replyTo
+                )
+            ) {
+                is AppResult.Success -> {
+                    _error.value = null
+                    onComplete(true)
+                }
                 is AppResult.Error -> {
                     pendingMessages.remove(localId)
                     mergeMessages(_messages.value)
@@ -250,6 +412,8 @@ class DirectMessagesViewModel : ViewModel() {
     }
 
     fun delete(conversationId: String, messageId: String) {
+        pendingMessages.remove(messageId)
+        _messages.value = _messages.value.filterNot { it.id == messageId }
         viewModelScope.launch {
             when (val result = repository.deleteDirectMessage(conversationId, messageId)) {
                 is AppResult.Success -> _error.value = null
@@ -259,10 +423,104 @@ class DirectMessagesViewModel : ViewModel() {
     }
 
     fun react(conversationId: String, messageId: String, emoji: String) {
+        val uid = auth.currentUser.value?.uid.orEmpty()
+        if (uid.isNotBlank()) {
+            _messages.value = _messages.value.map { msg ->
+                if (msg.id == messageId) {
+                    val updated = msg.reactions.toMutableMap()
+                    if (updated[uid] == emoji) updated.remove(uid) else updated[uid] = emoji
+                    msg.copy(reactions = updated)
+                } else msg
+            }
+        }
         viewModelScope.launch {
             when (val result = repository.toggleDirectMessageReaction(conversationId, messageId, emoji)) {
                 is AppResult.Success -> _error.value = null
                 is AppResult.Error -> _error.value = result.error.message
+            }
+        }
+    }
+
+    fun forwardMessage(
+        message: DirectMessage,
+        targetConversation: DirectConversation?,
+        sendToGlobalChat: Boolean,
+        fallbackAuthorName: String,
+        onComplete: (Boolean) -> Unit
+    ) {
+        val me = auth.currentUser.value?.uid.orEmpty()
+        val isOwnPhoto = message.senderId == me && message.mediaUrl.isNotBlank()
+        val shared = if (!isOwnPhoto && (message.mediaUrl.isNotBlank() || message.sharedContent != null)) {
+            buildForwardSharedContent(message, fallbackAuthorName)
+        } else {
+            null
+        }
+        val forwardText = when {
+            message.text.isNotBlank() -> message.text.trim()
+            shared != null -> "Bir mesaj paylaştı."
+            else -> ""
+        }
+
+        viewModelScope.launch {
+            val result = when {
+                sendToGlobalChat -> {
+                    if (isOwnPhoto) {
+                        repository.sendGlobalMediaMessage(
+                            mediaUrl = message.mediaUrl,
+                            mediaType = message.mediaType.ifBlank { "image/jpeg" },
+                            text = message.text.trim()
+                        )
+                    } else {
+                        repository.sendGlobalMessage(
+                            text = forwardText,
+                            sharedContent = shared
+                        )
+                    }
+                }
+                targetConversation != null && targetConversation.isGroup -> {
+                    if (isOwnPhoto) {
+                        repository.sendGroupMediaMessage(
+                            conversationId = targetConversation.id,
+                            mediaUrl = message.mediaUrl,
+                            mediaType = message.mediaType.ifBlank { "image/jpeg" },
+                            text = message.text.trim()
+                        )
+                    } else {
+                        repository.sendGroupMessage(
+                            conversationId = targetConversation.id,
+                            text = forwardText,
+                            sharedContent = shared
+                        )
+                    }
+                }
+                targetConversation != null && targetConversation.otherUserId.isNotBlank() -> {
+                    if (isOwnPhoto) {
+                        repository.sendDirectMediaMessage(
+                            recipientId = targetConversation.otherUserId,
+                            mediaUrl = message.mediaUrl,
+                            mediaType = message.mediaType.ifBlank { "image/jpeg" },
+                            text = message.text.trim()
+                        )
+                    } else {
+                        repository.sendDirectMessage(
+                            recipientId = targetConversation.otherUserId,
+                            text = forwardText,
+                            sharedContent = shared
+                        )
+                    }
+                }
+                else -> {
+                    onComplete(false)
+                    return@launch
+                }
+            }
+
+            if (result is AppResult.Success) {
+                _error.value = null
+                onComplete(true)
+            } else if (result is AppResult.Error) {
+                _error.value = result.error.message
+                onComplete(false)
             }
         }
     }
@@ -272,6 +530,7 @@ private fun authUserId(): String = ServiceLocator.authRepository.currentUser.val
 
 private enum class MessageSection { MESSAGES, COMMUNITIES }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DirectMessagesScreen(
     onFindFriends: () -> Unit,
@@ -287,11 +546,19 @@ fun DirectMessagesScreen(
     canMessage: Boolean = true,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
+    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val clipboard = LocalClipboardManager.current
+
     var section by remember { mutableStateOf(MessageSection.MESSAGES) }
     var conversationSearch by remember { mutableStateOf("") }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
     var selectedConversation by remember { mutableStateOf<DirectConversation?>(null) }
     var showNewChat by remember { mutableStateOf(false) }
+    var longPressedConversation by remember { mutableStateOf<DirectConversation?>(null) }
+    var confirmDeleteConversation by remember { mutableStateOf<DirectConversation?>(null) }
+
     val conversations by viewModel.conversations.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -350,9 +617,15 @@ fun DirectMessagesScreen(
 
     selectedConversation?.let { conversation ->
         DirectConversationScreen(
-            user = UserProfile(uid = "", displayName = conversation.groupName.ifBlank { "Grup sohbeti" }, profileImageUrl = conversation.groupPhotoUrl),
+            user = UserProfile(
+                uid = "",
+                displayName = conversation.groupName.ifBlank { "Grup sohbeti" },
+                profileImageUrl = conversation.groupPhotoUrl
+            ),
             conversationIdOverride = conversation.id,
             isGroup = true,
+            groupMemberCount = conversation.participantIds.size,
+            conversations = conversations,
             messages = messages,
             error = error,
             onBack = { selectedConversation = null },
@@ -361,6 +634,15 @@ fun DirectMessagesScreen(
             onEdit = { id, text -> viewModel.edit(conversation.id, id, text) },
             onDelete = { id -> viewModel.delete(conversation.id, id) },
             onReaction = { id, emoji -> viewModel.react(conversation.id, id, emoji) },
+            onForwardMessage = { msg, targetConv, toGlobal, done ->
+                viewModel.forwardMessage(
+                    message = msg,
+                    targetConversation = targetConv,
+                    sendToGlobalChat = toGlobal,
+                    fallbackAuthorName = msg.senderName.ifBlank { conversation.groupName },
+                    onComplete = done
+                )
+            },
             canMessage = canMessage,
             modifier = modifier
         )
@@ -368,59 +650,170 @@ fun DirectMessagesScreen(
     }
 
     selectedUser?.let { user ->
+        val dmConvId = listOf(authUserId(), user.uid).sorted().joinToString("_")
         DirectConversationScreen(
             user = user,
+            conversations = conversations,
             messages = messages,
             error = error,
             onBack = { selectedUser = null },
             onSend = { text, reply, onComplete -> viewModel.send(user.uid, text, reply, onComplete) },
             onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendMedia(user.uid, url, type, text, reply, onComplete) },
-            onEdit = { id, text -> viewModel.edit(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, text) },
-            onDelete = { id -> viewModel.delete(listOf(authUserId(), user.uid).sorted().joinToString("_"), id) },
-            onReaction = { id, emoji -> viewModel.react(listOf(authUserId(), user.uid).sorted().joinToString("_"), id, emoji) },
+            onEdit = { id, text -> viewModel.edit(dmConvId, id, text) },
+            onDelete = { id -> viewModel.delete(dmConvId, id) },
+            onReaction = { id, emoji -> viewModel.react(dmConvId, id, emoji) },
+            onForwardMessage = { msg, targetConv, toGlobal, done ->
+                viewModel.forwardMessage(
+                    message = msg,
+                    targetConversation = targetConv,
+                    sendToGlobalChat = toGlobal,
+                    fallbackAuthorName = if (msg.senderId == user.uid) user.displayName else msg.senderName,
+                    onComplete = done
+                )
+            },
             onOpenProfile = { onOpenProfile(user.uid) },
             canMessage = canMessage,
-            conversationIdOverride = listOf(authUserId(), user.uid).sorted().joinToString("_"),
+            conversationIdOverride = dmConvId,
             modifier = modifier
         )
         return
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Mesajlar", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text("Birebir veya grup sohbeti başlat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val totalUnread = remember(conversations) { conversations.sumOf { it.unreadCount } }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Mesajlar",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                    )
+                    if (totalUnread > 0) {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
+                            border = BorderStroke(1.dp, if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder)
+                        ) {
+                            Text(
+                                text = "$totalUnread yeni",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "Birebir veya grup sohbeti başlat.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            IconButton(
-                onClick = { showNewChat = true },
-                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = { showNewChat = true })
+            Surface(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .appleBouncy(pressedScale = 0.86f, onClick = { showNewChat = true }),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Yeni sohbet")
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Yeni sohbet",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
+
         Spacer(Modifier.height(12.dp))
 
         if (section == MessageSection.MESSAGES) {
-            OutlinedTextField(
-                value = conversationSearch,
-                onValueChange = { conversationSearch = it },
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                placeholder = { Text("Mesajlarda ara…") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                shape = RoundedCornerShape(14.dp)
-            )
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                TextField(
+                    value = conversationSearch,
+                    onValueChange = { conversationSearch = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = {
+                        Text(
+                            text = "Mesajlarda ara…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = if (conversationSearch.isNotBlank()) {
+                        {
+                            IconButton(onClick = { conversationSearch = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Temizle")
+                            }
+                        }
+                    } else null,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
+                )
+            }
             Spacer(Modifier.height(10.dp))
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // Section switcher
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
-            SectionButton("Mesajlar", section == MessageSection.MESSAGES, { section = MessageSection.MESSAGES }, Modifier.weight(1f))
-            SectionButton("Topluluklar", section == MessageSection.COMMUNITIES, { section = MessageSection.COMMUNITIES }, Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                SectionButton(
+                    text = "Mesajlar",
+                    selected = section == MessageSection.MESSAGES,
+                    onClick = { section = MessageSection.MESSAGES },
+                    modifier = Modifier.weight(1f)
+                )
+                SectionButton(
+                    text = "Topluluklar",
+                    selected = section == MessageSection.COMMUNITIES,
+                    onClick = { section = MessageSection.COMMUNITIES },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
+
         Spacer(Modifier.height(12.dp))
 
         when (section) {
@@ -431,41 +824,73 @@ fun DirectMessagesScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     item {
-                        Text(
-                            "Sohbetlerin",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Sohbetlerin",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (conversations.isNotEmpty()) {
+                                Text(
+                                    text = "Basılı tutunca menü açılır",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
 
                     if (conversations.isEmpty()) {
                         item {
-                            Card(
+                            Surface(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                             ) {
                                 Column(
-                                    Modifier.fillMaxWidth().padding(24.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(
-                                        Icons.Default.ChatBubbleOutline,
-                                        null,
-                                        modifier = Modifier.size(42.dp)
-                                    )
-                                    Spacer(Modifier.height(10.dp))
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
+                                        modifier = Modifier.size(56.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.ChatBubbleOutline,
+                                                contentDescription = null,
+                                                tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(12.dp))
                                     Text("Henüz bir sohbetin yok.", fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
-                                        "Birinin profiline girip Mesaj'a dokun.",
+                                        text = "Birinin profiline girip Mesaj'a dokunabilir veya + ile yeni sohbet açabilirsin.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    TextButton(onClick = onFindFriends) {
+                                    Spacer(Modifier.height(10.dp))
+                                    OutlinedButton(
+                                        onClick = onFindFriends,
+                                        shape = RoundedCornerShape(14.dp)
+                                    ) {
                                         Icon(
                                             Icons.Default.PersonAdd,
                                             null,
                                             modifier = Modifier.size(18.dp)
                                         )
-                                        Text("  Arkadaş bul")
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Arkadaş bul")
                                     }
                                 }
                             }
@@ -475,100 +900,185 @@ fun DirectMessagesScreen(
                             conversationSearch.isBlank() ||
                                 conversation.otherUserName.contains(conversationSearch, ignoreCase = true) ||
                                 conversation.otherUserUsername.contains(conversationSearch, ignoreCase = true) ||
+                                conversation.groupName.contains(conversationSearch, ignoreCase = true) ||
                                 conversation.lastMessage.contains(conversationSearch, ignoreCase = true)
                         }
 
                         if (visibleConversations.isEmpty()) {
                             item {
                                 Text(
-                                    "Aramana uygun sohbet yok.",
+                                    text = "Aramana uygun sohbet yok.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(vertical = 28.dp)
                                 )
                             }
                         } else {
                             items(visibleConversations, key = { it.id }) { conversation ->
-                                Card(
+                                val hasUnread = conversation.unreadCount > 0
+                                val shape = RoundedCornerShape(20.dp)
+                                val displayName = if (conversation.isGroup) {
+                                    conversation.groupName.ifBlank { "Grup sohbeti" }
+                                } else {
+                                    conversation.otherUserName.ifBlank { "Libra Üyesi" }
+                                }
+                                val avatarUrl = if (conversation.isGroup) {
+                                    conversation.groupPhotoUrl
+                                } else {
+                                    conversation.otherUserPhotoUrl
+                                }
+                                val openConv = {
+                                    if (conversation.isGroup) {
+                                        selectedConversation = conversation
+                                        selectedUser = null
+                                    } else {
+                                        selectedUser = UserProfile(
+                                            uid = conversation.otherUserId,
+                                            displayName = conversation.otherUserName,
+                                            username = conversation.otherUserUsername,
+                                            profileImageUrl = conversation.otherUserPhotoUrl
+                                        )
+                                        selectedConversation = null
+                                    }
+                                    viewModel.openConversation(conversation)
+                                }
+
+                                Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .appleBouncy(
-                                            pressedScale = 0.97f,
-                                            onClick = {
-                                                if (conversation.isGroup) {
-                                                    selectedConversation = conversation
-                                                    selectedUser = null
-                                                } else {
-                                                    selectedUser = UserProfile(
-                                                        uid = conversation.otherUserId,
-                                                        displayName = conversation.otherUserName,
-                                                        username = conversation.otherUserUsername,
-                                                        profileImageUrl = conversation.otherUserPhotoUrl
-                                                    )
-                                                    selectedConversation = null
+                                        .clip(shape)
+                                        .combinedClickable(
+                                            onClick = openConv,
+                                            onLongClick = {
+                                                runCatching {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 }
-                                                viewModel.openConversation(conversation)
+                                                longPressedConversation = conversation
                                             }
                                         ),
-                                    shape = RoundedCornerShape(16.dp)
+                                    shape = shape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        width = if (hasUnread) 1.5.dp else 1.dp,
+                                        color = if (hasUnread) {
+                                            if (darkTheme) LibraLavenderDarkBorder else LibraLavender
+                                        } else {
+                                            MaterialTheme.colorScheme.outline
+                                        }
+                                    )
                                 ) {
                                     Row(
-                                        Modifier.fillMaxWidth().padding(12.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        UserAvatar(
-                                            if (conversation.isGroup) conversation.groupPhotoUrl else conversation.otherUserPhotoUrl,
-                                            (if (conversation.isGroup) conversation.groupName else conversation.otherUserName).take(1).uppercase(),
-                                            size = 48.dp
-                                        )
+                                        Box(contentAlignment = Alignment.BottomEnd) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                border = if (hasUnread) BorderStroke(2.dp, LibraLavender) else null,
+                                                color = MaterialTheme.colorScheme.surface
+                                            ) {
+                                                UserAvatar(
+                                                    photoUrl = avatarUrl,
+                                                    initials = displayName.take(1).uppercase(),
+                                                    size = 50.dp,
+                                                    modifier = Modifier.padding(if (hasUnread) 2.dp else 0.dp),
+                                                    onClick = {
+                                                        if (conversation.isGroup) openConv()
+                                                        else onOpenProfile(conversation.otherUserId)
+                                                    }
+                                                )
+                                            }
+                                        }
+
                                         Column(
-                                            Modifier
+                                            modifier = Modifier
                                                 .weight(1f)
                                                 .padding(horizontal = 12.dp)
                                         ) {
                                             Text(
-                                                if (conversation.isGroup) conversation.groupName else conversation.otherUserName,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = if (conversation.isGroup) Modifier else Modifier.clickable { onOpenProfile(conversation.otherUserId) }
+                                                text = displayName,
+                                                style = MaterialTheme.typography.titleSmall.copy(
+                                                    fontWeight = if (hasUnread) FontWeight.ExtraBold else FontWeight.Bold
+                                                ),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                            if (conversation.isGroup) {
-                                                Text(
-                                                    conversation.participantIds.size.toString() + " kişi",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else {
-                                                Text(
-                                                    "@" + conversation.otherUserUsername,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
+                                            Text(
+                                                text = if (conversation.isGroup) {
+                                                    "${conversation.participantIds.size} kişi • Grup"
+                                                } else if (conversation.otherUserUsername.isNotBlank()) {
+                                                    "@${conversation.otherUserUsername}"
+                                                } else {
+                                                    "Direkt mesaj"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                             if (conversation.lastMessage.isNotBlank()) {
+                                                Spacer(Modifier.height(2.dp))
                                                 Text(
-                                                    conversation.lastMessage,
+                                                    text = conversation.lastMessage,
                                                     maxLines = 1,
-                                                    style = MaterialTheme.typography.bodySmall
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal
+                                                    ),
+                                                    color = if (hasUnread) {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
                                                 )
                                             }
                                         }
-                                        if (conversation.unreadCount > 0) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.primary
-                                            ) {
+
+                                        Column(
+                                            horizontalAlignment = Alignment.End,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (conversation.updatedAt > 0L) {
                                                 Text(
-                                                    conversation.unreadCount.coerceAtMost(99).toString(),
-                                                    color = MaterialTheme.colorScheme.onPrimary,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    modifier = Modifier.padding(
-                                                        horizontal = 7.dp,
-                                                        vertical = 4.dp
-                                                    )
+                                                    text = formatConversationRelativeTime(conversation.updatedAt),
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal
+                                                    ),
+                                                    color = if (hasUnread) {
+                                                        if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
                                                 )
                                             }
-                                            Spacer(Modifier.width(6.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                if (hasUnread) {
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = LibraLavender
+                                                    ) {
+                                                        Text(
+                                                            text = conversation.unreadCount.coerceAtMost(99).toString(),
+                                                            color = Color.White,
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontWeight = FontWeight.Bold
+                                                            ),
+                                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Icon(
+                                                    imageVector = Icons.Default.ChevronRight,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
-                                        Icon(Icons.Default.ChevronRight, null)
                                     }
                                 }
                             }
@@ -581,6 +1091,86 @@ fun DirectMessagesScreen(
                 CommunityList(onGlobalChatClick, onServersClick)
             }
         }
+    }
+
+    longPressedConversation?.let { targetConv ->
+        RichConversationActionOverlay(
+            conversation = targetConv,
+            onDismiss = { longPressedConversation = null },
+            onOpenConversation = {
+                longPressedConversation = null
+                if (targetConv.isGroup) {
+                    selectedConversation = targetConv
+                    selectedUser = null
+                } else {
+                    selectedUser = UserProfile(
+                        uid = targetConv.otherUserId,
+                        displayName = targetConv.otherUserName,
+                        username = targetConv.otherUserUsername,
+                        profileImageUrl = targetConv.otherUserPhotoUrl
+                    )
+                    selectedConversation = null
+                }
+                viewModel.openConversation(targetConv)
+            },
+            onOpenProfile = if (!targetConv.isGroup && targetConv.otherUserId.isNotBlank()) {
+                {
+                    longPressedConversation = null
+                    onOpenProfile(targetConv.otherUserId)
+                }
+            } else null,
+            onMarkRead = if (targetConv.unreadCount > 0) {
+                {
+                    viewModel.markRead(targetConv.id)
+                    longPressedConversation = null
+                    Toast.makeText(context, "Okundu olarak işaretlendi.", Toast.LENGTH_SHORT).show()
+                }
+            } else null,
+            onShare = {
+                val shareText = if (targetConv.isGroup) {
+                    "Libra Grup Sohbeti: ${targetConv.groupName.ifBlank { "Grup" }}"
+                } else {
+                    val handle = targetConv.otherUserUsername.takeIf { it.isNotBlank() }?.let { " (@$it)" }.orEmpty()
+                    "Libra kullanıcısı: ${targetConv.otherUserName}$handle"
+                }
+                clipboard.setText(AnnotatedString(shareText))
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, shareText)
+                }
+                longPressedConversation = null
+                context.startActivity(Intent.createChooser(intent, "Sohbeti Paylaş"))
+            },
+            onDeleteConversation = {
+                longPressedConversation = null
+                confirmDeleteConversation = targetConv
+            }
+        )
+    }
+
+    confirmDeleteConversation?.let { targetConv ->
+        val label = if (targetConv.isGroup) targetConv.groupName.ifBlank { "bu grubu" } else targetConv.otherUserName.ifBlank { "bu sohbeti" }
+        AlertDialog(
+            onDismissRequest = { confirmDeleteConversation = null },
+            title = { Text("Sohbeti Sil") },
+            text = {
+                Text("\"$label\" sohbetini mesaj kutundan kaldırmak istiyor musun? Yeni mesaj geldiğinde sohbet tekrar görünür.")
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        viewModel.hideConversation(targetConv.id) { ok ->
+                            if (ok) Toast.makeText(context, "Sohbet kaldırıldı.", Toast.LENGTH_SHORT).show()
+                        }
+                        confirmDeleteConversation = null
+                    }
+                ) { Text("Kaldır") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteConversation = null }) { Text("Vazgeç") }
+            }
+        )
     }
 
     if (showNewChat) {
@@ -631,7 +1221,10 @@ private fun NewChatSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp).navigationBarsPadding()
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .navigationBarsPadding()
         ) {
             Text("Yeni sohbet", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
             Spacer(Modifier.height(12.dp))
@@ -643,6 +1236,7 @@ private fun NewChatSheet(
                     subtitle = "Kullanıcı adıyla kişiyi bul ve sohbet başlat.",
                     onClick = { mode = 1 }
                 )
+                Spacer(Modifier.height(8.dp))
                 NewChatOption(
                     icon = Icons.Default.GroupAdd,
                     title = "Grup oluştur",
@@ -672,7 +1266,7 @@ private fun NewChatSheet(
                     Spacer(Modifier.height(8.dp))
                     if (selected.isNotEmpty()) {
                         Text(
-                            selected.size.toString() + " kişi seçildi",
+                            text = "${selected.size} kişi seçildi",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -681,37 +1275,59 @@ private fun NewChatSheet(
                 }
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(users, key = { it.uid }) { user ->
                         val isSelected = selected.any { it.uid == user.uid }
-                        Card(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                if (mode == 1) {
-                                    onDirectUser(user)
-                                } else {
-                                    selected = if (isSelected) {
-                                        selected.filterNot { it.uid == user.uid }
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    if (mode == 1) {
+                                        onDirectUser(user)
                                     } else {
-                                        (selected + user).take(49)
+                                        selected = if (isSelected) {
+                                            selected.filterNot { it.uid == user.uid }
+                                        } else {
+                                            (selected + user).take(49)
+                                        }
                                     }
-                                }
-                            }
+                                },
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(10.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 UserAvatar(user.profileImageUrl, user.initials, size = 42.dp)
-                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                Column(
+                                    Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 10.dp)
+                                ) {
                                     Text(user.displayName, fontWeight = FontWeight.SemiBold)
                                     if (user.username.isNotBlank()) {
-                                        Text("@" + user.username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = "@${user.username}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                                 if (mode == 2 && isSelected) {
-                                    Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = LibraLavender
+                                    )
                                 }
                             }
                         }
@@ -731,14 +1347,14 @@ private fun NewChatSheet(
 
                 if (query.trim().length < 2) {
                     Text(
-                        "Aramak için en az 2 karakter yaz.",
+                        text = "Aramak için en az 2 karakter yaz.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 14.dp)
                     )
                 } else if (users.isEmpty()) {
                     Text(
-                        "Kullanıcı bulunamadı.",
+                        text = "Kullanıcı bulunamadı.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 14.dp)
@@ -752,18 +1368,32 @@ private fun NewChatSheet(
 
 @Composable
 private fun NewChatOption(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .appleBouncy(pressedScale = 0.97f, onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(icon, null, modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp)
+            ) {
                 Text(title, fontWeight = FontWeight.Bold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -778,6 +1408,8 @@ private fun DirectConversationScreen(
     user: UserProfile,
     conversationIdOverride: String? = null,
     isGroup: Boolean = false,
+    groupMemberCount: Int = 0,
+    conversations: List<DirectConversation> = emptyList(),
     messages: List<DirectMessage>,
     error: String?,
     onBack: () -> Unit,
@@ -786,342 +1418,886 @@ private fun DirectConversationScreen(
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
+    onForwardMessage: (DirectMessage, DirectConversation?, Boolean, (Boolean) -> Unit) -> Unit,
     onOpenProfile: () -> Unit = {},
     canMessage: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    BackHandler(onBack = onBack)
+
+    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
     var draft by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<DirectMessage?>(null) }
     var editingMessage by remember { mutableStateOf<DirectMessage?>(null) }
     var actionMessage by remember { mutableStateOf<DirectMessage?>(null) }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    var shareTargetMessage by remember { mutableStateOf<DirectMessage?>(null) }
+
     var mediaUploading by remember { mutableStateOf(false) }
     var mediaProgress by remember { mutableIntStateOf(0) }
     var mediaError by remember { mutableStateOf<String?>(null) }
     var pendingMediaUri by remember { mutableStateOf<Uri?>(null) }
     var pendingMediaUrl by remember { mutableStateOf("") }
     var pendingMediaType by remember { mutableStateOf("image/jpeg") }
-    var mediaUploadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var pendingMediaSizeBytes by remember { mutableIntStateOf(0) }
+    var pendingMediaResolution by remember { mutableStateOf("") }
+    var mediaUploadJob by remember { mutableStateOf<Job?>(null) }
     var sending by remember { mutableStateOf(false) }
+    var sendWhenUploadReady by remember { mutableStateOf(false) }
+
     val conversationId = conversationIdOverride ?: remember(user.uid) { listOf(authUserId(), user.uid).sorted().joinToString("_") }
     val currentUid = authUserId()
 
-    val mediaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
+    fun startImageUpload(uri: Uri) {
         mediaUploadJob?.cancel()
         pendingMediaUri = uri
         pendingMediaUrl = ""
         mediaProgress = 0
         mediaError = null
         mediaUploading = true
-        pendingMediaType = context.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+        pendingMediaSizeBytes = 0
+        pendingMediaResolution = ""
         mediaUploadJob = scope.launch {
             try {
-                val bytes = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw IllegalStateException("Fotoğraf okunamadı.")
-                if (bytes.isEmpty()) throw IllegalStateException("Fotoğraf boş.")
-                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("Fotoğraf 8 MB'dan küçük olmalı.")
-                val extension = pendingMediaType.substringAfter('/').ifBlank { "jpg" }.take(8)
+                val prepared = prepareChatImageForUpload(context, uri, prefix = "dm")
+                pendingMediaType = prepared.contentType
+                pendingMediaSizeBytes = prepared.bytes.size
+                pendingMediaResolution = if (prepared.width > 0 && prepared.height > 0) {
+                    "${prepared.width}×${prepared.height}"
+                } else ""
+
                 val upload = StorageUploadRequest(
-                    fileName = "dm-" + System.currentTimeMillis() + "." + extension,
-                    bytes = bytes,
-                    contentType = pendingMediaType,
-                    targetDirectory = "users/" + currentUid
+                    fileName = prepared.fileName,
+                    bytes = prepared.bytes,
+                    contentType = prepared.contentType,
+                    targetDirectory = "users/$currentUid"
                 )
-                when (val result = ServiceLocator.storageRepository.uploadMedia(upload) { mediaProgress = it }.first()) {
+                val result = ServiceLocator.storageRepository
+                    .uploadMedia(upload) { pct ->
+                        scope.launch(Dispatchers.Main) { mediaProgress = pct }
+                    }
+                    .first()
+
+                when (result) {
                     is AppResult.Success -> {
                         pendingMediaUrl = result.data
                         mediaProgress = 100
+                        mediaError = null
                     }
-                    is AppResult.Error -> mediaError = result.error.message
+                    is AppResult.Error -> {
+                        mediaError = result.error.message
+                        sendWhenUploadReady = false
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 mediaError = e.localizedMessage ?: "Fotoğraf yüklenemedi."
+                sendWhenUploadReady = false
             } finally {
                 mediaUploading = false
             }
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    val mediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let(::startImageUpload)
     }
 
-    Column(modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
-            ) { Icon(Icons.Default.ArrowBack, "Geri") }
-            UserAvatar(
-                user.profileImageUrl,
-                user.initials,
-                size = 40.dp,
-                onClick = { if (!isGroup) onOpenProfile() }
-            )
-            Column(Modifier.padding(start = 10.dp)) {
-                Text(
-                    user.displayName,
-                    fontWeight = FontWeight.Bold,
-                    modifier = if (isGroup) Modifier else Modifier.clickable(onClick = onOpenProfile)
-                )
-                Text(
-                    if (isGroup) "Grup sohbeti" else user.handle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+    val legacyMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let(::startImageUpload)
+    }
+
+    fun launchPhotoPicker() {
+        runCatching {
+            mediaLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }.onFailure {
+            legacyMediaLauncher.launch("image/*")
         }
+    }
 
-        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
-        mediaError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
-
-        if (pendingMediaUri != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = pendingMediaUri,
-                        contentDescription = "Gönderilecek fotoğraf",
-                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            when {
-                                mediaError != null -> "Yükleme başarısız"
-                                mediaUploading -> "Fotoğraf yükleniyor %$mediaProgress"
-                                pendingMediaUrl.isNotBlank() -> "Fotoğraf hazır ✓"
-                                else -> "Fotoğraf hazırlanıyor…"
-                            },
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        if (mediaUploading) {
-                            LinearProgressIndicator(
-                                progress = { mediaProgress / 100f },
-                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                            )
-                        }
-                    }
-                    IconButton(onClick = {
-                        mediaUploadJob?.cancel()
-                        pendingMediaUri = null
-                        pendingMediaUrl = ""
-                        mediaError = null
-                        mediaUploading = false
-                        mediaProgress = 0
-                    }) {
-                        Icon(Icons.Default.Close, "Fotoğrafı kaldır")
-                    }
+    // Auto-send immediately once queued upload finishes
+    LaunchedEffect(sendWhenUploadReady, pendingMediaUrl, mediaUploading, mediaError) {
+        if (sendWhenUploadReady && !mediaUploading && pendingMediaUrl.isNotBlank() && mediaError == null && !sending) {
+            sendWhenUploadReady = false
+            val text = draft.trim()
+            val reply = replyTarget
+            sending = true
+            onSendMedia(pendingMediaUrl, pendingMediaType, text, reply) { success ->
+                sending = false
+                if (success) {
+                    pendingMediaUri = null
+                    pendingMediaUrl = ""
+                    pendingMediaSizeBytes = 0
+                    pendingMediaResolution = ""
+                    mediaError = null
+                    mediaProgress = 0
+                    replyTarget = null
+                    draft = ""
                 }
             }
         }
+    }
 
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    val sentBubbleColor = if (darkTheme) Color(0xFF6D28D9) else LibraLavender
+    val sentBubbleTextColor = Color.White
+    val sentTimestampColor = Color(0xFFEDE9FE)
+    val receivedBubbleColor = MaterialTheme.colorScheme.surface
+    val receivedBubbleBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding()
+    ) {
+        // Aesthetic Top Header
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                    }
+                    UserAvatar(
+                        photoUrl = user.profileImageUrl,
+                        initials = user.initials,
+                        size = 42.dp,
+                        onClick = { if (!isGroup) onOpenProfile() }
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 10.dp)
+                            .let { mod -> if (isGroup) mod else mod.clickable(onClick = onOpenProfile) }
+                    ) {
+                        Text(
+                            text = user.displayName.ifBlank { "Libra Üyesi" },
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (isGroup) {
+                                if (groupMemberCount > 0) "$groupMemberCount katılımcı • Grup sohbeti" else "Grup sohbeti"
+                            } else {
+                                user.handle
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (!isGroup) {
+                        IconButton(
+                            onClick = onOpenProfile,
+                            modifier = Modifier.appleBouncy(pressedScale = 0.88f, onClick = onOpenProfile)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profili Gör",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            }
+        }
+
+        if (error != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // Messages List
         LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            items(messages, key = { it.id }) { message ->
-                var dragX by remember(message.id) { mutableFloatStateOf(0f) }
+            itemsIndexed(messages, key = { _, msg -> msg.id }) { index, message ->
+                val groupPos = remember(messages, index, currentUid, isGroup) {
+                    computeDirectMessageGrouping(
+                        messages = messages,
+                        index = index,
+                        currentUid = currentUid,
+                        isGroup = isGroup
+                    )
+                }
                 val mine = message.senderId == currentUid
                 val replyPreview = message.replyToMessageId.isNotBlank()
+                val myReaction = message.reactions[currentUid]
 
-                Row(
-                    Modifier
+                var dragX by remember(message.id) { mutableFloatStateOf(0f) }
+                var swipeHapticFired by remember(message.id) { mutableStateOf(false) }
+
+                if (groupPos.showTimestampDivider && message.createdAt > 0L) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        ) {
+                            Text(
+                                text = formatChatTimeHeader(message.createdAt),
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                } else if (groupPos.isFirstInGroup && index > 0) {
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                val bubbleShape = remember(mine, groupPos) {
+                    val outer = 20.dp
+                    val inner = 6.dp
+                    if (mine) {
+                        RoundedCornerShape(
+                            topStart = outer,
+                            bottomStart = outer,
+                            topEnd = if (groupPos.isFirstInGroup) outer else inner,
+                            bottomEnd = if (groupPos.isLastInGroup) outer else inner
+                        )
+                    } else {
+                        RoundedCornerShape(
+                            topStart = if (groupPos.isFirstInGroup) outer else inner,
+                            bottomStart = if (groupPos.isLastInGroup) outer else inner,
+                            topEnd = outer,
+                            bottomEnd = outer
+                        )
+                    }
+                }
+
+                val openActionMenu = {
+                    runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                    actionMessage = message
+                }
+
+                Box(
+                    modifier = Modifier
                         .fillMaxWidth()
                         .pointerInput(message.id) {
                             detectHorizontalDragGestures(
                                 onHorizontalDrag = { _, amount ->
                                     dragX = (dragX + amount).coerceIn(0f, 96f)
+                                    if (dragX >= 58f && !swipeHapticFired) {
+                                        swipeHapticFired = true
+                                        runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                                    }
+                                },
+                                onDragCancel = {
+                                    dragX = 0f
+                                    swipeHapticFired = false
                                 },
                                 onDragEnd = {
-                                    if (dragX >= 64f) replyTarget = message
+                                    if (dragX >= 58f) replyTarget = message
                                     dragX = 0f
+                                    swipeHapticFired = false
                                 }
                             )
-                        },
-                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
-                    verticalAlignment = Alignment.Bottom
+                        }
                 ) {
-                    if (!mine) {
-                        UserAvatar(
-                            message.senderPhotoUrl.ifBlank { user.profileImageUrl },
-                            message.senderId.take(1).uppercase(),
-                            size = 30.dp,
-                            onClick = { onOpenProfile() }
-                        )
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    Column(
-                        modifier = Modifier
-                            .offset { IntOffset(dragX.roundToInt(), 0) }
-                            .widthIn(max = 320.dp)
-                            .pointerInput(message.id + "-tap") {
-                                detectTapGestures(
-                                    onDoubleTap = { onReaction(message.id, "❤️") },
-                                    onLongPress = { actionMessage = message }
+                    if (dragX > 10f) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 6.dp)
+                                .size(32.dp),
+                            shape = CircleShape,
+                            color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
+                            border = BorderStroke(1.dp, if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Reply,
+                                    contentDescription = "Yanıtla",
+                                    tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                    ) {
-                        Surface(
-                            color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(Modifier.padding(6.dp)) {
-                                if (replyPreview) {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)),
-                                        color = Color(0xFFFFE8D5)
-                                    ) {
-                                        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-                                            Text(
-                                                message.replyToSenderName.ifBlank { "Yanıtlanan mesaj" },
-                                                color = Color(0xFFB45309),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                message.replyToText.ifBlank { "📷 Fotoğraf" },
-                                                maxLines = 2,
-                                                color = Color(0xFF7C2D12),
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
-                                        }
-                                    }
-                                    Spacer(Modifier.height(5.dp))
-                                }
+                        }
+                    }
 
-                                message.sharedContent?.let { shared ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(4.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = androidx.compose.material3.CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.55f)
-                                        )
-                                    ) {
-                                        Column(Modifier.padding(8.dp)) {
-                                            Text(
-                                                when (shared.type) {
-                                                    "story" -> "Hikâyeden bahsetti"
-                                                    "post" -> "Bir gönderi paylaştı"
-                                                    "book" -> "Bir kitap paylaştı"
-                                                    else -> "Bir içerik paylaştı"
-                                                },
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            if (shared.mediaUrl.isNotBlank()) {
-                                                var sharedUrl by remember(shared.id) { mutableStateOf<String?>(null) }
-                                                LaunchedEffect(shared.id, shared.mediaUrl) {
-                                                    sharedUrl = ServiceLocator.storageRepository.getSignedMediaUrl(shared.mediaUrl)
-                                                }
-                                                sharedUrl?.let {
-                                                    AsyncImage(
-                                                        model = it,
-                                                        contentDescription = "Paylaşılan içerik",
-                                                        modifier = Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(9.dp)),
-                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset { IntOffset(dragX.roundToInt(), 0) },
+                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        if (!mine) {
+                            if (groupPos.showAvatar) {
+                                UserAvatar(
+                                    photoUrl = message.senderPhotoUrl.ifBlank { user.profileImageUrl },
+                                    initials = (message.senderName.ifBlank { user.displayName }).take(1).uppercase(),
+                                    size = 30.dp,
+                                    onClick = { if (!isGroup) onOpenProfile() }
+                                )
+                            } else {
+                                Spacer(Modifier.width(30.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+
+                        Column(
+                            modifier = Modifier.widthIn(max = 310.dp),
+                            horizontalAlignment = if (mine) Alignment.End else Alignment.Start
+                        ) {
+                            if (groupPos.showSenderName) {
+                                val senderLabel = message.senderName.ifBlank {
+                                    message.senderUsername.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Üye"
+                                }
+                                Text(
+                                    text = senderLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 8.dp, bottom = 3.dp)
+                                )
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .clip(bubbleShape)
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onDoubleClick = {
+                                            runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                            onReaction(message.id, "❤️")
+                                        },
+                                        onLongClick = openActionMenu
+                                    ),
+                                color = if (mine) sentBubbleColor else receivedBubbleColor,
+                                shape = bubbleShape,
+                                border = if (mine) null else receivedBubbleBorder
+                            ) {
+                                val primaryTextColor = if (mine) sentBubbleTextColor else MaterialTheme.colorScheme.onSurface
+                                val secondaryTextColor = if (mine) sentTimestampColor else MaterialTheme.colorScheme.onSurfaceVariant
+
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)) {
+                                    if (replyPreview) {
+                                        val quoteBg = if (mine) {
+                                            Color(0xFF5B21B6)
+                                        } else if (darkTheme) {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        } else {
+                                            Color(0xFFF5F3FF)
+                                        }
+                                        val quoteTitleColor = if (mine) Color.White else if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                        val quoteBodyColor = if (mine) Color(0xFFEDE9FE) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        val replySenderTitle = message.replyToSenderName.ifBlank {
+                                            if (message.replyToSenderId == currentUid) "Sen" else user.displayName.ifBlank { "Yanıtlanan mesaj" }
+                                        }
+
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 6.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = quoteBg
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(3.dp)
+                                                        .height(28.dp)
+                                                        .clip(RoundedCornerShape(3.dp))
+                                                        .background(if (mine) Color.White else LibraLavender)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = replySenderTitle,
+                                                        color = quoteTitleColor,
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = message.replyToText.ifBlank { "📷 Fotoğraf" },
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = quoteBodyColor,
+                                                        style = MaterialTheme.typography.bodySmall
                                                     )
                                                 }
                                             }
-                                            Text(shared.title.ifBlank { "Libra içeriği" }, fontWeight = FontWeight.SemiBold)
-                                            if (shared.text.isNotBlank()) {
-                                                Text(shared.text, maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+
+                                    message.sharedContent?.let { shared ->
+                                        var sharedUrl by remember(shared.id, shared.mediaUrl) { mutableStateOf<String?>(null) }
+                                        var showSharedImageFullscreen by remember(shared.id) { mutableStateOf(false) }
+
+                                        LaunchedEffect(shared.id, shared.mediaUrl) {
+                                            if (shared.mediaUrl.isNotBlank()) {
+                                                sharedUrl = runCatching {
+                                                    ServiceLocator.storageRepository.getSignedMediaUrl(shared.mediaUrl)
+                                                }.getOrNull()
                                             }
                                         }
-                                    }
-                                }
 
-                                if (message.mediaUrl.isNotBlank()) {
-                                    var resolvedMediaUrl by remember(message.mediaUrl) { mutableStateOf<String?>(null) }
-                                    var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
-                                    var showDmImageFullscreen by remember(message.mediaUrl) { mutableStateOf(false) }
-
-                                    LaunchedEffect(message.mediaUrl) {
-                                        while (true) {
-                                            resolvedMediaUrl = ServiceLocator.storageRepository.getSignedMediaUrl(message.mediaUrl)
-                                            mediaFailed = false
-                                            delay(9 * 60 * 1000L)
-                                        }
-                                    }
-
-                                    if (mediaFailed || resolvedMediaUrl.isNullOrBlank()) {
+                                        val sharedCardBg = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
                                         Surface(
-                                            modifier = Modifier.width(220.dp).height(120.dp),
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 4.dp),
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = sharedCardBg,
+                                            border = if (mine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                                         ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text("Fotoğraf yüklenemedi", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Column(
+                                                modifier = Modifier.padding(9.dp),
+                                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (shared.type) {
+                                                        "story" -> "Hikâyeden bahsetti"
+                                                        "post" -> "Bir gönderi paylaştı"
+                                                        "book" -> "Bir kitap paylaştı"
+                                                        "dm_photo" -> "İletilen fotoğraf"
+                                                        "message" -> "İletilen mesaj"
+                                                        else -> "Paylaşılan içerik"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = if (mine) Color(0xFFDDD6FE) else LibraLavender
+                                                )
+                                                sharedUrl?.takeIf { it.isNotBlank() }?.let { resolvedSharedImg ->
+                                                    AsyncImage(
+                                                        model = resolvedSharedImg,
+                                                        contentDescription = "Paylaşılan medya",
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(140.dp)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .combinedClickable(
+                                                                onClick = { showSharedImageFullscreen = true },
+                                                                onDoubleClick = { onReaction(message.id, "❤️") },
+                                                                onLongClick = openActionMenu
+                                                            ),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                    if (showSharedImageFullscreen) {
+                                                        FullScreenImageViewerDialog(
+                                                            mediaUrl = resolvedSharedImg,
+                                                            onDismiss = { showSharedImageFullscreen = false }
+                                                        )
+                                                    }
+                                                }
+                                                if (shared.title.isNotBlank()) {
+                                                    Text(
+                                                        text = shared.title,
+                                                        color = primaryTextColor,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                }
+                                                if (shared.text.isNotBlank()) {
+                                                    Text(
+                                                        text = shared.text,
+                                                        color = secondaryTextColor,
+                                                        maxLines = 3,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                }
                                             }
                                         }
-                                    } else {
-                                        val dmImgUrl = resolvedMediaUrl
-                                        AsyncImage(
-                                            model = dmImgUrl,
-                                            contentDescription = "Gönderilen fotoğraf",
-                                            modifier = Modifier
-                                                .width(220.dp)
-                                                .heightIn(max = 280.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .clickable { showDmImageFullscreen = true },
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            onError = { mediaFailed = true }
-                                        )
+                                    }
 
-                                        if (showDmImageFullscreen && dmImgUrl != null) {
-                                            FullScreenImageViewerDialog(
-                                                mediaUrl = dmImgUrl,
-                                                onDismiss = { showDmImageFullscreen = false }
+                                    if (message.mediaUrl.isNotBlank()) {
+                                        var resolvedMediaUrl by remember(message.mediaUrl) { mutableStateOf<String?>(null) }
+                                        var signingDone by remember(message.mediaUrl) { mutableStateOf(false) }
+                                        var mediaFailed by remember(message.mediaUrl) { mutableStateOf(false) }
+                                        var reloadKey by remember(message.mediaUrl) { mutableIntStateOf(0) }
+                                        var showDmImageFullscreen by remember(message.mediaUrl) { mutableStateOf(false) }
+
+                                        LaunchedEffect(message.mediaUrl, reloadKey) {
+                                            signingDone = false
+                                            mediaFailed = false
+                                            while (true) {
+                                                val fetched = runCatching {
+                                                    ServiceLocator.storageRepository.getSignedMediaUrl(message.mediaUrl)
+                                                }.getOrNull()
+                                                resolvedMediaUrl = fetched
+                                                signingDone = true
+                                                if (fetched.isNullOrBlank()) {
+                                                    mediaFailed = true
+                                                    break
+                                                }
+                                                delay(9 * 60 * 1000L)
+                                            }
+                                        }
+
+                                        val imgShape = RoundedCornerShape(15.dp)
+                                        when {
+                                            !signingDone -> {
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .width(230.dp)
+                                                        .height(165.dp),
+                                                    shape = imgShape,
+                                                    color = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Column(
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(24.dp),
+                                                                strokeWidth = 2.5.dp,
+                                                                color = primaryTextColor
+                                                            )
+                                                            Text(
+                                                                text = "Fotoğraf yükleniyor…",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = secondaryTextColor
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            mediaFailed || resolvedMediaUrl.isNullOrBlank() -> {
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .width(230.dp)
+                                                        .height(140.dp)
+                                                        .clip(imgShape)
+                                                        .clickable { reloadKey++ },
+                                                    shape = imgShape,
+                                                    color = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Column(
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Refresh,
+                                                                contentDescription = "Tekrar yükle",
+                                                                tint = primaryTextColor
+                                                            )
+                                                            Text(
+                                                                text = "Fotoğraf yüklenemedi • Dokun",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = secondaryTextColor
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            else -> {
+                                                val dmImgUrl = resolvedMediaUrl!!
+                                                AsyncImage(
+                                                    model = dmImgUrl,
+                                                    contentDescription = "Gönderilen fotoğraf",
+                                                    modifier = Modifier
+                                                        .widthIn(min = 170.dp, max = 250.dp)
+                                                        .heightIn(min = 120.dp, max = 290.dp)
+                                                        .clip(imgShape)
+                                                        .combinedClickable(
+                                                            onClick = { showDmImageFullscreen = true },
+                                                            onDoubleClick = {
+                                                                runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                                                onReaction(message.id, "❤️")
+                                                            },
+                                                            onLongClick = openActionMenu
+                                                        ),
+                                                    contentScale = ContentScale.Crop,
+                                                    onError = { mediaFailed = true }
+                                                )
+
+                                                if (showDmImageFullscreen) {
+                                                    FullScreenImageViewerDialog(
+                                                        mediaUrl = dmImgUrl,
+                                                        onDismiss = { showDmImageFullscreen = false }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (message.text.isNotBlank()) {
+                                        Text(
+                                            text = message.text,
+                                            color = primaryTextColor,
+                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                            modifier = Modifier.padding(
+                                                start = 4.dp,
+                                                end = 4.dp,
+                                                top = if (message.mediaUrl.isNotBlank()) 6.dp else 1.dp,
+                                                bottom = 1.dp
+                                            )
+                                        )
+                                    }
+
+                                    // Compact time + edited/sending indicator row
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.End)
+                                            .padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (message.editedAt != null) {
+                                            Text(
+                                                text = "düzenlendi •",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                color = secondaryTextColor
+                                            )
+                                        }
+                                        if (message.createdAt > 0L) {
+                                            Text(
+                                                text = formatMessageHour(message.createdAt),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                color = secondaryTextColor
+                                            )
+                                        }
+                                        if (message.id.startsWith("local-")) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(9.dp),
+                                                strokeWidth = 1.5.dp,
+                                                color = secondaryTextColor
                                             )
                                         }
                                     }
                                 }
+                            }
 
-                                if (message.text.isNotBlank()) {
-                                    Text(message.text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+                            // Overlapping Reaction Pill Badge
+                            if (message.reactions.isNotEmpty()) {
+                                val counts = remember(message.reactions) {
+                                    message.reactions.values.groupingBy { it }.eachCount()
                                 }
+                                Surface(
+                                    modifier = Modifier
+                                        .offset(y = (-6).dp)
+                                        .padding(horizontal = 8.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                    shadowElevation = 2.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        counts.forEach { (emoji, count) ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(CircleShape)
+                                                    .clickable { onReaction(message.id, emoji) }
+                                                    .padding(horizontal = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Text(emoji, fontSize = 13.sp)
+                                                if (count > 1) {
+                                                    Text(
+                                                        text = count.toString(),
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.sp
+                                                        ),
+                                                        color = if (emoji == myReaction) {
+                                                            if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-                                if (message.editedAt != null) {
-                                    Text(
-                                        "düzenlendi",
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+        // Photo Upload Attachment Dock
+        AnimatedVisibility(
+            visible = pendingMediaUri != null,
+            enter = fadeIn() + scaleIn(initialScale = 0.94f, animationSpec = AppleSprings.snappy()),
+            exit = fadeOut() + scaleOut(targetScale = 0.94f)
+        ) {
+            pendingMediaUri?.let { localUri ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = localUri,
+                                contentDescription = "Gönderilecek fotoğraf",
+                                modifier = Modifier
+                                    .size(66.dp)
+                                    .clip(RoundedCornerShape(13.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            if (mediaUploading) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.65f),
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(
+                                            progress = { (mediaProgress / 100f).coerceIn(0.05f, 1f) },
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.5.dp,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        if (message.reactions.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.padding(start = if (mine) 0.dp else 8.dp, top = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                message.reactions.values.distinct().forEach { emoji ->
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Text(emoji, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                        Spacer(Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = when {
+                                    mediaError != null -> "Yükleme başarısız"
+                                    mediaUploading -> if (sendWhenUploadReady) {
+                                        "Yükleniyor (%$mediaProgress) — bitince gönderilecek"
+                                    } else {
+                                        "Fotoğraf yükleniyor %$mediaProgress"
                                     }
-                                }
+                                    pendingMediaUrl.isNotBlank() -> "Fotoğraf gönderime hazır ✓"
+                                    else -> "Fotoğraf optimize ediliyor…"
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (mediaError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+
+                            val metaParts = listOfNotNull(
+                                pendingMediaResolution.takeIf { it.isNotBlank() },
+                                pendingMediaSizeBytes.takeIf { it > 0 }?.let { formatReadableByteSize(it) }
+                            )
+                            if (mediaError != null) {
+                                Text(
+                                    text = mediaError!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else if (metaParts.isNotEmpty()) {
+                                Text(
+                                    text = metaParts.joinToString(" • "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
+
+                            if (mediaUploading) {
+                                LinearProgressIndicator(
+                                    progress = { (mediaProgress / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 6.dp)
+                                        .height(4.dp)
+                                        .clip(CircleShape),
+                                    color = LibraLavender
+                                )
+                            }
+                        }
+
+                        if (mediaError != null) {
+                            IconButton(onClick = { startImageUpload(localUri) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Tekrar Dene",
+                                    tint = LibraLavender
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = {
+                            mediaUploadJob?.cancel()
+                            sendWhenUploadReady = false
+                            pendingMediaUri = null
+                            pendingMediaUrl = ""
+                            pendingMediaSizeBytes = 0
+                            pendingMediaResolution = ""
+                            mediaError = null
+                            mediaUploading = false
+                            mediaProgress = 0
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Fotoğrafı kaldır")
                         }
                     }
                 }
@@ -1129,127 +2305,205 @@ private fun DirectConversationScreen(
         }
 
         replyTarget?.let { target ->
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
-                color = Color(0xFFFFF3E8),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(Modifier.fillMaxWidth().padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Yanıtlanıyor: " + target.replyToSenderName.ifBlank {
-                            if (target.senderId == currentUid) "Sen" else user.displayName
-                        }, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                        Text(target.text.ifBlank { "📷 Fotoğraf" }, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                    }
-                    TextButton(onClick = { replyTarget = null }) { Text("İptal") }
-                }
+            val replyName = target.senderName.ifBlank {
+                if (target.senderId == currentUid) "Sen" else user.displayName
             }
-        }
-
-        editingMessage?.let {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Mesaj düzenleniyor", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                        Text(it.text, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                    }
-                    TextButton(onClick = { editingMessage = null; draft = "" }) { Text("İptal") }
-                }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val canAttach = canMessage && !mediaUploading && editingMessage == null
-            IconButton(
-                enabled = canAttach,
-                onClick = { mediaLauncher.launch("image/*") },
-                modifier = Modifier.appleBouncy(
-                    enabled = canAttach,
-                    pressedScale = 0.86f,
-                    onClick = { mediaLauncher.launch("image/*") }
-                )
-            ) {
-                Icon(Icons.Default.AddPhotoAlternate, "Fotoğraf")
-            }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { if (canMessage && it.length <= 1000) draft = it },
-                modifier = Modifier.weight(1f),
-                enabled = canMessage,
-                placeholder = { Text(if (!canMessage) "Mesaj gönderme engellendi" else if (editingMessage != null) "Mesajı düzenle…" else "Mesaj yaz…") },
-                maxLines = 4
+            RichReplyBanner(
+                senderName = "Yanıtlanıyor: $replyName",
+                text = target.text.ifBlank { "📷 Fotoğraf" },
+                onCancel = { replyTarget = null }
             )
-            val onSendClick: () -> Unit = {
-                val text = draft.trim()
-                val editing = editingMessage
-                if (editing != null) {
-                    onEdit(editing.id, text)
+        }
+
+        editingMessage?.let { editing ->
+            RichReplyBanner(
+                senderName = "Mesaj düzenleniyor",
+                text = editing.text,
+                onCancel = {
                     editingMessage = null
                     draft = ""
-                } else {
-                    sending = true
-                    if (pendingMediaUrl.isNotBlank()) {
-                        onSendMedia(
-                            pendingMediaUrl,
-                            pendingMediaType,
-                            text,
-                            replyTarget
-                        ) { success ->
-                            sending = false
-                            if (success) {
-                                pendingMediaUri = null
-                                pendingMediaUrl = ""
-                                mediaError = null
-                                mediaProgress = 0
-                                replyTarget = null
+                }
+            )
+        }
+
+        // Instagram-Style Pill Composer Dock
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val canAttach = canMessage && !sending && editingMessage == null
+                val galleryCircleColor = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
+                val galleryIconTint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+
+                Surface(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(enabled = canAttach, pressedScale = 0.86f, onClick = { launchPhotoPicker() }),
+                    shape = CircleShape,
+                    color = if (canAttach) galleryCircleColor else MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Fotoğraf ekle",
+                            tint = if (canAttach) galleryIconTint else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                }
+
+                TextField(
+                    value = draft,
+                    onValueChange = { if (canMessage && it.length <= 2000) draft = it },
+                    modifier = Modifier.weight(1f),
+                    enabled = canMessage,
+                    placeholder = {
+                        Text(
+                            text = when {
+                                !canMessage -> "Mesaj gönderme engellendi"
+                                editingMessage != null -> "Mesajı düzenle…"
+                                pendingMediaUri != null -> "Fotoğrafa açıklama ekle…"
+                                else -> "Mesaj yaz…"
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    maxLines = 4,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                    )
+                )
+
+                val onSendClick: () -> Unit = {
+                    val text = draft.trim()
+                    val editing = editingMessage
+                    when {
+                        editing != null -> {
+                            if (text.isNotBlank()) {
+                                onEdit(editing.id, text)
+                                editingMessage = null
                                 draft = ""
                             }
                         }
-                    } else {
-                        onSend(text, replyTarget) { success ->
-                            sending = false
-                            if (success) {
-                                replyTarget = null
-                                draft = ""
+                        mediaUploading && pendingMediaUri != null -> {
+                            sendWhenUploadReady = true
+                        }
+                        pendingMediaUrl.isNotBlank() -> {
+                            sending = true
+                            onSendMedia(
+                                pendingMediaUrl,
+                                pendingMediaType,
+                                text,
+                                replyTarget
+                            ) { success ->
+                                sending = false
+                                if (success) {
+                                    pendingMediaUri = null
+                                    pendingMediaUrl = ""
+                                    pendingMediaSizeBytes = 0
+                                    pendingMediaResolution = ""
+                                    mediaError = null
+                                    mediaProgress = 0
+                                    replyTarget = null
+                                    draft = ""
+                                }
+                            }
+                        }
+                        text.isNotBlank() -> {
+                            sending = true
+                            onSend(text, replyTarget) { success ->
+                                sending = false
+                                if (success) {
+                                    replyTarget = null
+                                    draft = ""
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            val canSend = canMessage && !sending &&
-                (draft.isNotBlank() || pendingMediaUrl.isNotBlank()) &&
-                !mediaUploading
+                val canSend = canMessage && !sending && (
+                    draft.isNotBlank() ||
+                        pendingMediaUrl.isNotBlank() ||
+                        (mediaUploading && pendingMediaUri != null)
+                    )
 
-            IconButton(
-                enabled = canSend,
-                onClick = onSendClick,
-                modifier = Modifier.appleBouncy(
-                    enabled = canSend,
-                    pressedScale = 0.86f,
-                    onClick = onSendClick
-                )
-            ) {
-                if (sending) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.Send, "Gönder")
+                Surface(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .appleBouncy(enabled = canSend, pressedScale = 0.84f, onClick = onSendClick),
+                    shape = CircleShape,
+                    color = if (canSend) LibraLavender else MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        when {
+                            sending || sendWhenUploadReady -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                            }
+                            editingMessage != null -> {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Kaydet",
+                                    tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Gönder",
+                                    tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
     actionMessage?.let { message ->
+        val mine = message.senderId == currentUid
+        val shareableText = resolveShareableMessageText(message)
         RichMessageActionSheet(
-            canEdit = message.senderId == currentUid && message.mediaUrl.isBlank(),
-            canDelete = message.senderId == currentUid,
+            canEdit = mine && message.mediaUrl.isBlank() && message.sharedContent == null,
+            canDelete = mine,
+            previewText = message.text,
+            previewMediaUrl = message.mediaUrl.ifBlank { message.sharedContent?.mediaUrl.orEmpty() },
+            previewSharedTitle = message.sharedContent?.title.orEmpty(),
+            previewTimestamp = buildString {
+                if (message.createdAt > 0L) append(formatMessageHour(message.createdAt))
+                if (message.editedAt != null) {
+                    if (isNotEmpty()) append(" • ")
+                    append("düzenlendi")
+                }
+            },
+            isOwnMessage = mine,
+            selectedReaction = message.reactions[currentUid],
             onDismiss = { actionMessage = null },
             onReply = {
                 replyTarget = message
@@ -1257,6 +2511,17 @@ private fun DirectConversationScreen(
             },
             onReaction = { emoji ->
                 onReaction(message.id, emoji)
+                actionMessage = null
+            },
+            onCopy = if (shareableText.isNotBlank()) {
+                {
+                    clipboard.setText(AnnotatedString(shareableText))
+                    Toast.makeText(context, "Mesaj kopyalandı.", Toast.LENGTH_SHORT).show()
+                    actionMessage = null
+                }
+            } else null,
+            onShare = {
+                shareTargetMessage = message
                 actionMessage = null
             },
             onEdit = {
@@ -1267,9 +2532,273 @@ private fun DirectConversationScreen(
             },
             onDelete = {
                 onDelete(message.id)
+                Toast.makeText(context, "Mesaj silindi.", Toast.LENGTH_SHORT).show()
                 actionMessage = null
             }
         )
+    }
+
+    shareTargetMessage?.let { message ->
+        ForwardOrShareMessageSheet(
+            message = message,
+            conversations = conversations.filterNot { it.id == conversationId },
+            onDismiss = { shareTargetMessage = null },
+            onForwardToConversation = { targetConv, done ->
+                onForwardMessage(message, targetConv, false, done)
+            },
+            onForwardToGlobalChat = { done ->
+                onForwardMessage(message, null, true, done)
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ForwardOrShareMessageSheet(
+    message: DirectMessage,
+    conversations: List<DirectConversation>,
+    onDismiss: () -> Unit,
+    onForwardToConversation: (DirectConversation, (Boolean) -> Unit) -> Unit,
+    onForwardToGlobalChat: ((Boolean) -> Unit) -> Unit
+) {
+    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var sendingTargetKey by remember { mutableStateOf<String?>(null) }
+    val sentKeys = remember { mutableStateOf(setOf<String>()) }
+    var sharingExternally by remember { mutableStateOf(false) }
+
+    val filteredConversations = remember(conversations, query) {
+        val clean = query.trim()
+        if (clean.isBlank()) conversations
+        else conversations.filter {
+            it.otherUserName.contains(clean, ignoreCase = true) ||
+                it.otherUserUsername.contains(clean, ignoreCase = true) ||
+                it.groupName.contains(clean, ignoreCase = true)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Mesajı Paylaş / İlet",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Kapat")
+                }
+            }
+
+            // Preview card
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = if (message.mediaUrl.isNotBlank()) "📷 Fotoğraflı mesaj" else "Mesaj önizlemesi",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = resolveShareableMessageText(message).ifBlank { "Fotoğraf" },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // External share button
+            OutlinedButton(
+                enabled = !sharingExternally,
+                onClick = {
+                    sharingExternally = true
+                    scope.launch {
+                        shareDirectMessageExternally(context, message)
+                        sharingExternally = false
+                        onDismiss()
+                    }
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (sharingExternally) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("Diğer Uygulamalarda Paylaş")
+            }
+
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Sohbet veya kişi ara…") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item(key = "global_forward") {
+                    val isSent = "global" in sentKeys.value
+                    val isBusy = sendingTargetKey == "global"
+                    ForwardTargetRow(
+                        title = "Genel Chat",
+                        subtitle = "Tüm Libra üyeleriyle paylaş",
+                        photoUrl = "",
+                        isGlobal = true,
+                        isSent = isSent,
+                        isBusy = isBusy,
+                        onSend = {
+                            sendingTargetKey = "global"
+                            onForwardToGlobalChat { ok ->
+                                sendingTargetKey = null
+                                if (ok) {
+                                    sentKeys.value = sentKeys.value + "global"
+                                    Toast.makeText(context, "Genel Chate iletildi.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+
+                items(filteredConversations, key = { it.id }) { conv ->
+                    val title = if (conv.isGroup) conv.groupName.ifBlank { "Grup" } else conv.otherUserName.ifBlank { "Libra Üyesi" }
+                    val subtitle = if (conv.isGroup) "${conv.participantIds.size} kişi" else "@${conv.otherUserUsername}"
+                    val photo = if (conv.isGroup) conv.groupPhotoUrl else conv.otherUserPhotoUrl
+                    val isSent = conv.id in sentKeys.value
+                    val isBusy = sendingTargetKey == conv.id
+
+                    ForwardTargetRow(
+                        title = title,
+                        subtitle = subtitle,
+                        photoUrl = photo,
+                        isGlobal = false,
+                        isSent = isSent,
+                        isBusy = isBusy,
+                        onSend = {
+                            sendingTargetKey = conv.id
+                            onForwardToConversation(conv) { ok ->
+                                sendingTargetKey = null
+                                if (ok) {
+                                    sentKeys.value = sentKeys.value + conv.id
+                                    Toast.makeText(context, "$title sohbetine iletildi.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun ForwardTargetRow(
+    title: String,
+    subtitle: String,
+    photoUrl: String,
+    isGlobal: Boolean,
+    isSent: Boolean,
+    isBusy: Boolean,
+    onSend: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isGlobal) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
+                }
+            } else {
+                UserAvatar(photoUrl = photoUrl, initials = title.take(1).uppercase(), size = 40.dp)
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Button(
+                enabled = !isBusy && !isSent,
+                onClick = onSend,
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSent) MaterialTheme.colorScheme.surfaceVariant else LibraLavender
+                )
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Text(
+                        text = if (isSent) "İletildi ✓" else "Gönder",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (isSent) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1277,13 +2806,17 @@ private fun DirectConversationScreen(
 private fun SectionButton(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(13.dp))
             .background(if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surface)
             .appleBouncy(pressedScale = 0.93f, onClick = onClick)
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text = text,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1315,8 +2848,8 @@ private fun CommunityList(onGlobalChatClick: () -> Unit, onServersClick: () -> U
                 eyebrow = "ORTAK SOHBET",
                 title = "Genel Chat",
                 subtitle = "Tüm Libra üyeleriyle aynı sohbette buluş.",
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                iconContainerColor = MaterialTheme.colorScheme.background,
+                containerColor = MaterialTheme.colorScheme.surface,
+                iconContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 onClick = onGlobalChatClick
             )
         }
@@ -1328,7 +2861,7 @@ private fun CommunityList(onGlobalChatClick: () -> Unit, onServersClick: () -> U
                 title = "Sunucular",
                 subtitle = "Kitap, yazarlık ve ilgi alanlarına göre topluluklara katıl.",
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
-                iconContainerColor = MaterialTheme.colorScheme.background,
+                iconContainerColor = MaterialTheme.colorScheme.surface,
                 onClick = onServersClick,
                 large = true
             )
@@ -1338,21 +2871,24 @@ private fun CommunityList(onGlobalChatClick: () -> Unit, onServersClick: () -> U
 
 @Composable
 private fun CommunityFeatureCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     eyebrow: String,
     title: String,
     subtitle: String,
-    containerColor: androidx.compose.ui.graphics.Color,
-    iconContainerColor: androidx.compose.ui.graphics.Color,
+    containerColor: Color,
+    iconContainerColor: Color,
     onClick: () -> Unit,
     large: Boolean = false
 ) {
-    Card(
+    val shape = RoundedCornerShape(if (large) 24.dp else 20.dp)
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(shape)
             .appleBouncy(pressedScale = 0.97f, onClick = onClick),
-        shape = RoundedCornerShape(if (large) 24.dp else 20.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        shape = shape,
+        color = containerColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Row(
             modifier = Modifier

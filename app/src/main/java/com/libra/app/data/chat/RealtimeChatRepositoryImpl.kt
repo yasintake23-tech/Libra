@@ -524,7 +524,11 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.replyToSenderName ?: ""),
+            "replyToSenderName" to (replyTo?.senderName
+                ?.ifBlank {
+                    if (replyTo.senderId == sender.uid) profile.displayName else replyTo.replyToSenderName
+                }
+                ?: ""),
             "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
@@ -689,9 +693,21 @@ class RealtimeChatRepositoryImpl(
         val messageRef = ref("directMessages/$conversation")?.push()
             ?: return error("Realtime Database yapılandırması bulunamadı.")
 
+        val resolvedReplySenderName = replyTo?.let { target ->
+            target.senderName.ifBlank {
+                when {
+                    target.senderId == sender.uid -> senderProfile.displayName
+                    target.senderId.isNotBlank() -> profileOrFallback(target.senderId).displayName
+                    else -> target.replyToSenderName
+                }
+            }
+        }.orEmpty()
+
         val now = System.currentTimeMillis()
         val message = mapOf(
             "senderId" to sender.uid,
+            "senderName" to senderProfile.displayName,
+            "senderUsername" to senderProfile.username,
             "senderPhotoUrl" to senderProfile.profileImageUrl,
             "recipientId" to recipientId,
             "text" to clean,
@@ -701,11 +717,7 @@ class RealtimeChatRepositoryImpl(
             "replyToMessageId" to (replyTo?.id ?: ""),
             "replyToText" to replyText(replyTo?.text, replyTo?.mediaUrl),
             "replyToSenderId" to (replyTo?.senderId ?: ""),
-            "replyToSenderName" to (replyTo?.replyToSenderName
-                ?.ifBlank {
-                    if (replyTo.senderId == sender.uid) senderProfile.displayName else ""
-                }
-                ?: ""),
+            "replyToSenderName" to resolvedReplySenderName,
             "sharedContent" to (sharedContentData(sharedContent) ?: emptyMap<String, Any>())
         )
 
@@ -856,6 +868,24 @@ class RealtimeChatRepositoryImpl(
             // Read receipts are metadata. A permission/rule mismatch here must not
             // make opening or sending a conversation look broken.
             AppResult.Success(Unit)
+        }
+    }
+
+    override suspend fun hideDirectConversation(conversationId: String): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (conversationId.isBlank()) {
+            return AppResult.Error(AppError.Validation("Sohbet bulunamadı."))
+        }
+
+        val summaryRef = ref("directConversations/$uid/$conversationId")
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+
+        return try {
+            summaryRef.removeValue().await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Sohbet gizlenemedi.", e)
         }
     }
 
@@ -1198,7 +1228,7 @@ class RealtimeChatRepositoryImpl(
             ?.maxByOrNull { it.createdAt }
 
         val lastMessage = latest?.let {
-            lastMessage(it.text, it.mediaUrl)
+            lastMessage(it.text, it.mediaUrl, it.sharedContent)
         }.orEmpty()
         val updatedAt = latest?.createdAt ?: 0L
 

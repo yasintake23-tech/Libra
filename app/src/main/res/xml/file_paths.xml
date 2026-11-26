@@ -3,4 +3,7 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <cache-path
+        name="dm_media"
+        path="dm_media/" />
 </paths>

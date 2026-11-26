@@ -494,13 +494,17 @@ fun AppNavHost(
     var hideProfileBottomBar by remember { mutableStateOf(false) }
     var fullScreenProfile by remember { mutableStateOf(false) }
 
+    val isDmChatOpen = selectedTab == BottomNavTab.DM && !activeDirectConversationId.isNullOrBlank()
+
     val isImmersiveTabActive = (selectedTab == BottomNavTab.HOME && fullScreenHome) ||
-        (selectedTab == BottomNavTab.PROFILE && fullScreenProfile)
+        (selectedTab == BottomNavTab.PROFILE && fullScreenProfile) ||
+        isDmChatOpen
 
     val isAnyOverlayActive = showCreateBook || createContentMode != null || readerBook != null ||
         selectedBook != null || selectedWritingBook != null || selectedPublicProfile != null ||
         showNotifications || showCommunityServers || showGlobalChat || showAdminPanel ||
         showProfileEdit || showSettings ||
+        isDmChatOpen ||
         (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
         (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
 
