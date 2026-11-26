@@ -2586,7 +2586,7 @@ private fun DirectConversationScreen(
             }
             }
 
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = showScrollToBottom && messages.isNotEmpty(),
                 enter = fadeIn() + scaleIn(initialScale = 0.85f),
                 exit = fadeOut() + scaleOut(targetScale = 0.85f),
