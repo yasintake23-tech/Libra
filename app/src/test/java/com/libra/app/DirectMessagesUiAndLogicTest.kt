@@ -8,6 +8,7 @@ import com.libra.app.feature.messages.formatChatTimeHeader
 import com.libra.app.feature.messages.formatConversationRelativeTime
 import com.libra.app.feature.messages.formatMessageHour
 import com.libra.app.feature.messages.formatReadableByteSize
+import com.libra.app.feature.messages.isMessageSeenByPeer
 import com.libra.app.feature.messages.resolveShareableMessageText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -105,5 +106,25 @@ class DirectMessagesUiAndLogicTest {
         assertTrue(shareText.contains("Harika bir kitap"))
         assertTrue(shareText.contains("Kürk Mantolu Madonna"))
         assertTrue(shareText.contains("https://libra-3bfb9.web.app/share/book/bk_1"))
+    }
+
+    @Test
+    fun isMessageSeenByPeer_respectsSenderOwnershipPendingStateAndTimestamps() {
+        val sentMsg = DirectMessage(
+            id = "srv_msg_1",
+            senderId = "me",
+            recipientId = "peer",
+            text = "Selam",
+            createdAt = baseMs
+        )
+        val pendingMsg = sentMsg.copy(id = "local-12345")
+        val peerMsg = sentMsg.copy(senderId = "peer", recipientId = "me")
+
+        assertTrue(isMessageSeenByPeer(sentMsg, peerLastReadAt = baseMs, currentUid = "me"))
+        assertTrue(isMessageSeenByPeer(sentMsg, peerLastReadAt = baseMs + 5_000L, currentUid = "me"))
+        assertFalse(isMessageSeenByPeer(sentMsg, peerLastReadAt = baseMs - 1L, currentUid = "me"))
+        assertFalse(isMessageSeenByPeer(sentMsg, peerLastReadAt = 0L, currentUid = "me"))
+        assertFalse(isMessageSeenByPeer(pendingMsg, peerLastReadAt = baseMs + 5_000L, currentUid = "me"))
+        assertFalse(isMessageSeenByPeer(peerMsg, peerLastReadAt = baseMs + 5_000L, currentUid = "me"))
     }
 }

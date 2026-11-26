@@ -33,6 +33,7 @@ import com.libra.app.feature.admin.LIBRA_PRIMARY_ADMIN_UID
 import com.libra.app.feature.admin.filterAndSortAdminNotificationDrafts
 import com.libra.app.feature.admin.resolveAdminAudienceLabel
 import com.libra.app.feature.admin.resolveAdminNotificationRecipients
+import com.libra.app.notification.LibraNotificationHelper
 import com.libra.app.notification.NotificationPreferenceCategory
 import com.libra.app.notification.NotificationPreferencesState
 import com.libra.app.notification.classifyNotificationCategory
@@ -245,6 +246,20 @@ class NotificationSystemTest {
         assertTrue(shouldSuppressActiveNotification(groupMsg, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_123"))
         assertFalse(shouldSuppressActiveNotification(dm, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_other"))
         assertFalse(shouldSuppressActiveNotification(postLike, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_123"))
+    }
+
+    @Test
+    fun notificationPreferencesDefaultIsEphemeralAndRequestCodeIsDeterministic() {
+        val defaults = NotificationPreferencesState()
+        assertTrue(defaults.masterEnabled)
+        assertFalse(defaults.backgroundServiceEnabled)
+
+        val codeA = LibraNotificationHelper.notificationRequestCode("notif_abc", LibraNotificationTypes.MESSAGE, 1234L)
+        val codeB = LibraNotificationHelper.notificationRequestCode("notif_abc", LibraNotificationTypes.MESSAGE, 5678L)
+        val fallbackA = LibraNotificationHelper.notificationRequestCode("", LibraNotificationTypes.MESSAGE, 999L)
+        val fallbackB = LibraNotificationHelper.notificationRequestCode("", LibraNotificationTypes.MESSAGE, 999L)
+        assertEquals(codeA, codeB)
+        assertEquals(fallbackA, fallbackB)
     }
 
     @Test

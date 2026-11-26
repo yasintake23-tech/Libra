@@ -183,16 +183,20 @@ class RealtimeChatRepositoryImpl(
         otherUserPhotoUrl: String,
         lastMessage: String,
         updatedAt: Long,
-        unreadCount: Any
-    ): Map<String, Any> = mapOf(
-        "otherUserId" to otherUserId,
-        "otherUserName" to otherUserName,
-        "otherUserUsername" to otherUserUsername,
-        "otherUserPhotoUrl" to otherUserPhotoUrl,
-        "lastMessage" to lastMessage,
-        "updatedAt" to updatedAt,
-        "unreadCount" to unreadCount
-    )
+        unreadCount: Any,
+        peerLastReadAt: Long? = null,
+        myLastReadAt: Long? = null
+    ): Map<String, Any> = buildMap {
+        put("otherUserId", otherUserId)
+        put("otherUserName", otherUserName)
+        put("otherUserUsername", otherUserUsername)
+        put("otherUserPhotoUrl", otherUserPhotoUrl)
+        put("lastMessage", lastMessage)
+        put("updatedAt", updatedAt)
+        put("unreadCount", unreadCount)
+        if (peerLastReadAt != null) put("peerLastReadAt", peerLastReadAt)
+        if (myLastReadAt != null) put("myLastReadAt", myLastReadAt)
+    }
 
     private suspend fun profileOrFallback(uid: String, authName: String = "", authPhoto: String = ""): UserProfile {
         val profile = runCatching {
@@ -393,7 +397,9 @@ class RealtimeChatRepositoryImpl(
                             isGroup = isGroup,
                             groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
                             groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty(),
-                            participantIds = participantIds
+                            participantIds = participantIds,
+                            peerLastReadAt = child.child("peerLastReadAt").getValue(Long::class.java) ?: 0L,
+                            myLastReadAt = child.child("myLastReadAt").getValue(Long::class.java) ?: 0L
                         )
                     }.sortedByDescending { it.updatedAt }
 
@@ -787,7 +793,9 @@ class RealtimeChatRepositoryImpl(
                 otherUserPhotoUrl = recipientProfile.profileImageUrl,
                 lastMessage = lastMessage,
                 updatedAt = timestamp,
-                unreadCount = 0
+                unreadCount = 0,
+                peerLastReadAt = 0L,
+                myLastReadAt = timestamp
             ),
             "directConversations/$recipientUid/$conversationId" to summaryData(
                 otherUserId = senderUid,
@@ -796,7 +804,8 @@ class RealtimeChatRepositoryImpl(
                 otherUserPhotoUrl = senderProfile.profileImageUrl,
                 lastMessage = lastMessage,
                 updatedAt = timestamp,
-                unreadCount = ServerValue.increment(1)
+                unreadCount = ServerValue.increment(1),
+                peerLastReadAt = timestamp
             )
         )
 
@@ -852,17 +861,49 @@ class RealtimeChatRepositoryImpl(
     override suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit> {
         val uid = currentUid()
             ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        if (conversationId.isBlank()) return AppResult.Success(Unit)
 
         val summaryRef = ref("directConversations/$uid/$conversationId")
             ?: return error("Realtime Database yapılandırması bulunamadı.")
 
         return try {
+            val now = System.currentTimeMillis()
             val snapshot = summaryRef.get().await()
-            if (!snapshot.exists()) {
-                return AppResult.Success(Unit)
+            if (snapshot.exists()) {
+                summaryRef.updateChildren(
+                    mapOf(
+                        "unreadCount" to 0,
+                        "myLastReadAt" to now
+                    )
+                ).await()
             }
 
-            summaryRef.child("unreadCount").setValue(0).await()
+            // Notify peer(s) that we have read messages up to 'now' (Görüldü).
+            val isGroup = snapshot.child("isGroup").getValue(Boolean::class.java) == true
+            if (isGroup) {
+                val members = snapshot.child("participantIds").children
+                    .mapNotNull { it.getValue(String::class.java) }
+                    .filter { it.isNotBlank() && it != uid }
+                members.forEach { memberUid ->
+                    runCatching {
+                        ref("directConversations/$memberUid/$conversationId/peerLastReadAt")
+                            ?.setValue(now)
+                            ?.await()
+                    }
+                }
+            } else {
+                val otherUid = snapshot.child("otherUserId").getValue(String::class.java)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: conversationId.split("_").firstOrNull { it.isNotBlank() && it != uid }
+                if (!otherUid.isNullOrBlank() && otherUid != uid) {
+                    runCatching {
+                        ref("directConversations/$otherUid/$conversationId/peerLastReadAt")
+                            ?.setValue(now)
+                            ?.await()
+                    }
+                }
+            }
+
             AppResult.Success(Unit)
         } catch (e: Exception) {
             // Read receipts are metadata. A permission/rule mismatch here must not

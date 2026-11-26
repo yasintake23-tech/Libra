@@ -191,6 +191,17 @@ fun resolveShareableMessageText(message: DirectMessage): String {
     return parts.joinToString("\n").trim()
 }
 
+fun isMessageSeenByPeer(
+    message: DirectMessage,
+    peerLastReadAt: Long,
+    currentUid: String
+): Boolean =
+    !message.id.startsWith("local-") &&
+        currentUid.isNotBlank() &&
+        message.senderId == currentUid &&
+        message.createdAt > 0L &&
+        peerLastReadAt >= message.createdAt
+
 suspend fun prepareChatImageForUpload(
     context: Context,
     uri: Uri,

@@ -25,18 +25,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -53,6 +57,7 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
@@ -101,6 +106,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -616,30 +622,33 @@ fun DirectMessagesScreen(
     }
 
     selectedConversation?.let { conversation ->
+        val liveConv = conversations.firstOrNull { it.id == conversation.id } ?: conversation
         DirectConversationScreen(
             user = UserProfile(
                 uid = "",
-                displayName = conversation.groupName.ifBlank { "Grup sohbeti" },
-                profileImageUrl = conversation.groupPhotoUrl
+                displayName = liveConv.groupName.ifBlank { "Grup sohbeti" },
+                profileImageUrl = liveConv.groupPhotoUrl
             ),
-            conversationIdOverride = conversation.id,
+            conversationIdOverride = liveConv.id,
             isGroup = true,
-            groupMemberCount = conversation.participantIds.size,
+            groupMemberCount = liveConv.participantIds.size,
+            peerLastReadAt = liveConv.peerLastReadAt,
             conversations = conversations,
             messages = messages,
             error = error,
             onBack = { selectedConversation = null },
-            onSend = { text, reply, onComplete -> viewModel.sendGroup(conversation.id, text, reply, onComplete) },
-            onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(conversation.id, url, type, text, reply, onComplete) },
-            onEdit = { id, text -> viewModel.edit(conversation.id, id, text) },
-            onDelete = { id -> viewModel.delete(conversation.id, id) },
-            onReaction = { id, emoji -> viewModel.react(conversation.id, id, emoji) },
+            onSend = { text, reply, onComplete -> viewModel.sendGroup(liveConv.id, text, reply, onComplete) },
+            onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(liveConv.id, url, type, text, reply, onComplete) },
+            onEdit = { id, text -> viewModel.edit(liveConv.id, id, text) },
+            onDelete = { id -> viewModel.delete(liveConv.id, id) },
+            onReaction = { id, emoji -> viewModel.react(liveConv.id, id, emoji) },
+            onMarkRead = { viewModel.markRead(liveConv.id) },
             onForwardMessage = { msg, targetConv, toGlobal, done ->
                 viewModel.forwardMessage(
                     message = msg,
                     targetConversation = targetConv,
                     sendToGlobalChat = toGlobal,
-                    fallbackAuthorName = msg.senderName.ifBlank { conversation.groupName },
+                    fallbackAuthorName = msg.senderName.ifBlank { liveConv.groupName },
                     onComplete = done
                 )
             },
@@ -651,8 +660,10 @@ fun DirectMessagesScreen(
 
     selectedUser?.let { user ->
         val dmConvId = listOf(authUserId(), user.uid).sorted().joinToString("_")
+        val liveDmConv = conversations.firstOrNull { it.id == dmConvId }
         DirectConversationScreen(
             user = user,
+            peerLastReadAt = liveDmConv?.peerLastReadAt ?: 0L,
             conversations = conversations,
             messages = messages,
             error = error,
@@ -662,6 +673,7 @@ fun DirectMessagesScreen(
             onEdit = { id, text -> viewModel.edit(dmConvId, id, text) },
             onDelete = { id -> viewModel.delete(dmConvId, id) },
             onReaction = { id, emoji -> viewModel.react(dmConvId, id, emoji) },
+            onMarkRead = { viewModel.markRead(dmConvId) },
             onForwardMessage = { msg, targetConv, toGlobal, done ->
                 viewModel.forwardMessage(
                     message = msg,
@@ -1409,6 +1421,7 @@ private fun DirectConversationScreen(
     conversationIdOverride: String? = null,
     isGroup: Boolean = false,
     groupMemberCount: Int = 0,
+    peerLastReadAt: Long = 0L,
     conversations: List<DirectConversation> = emptyList(),
     messages: List<DirectMessage>,
     error: String?,
@@ -1418,6 +1431,7 @@ private fun DirectConversationScreen(
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReaction: (String, String) -> Unit,
+    onMarkRead: () -> Unit = {},
     onForwardMessage: (DirectMessage, DirectConversation?, Boolean, (Boolean) -> Unit) -> Unit,
     onOpenProfile: () -> Unit = {},
     canMessage: Boolean = true,
@@ -1548,10 +1562,23 @@ private fun DirectConversationScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+
+    LaunchedEffect(messages.size, imeBottomPx) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
+    }
+
+    LaunchedEffect(conversationId, messages.lastOrNull()?.id) {
+        val lastMessage = messages.lastOrNull()
+        if (lastMessage != null && lastMessage.senderId != currentUid) {
+            onMarkRead()
+        }
+    }
+
+    val lastSentMessageId = remember(messages, currentUid) {
+        messages.lastOrNull { it.senderId == currentUid }?.id.orEmpty()
     }
 
     val sentBubbleColor = if (darkTheme) Color(0xFF6D28D9) else LibraLavender
@@ -1564,7 +1591,6 @@ private fun DirectConversationScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .imePadding()
     ) {
         // Aesthetic Top Header
         Surface(
@@ -2088,7 +2114,8 @@ private fun DirectConversationScreen(
                                         )
                                     }
 
-                                    // Compact time + edited/sending indicator row
+                                    // Compact time + edited + seen receipt indicator row
+                                    val messageSeen = isMessageSeenByPeer(message, peerLastReadAt, currentUid)
                                     Row(
                                         modifier = Modifier
                                             .align(Alignment.End)
@@ -2116,8 +2143,40 @@ private fun DirectConversationScreen(
                                                 strokeWidth = 1.5.dp,
                                                 color = secondaryTextColor
                                             )
+                                        } else if (mine) {
+                                            Icon(
+                                                imageVector = if (messageSeen) Icons.Default.DoneAll else Icons.Default.Check,
+                                                contentDescription = if (messageSeen) "Görüldü" else "Gönderildi",
+                                                modifier = Modifier.size(13.dp),
+                                                tint = if (messageSeen) Color(0xFF93C5FD) else secondaryTextColor
+                                            )
                                         }
                                     }
+                                }
+                            }
+
+                            if (mine && message.id == lastSentMessageId &&
+                                isMessageSeenByPeer(message, peerLastReadAt, currentUid)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(top = 3.dp, end = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DoneAll,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(13.dp),
+                                        tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                    )
+                                    Text(
+                                        text = "Görüldü",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                    )
                                 }
                             }
 
@@ -2330,7 +2389,7 @@ private fun DirectConversationScreen(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,

@@ -16,7 +16,7 @@ data class NotificationPreferencesState(
     val messagesEnabled: Boolean = true,
     val socialEnabled: Boolean = true,
     val announcementsEnabled: Boolean = true,
-    val backgroundServiceEnabled: Boolean = true
+    val backgroundServiceEnabled: Boolean = false
 ) {
     fun allowsType(type: String): Boolean {
         if (!masterEnabled) return false
@@ -121,7 +121,7 @@ class NotificationPreferencesStore(context: Context) {
         messagesEnabled = prefs.getBoolean(KEY_MESSAGES_ENABLED, true),
         socialEnabled = prefs.getBoolean(KEY_SOCIAL_ENABLED, true),
         announcementsEnabled = prefs.getBoolean(KEY_ANNOUNCEMENTS_ENABLED, true),
-        backgroundServiceEnabled = prefs.getBoolean(KEY_BACKGROUND_SERVICE, true)
+        backgroundServiceEnabled = prefs.getBoolean(KEY_BACKGROUND_SERVICE, false)
     )
 
     @Synchronized
@@ -191,7 +191,7 @@ class NotificationPreferencesStore(context: Context) {
         private const val KEY_MESSAGES_ENABLED = "messages_enabled"
         private const val KEY_SOCIAL_ENABLED = "social_enabled"
         private const val KEY_ANNOUNCEMENTS_ENABLED = "announcements_enabled"
-        private const val KEY_BACKGROUND_SERVICE = "background_service_enabled"
+        private const val KEY_BACKGROUND_SERVICE = "background_live_service_opt_in_v2"
         private const val KEY_PERMISSION_PROMPTED = "permission_prompted_v1"
         private const val MAX_STORED_IDS = 500
     }

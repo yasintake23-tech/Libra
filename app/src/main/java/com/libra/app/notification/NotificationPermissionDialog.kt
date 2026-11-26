@@ -202,8 +202,8 @@ fun NotificationPreferencesBottomSheet(
                 }
             )
             NotificationToggleItem(
-                title = "Uygulama Kapalıyken Anlık Bağlantı",
-                subtitle = "Arka planda canlı bildirim dinleyicisini açık tutar",
+                title = "Kesintisiz Canlı Dinleyici (İsteğe Bağlı)",
+                subtitle = "Kapalıyken uygulama sürekli çalışmaz; yalnızca bildirim kontrolünde kısa süre uyanıp kapanır",
                 checked = preferences.backgroundServiceEnabled,
                 enabled = preferences.masterEnabled,
                 onCheckedChange = {

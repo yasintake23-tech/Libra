@@ -13,7 +13,9 @@ data class DirectConversation(
     val isGroup: Boolean = false,
     val groupName: String = "",
     val groupPhotoUrl: String = "",
-    val participantIds: List<String> = emptyList()
+    val participantIds: List<String> = emptyList(),
+    val peerLastReadAt: Long = 0L,
+    val myLastReadAt: Long = 0L
 )
 
 data class DirectMessage(

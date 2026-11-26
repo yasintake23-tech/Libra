@@ -4,13 +4,23 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.google.firebase.FirebaseApp
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.messaging.FirebaseMessaging
 import com.libra.app.domain.model.AppNotification
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.await
+
+private const val LIBRA_NOTIF_RTDB_URL =
+    "https://libra-3bfb9-default-rtdb.europe-west1.firebasedatabase.app"
 
 object LibraNotificationRuntimeState {
     @Volatile
@@ -105,6 +115,7 @@ object LibraNotificationSyncManager {
     ) {
         val appContext = context.applicationContext
         ensureFirebaseInitialized(appContext)
+        LibraNotificationHelper.ensureChannels(appContext)
         val prefs = NotificationPreferencesStore(appContext).readPreferences()
         val hasPerm = LibraNotificationHelper.hasNotificationPermission(appContext)
 
@@ -113,6 +124,7 @@ object LibraNotificationSyncManager {
             return
         }
 
+        registerFcmTokenIfAvailable(uid)
         LibraNotificationJobService.schedulePeriodicSync(appContext)
         LibraNotificationReceiver.scheduleBackupAlarm(appContext)
 
@@ -122,6 +134,29 @@ object LibraNotificationSyncManager {
             }
         } else {
             stopForegroundSyncService(appContext)
+        }
+    }
+
+    fun registerFcmTokenIfAvailable(uid: String) {
+        if (uid.isBlank()) return
+        runCatching {
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                if (!token.isNullOrBlank()) {
+                    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                        saveFcmToken(uid, token)
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun saveFcmToken(uid: String, token: String) {
+        if (uid.isBlank() || token.isBlank()) return
+        runCatching {
+            FirebaseDatabase.getInstance(LIBRA_NOTIF_RTDB_URL)
+                .getReference("notifications/$uid/fcmToken")
+                .setValue(token)
+                .await()
         }
     }
 

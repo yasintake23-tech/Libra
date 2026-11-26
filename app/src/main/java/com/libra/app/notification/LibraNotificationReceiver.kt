@@ -70,7 +70,7 @@ class LibraNotificationReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_ALARM_SYNC = "com.libra.app.ACTION_NOTIFICATION_SYNC"
         private const val REQUEST_CODE_BACKUP_ALARM = 42073
-        private const val BACKUP_INTERVAL_MS = 2L * 60L * 1000L
+        private const val BACKUP_INTERVAL_MS = 60_000L
 
         fun scheduleBackupAlarm(context: Context) {
             val appContext = context.applicationContext
