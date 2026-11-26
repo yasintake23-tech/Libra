@@ -758,10 +758,11 @@ class BookRepositoryImpl(
                 bookOwnerId
             }
 
-            if (notificationRepository != null && recipientId.isNotBlank() && recipientId != comment.userId) {
+            val notifRepo = notificationRepository
+            if (notifRepo != null && recipientId.isNotBlank() && recipientId != comment.userId) {
                 runCatching {
                     val actorDisplay = resolvedName.ifBlank { resolvedUsername.ifBlank { "Bir kullanıcı" } }
-                    notificationRepository.create(
+                    notifRepo.create(
                         AppNotification(
                             recipientId = recipientId,
                             actorId = comment.userId,
