@@ -124,9 +124,10 @@ fun RichMessageActionSheet(
     val neutralCircleBorder = MaterialTheme.colorScheme.outline
     val neutralIconTint = MaterialTheme.colorScheme.onSurface
 
-    val replyCircleBg = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
-    val replyCircleBorder = if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder
-    val replyIconTint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+    val palette = rememberLibraCommsColors()
+    val replyCircleBg = palette.brandSoft
+    val replyCircleBorder = palette.brand.copy(alpha = 0.35f)
+    val replyIconTint = palette.brandText
 
     val shareCircleBg = if (darkTheme) Color(0xFF172554) else Color(0xFFE0F2FE)
     val shareCircleBorder = if (darkTheme) Color(0xFF1E40AF) else Color(0xFFBAE6FD)
@@ -286,21 +287,17 @@ fun RichMessageActionSheet(
                         previewSharedTitle.isNotBlank()
 
                     if (hasPreview) {
-                        val bubbleShape = RoundedCornerShape(22.dp)
-                        val bubbleColor = if (isOwnMessage) {
-                            if (darkTheme) Color(0xFF6D28D9) else LibraLavender
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        }
-                        val bubbleTextColor = if (isOwnMessage) Color.White else MaterialTheme.colorScheme.onSurface
-                        val bubbleBorder = if (isOwnMessage) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        val bubbleShape = RoundedCornerShape(16.dp)
+                        val bubbleColor = if (isOwnMessage) palette.sentBubble else palette.receivedBubble
+                        val bubbleTextColor = if (isOwnMessage) Color.White else palette.inkPrimary
+                        val bubbleBorder = if (isOwnMessage) null else BorderStroke(0.85.dp, palette.hairline)
 
                         Surface(
-                            modifier = Modifier.widthIn(min = 140.dp, max = 300.dp),
+                            modifier = Modifier.widthIn(min = 140.dp, max = 296.dp),
                             shape = bubbleShape,
                             color = bubbleColor,
                             border = bubbleBorder,
-                            shadowElevation = 10.dp
+                            shadowElevation = 6.dp
                         ) {
                             Column(
                                 modifier = Modifier.padding(10.dp),
@@ -313,16 +310,16 @@ fun RichMessageActionSheet(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .heightIn(max = 170.dp)
-                                            .clip(RoundedCornerShape(14.dp)),
+                                            .clip(RoundedCornerShape(12.dp)),
                                         contentScale = ContentScale.Crop
                                     )
                                 } ?: if (previewMediaUrl.isNotBlank()) {
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isOwnMessage) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isOwnMessage) palette.sentBubbleQuote else palette.recessed
                                     ) {
                                         Text(
-                                            text = "📷 Fotoğraf mesajı",
+                                            text = "Fotoğraf mesajı",
                                             color = bubbleTextColor,
                                             style = MaterialTheme.typography.labelMedium,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
@@ -332,8 +329,8 @@ fun RichMessageActionSheet(
 
                                 if (previewSharedTitle.isNotBlank()) {
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isOwnMessage) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isOwnMessage) palette.sentBubbleQuote else palette.recessed
                                     ) {
                                         Text(
                                             text = previewSharedTitle,
@@ -438,9 +435,10 @@ fun RichConversationActionOverlay(
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
-    val primaryBg = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
-    val primaryBorder = if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder
-    val primaryTint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+    val palette = rememberLibraCommsColors()
+    val primaryBg = palette.brandSoft
+    val primaryBorder = palette.brand.copy(alpha = 0.35f)
+    val primaryTint = palette.brandText
 
     val shareBg = if (darkTheme) Color(0xFF172554) else Color(0xFFE0F2FE)
     val shareBorder = if (darkTheme) Color(0xFF1E40AF) else Color(0xFFBAE6FD)
@@ -712,18 +710,18 @@ fun RichReplyBanner(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
-    val bannerSurface = MaterialTheme.colorScheme.surface
-    val accentColor = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-    val barColor = LibraLavender
+    val palette = rememberLibraCommsColors()
+    val bannerSurface = palette.surface
+    val accentColor = palette.brandText
+    val barColor = palette.brand
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
         color = bannerSurface,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(0.85.dp, palette.hairline)
     ) {
         Row(
             modifier = Modifier

@@ -1,18 +1,34 @@
 package com.libra.app.feature.messages
 
 import android.content.Context
+import android.provider.Settings
 import androidx.compose.ui.geometry.Offset
+import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.ServerMessage
 
 enum class DmHubMode {
     MESSAGES,
+    GLOBAL_CHAT,
     SERVERS
 }
 
-fun parseDmHubMode(raw: String?): DmHubMode = when (raw?.uppercase()) {
+fun parseDmHubMode(raw: String?): DmHubMode = when (raw?.trim()?.uppercase()) {
     "SERVERS" -> DmHubMode.SERVERS
+    "GLOBAL_CHAT", "GLOBAL" -> DmHubMode.GLOBAL_CHAT
     else -> DmHubMode.MESSAGES
 }
+
+/**
+ * Respects Android's system "Remove animations" / Animator duration scale accessibility preference.
+ */
+fun areSystemAnimationsReduced(context: Context): Boolean = runCatching {
+    val scale = Settings.Global.getFloat(
+        context.contentResolver,
+        Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f
+    )
+    scale <= 0.05f
+}.getOrDefault(false)
 
 /**
  * Pure unread check for a server channel:
@@ -42,7 +58,31 @@ fun countUnreadServerChannels(
     )
 }
 
+/**
+ * Computes the list index where an "N okunmamış mesaj" divider should appear inside a conversation.
+ * Returns -1 when there are no unread incoming messages to separate.
+ */
+fun computeUnreadDividerIndex(
+    messages: List<DirectMessage>,
+    initialUnreadCount: Int,
+    currentUid: String
+): Int {
+    if (initialUnreadCount <= 0 || messages.isEmpty()) return -1
+    var remaining = initialUnreadCount
+    var targetIndex = -1
+    for (idx in messages.lastIndex downTo 0) {
+        val msg = messages[idx]
+        if (msg.senderId != currentUid) {
+            targetIndex = idx
+            remaining--
+            if (remaining <= 0) break
+        }
+    }
+    return targetIndex
+}
+
 data class PortalTransitionRequest(
+    val fromMode: DmHubMode,
     val targetMode: DmHubMode,
     val originInRoot: Offset,
     val nonce: Int

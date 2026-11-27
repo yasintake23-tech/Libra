@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -50,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -87,6 +89,9 @@ import com.libra.app.feature.messages.DirectMessagesViewModel
 import com.libra.app.feature.messages.DmHubMode
 import com.libra.app.feature.messages.DmWorkspacePreferences
 import com.libra.app.feature.messages.GlobalChatScreen
+import com.libra.app.feature.messages.GlobalChatViewModel
+import com.libra.app.feature.messages.LibraMessagingTopChrome
+import com.libra.app.feature.messages.MessageInboxFilter
 import com.libra.app.feature.messages.PortalTransitionOverlay
 import com.libra.app.feature.messages.PortalTransitionRequest
 import com.libra.app.feature.notifications.NotificationsScreen
@@ -146,7 +151,11 @@ fun AppNavHost(
     var portalTransition by remember { mutableStateOf<PortalTransitionRequest?>(null) }
     var portalNonce by remember { mutableIntStateOf(0) }
     val dmInboxListState = rememberLazyListState()
+    val globalChatListState = rememberLazyListState()
     val serverHubListState = rememberLazyListState()
+    var dmInboxFilter by remember { mutableStateOf(MessageInboxFilter.ALL) }
+    var dmSearchActive by remember { mutableStateOf(false) }
+    var dmSearchQuery by remember { mutableStateOf("") }
     var showNotifications by remember { mutableStateOf(false) }
     var unreadNotificationCount by remember { mutableStateOf(0) }
     var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
@@ -271,6 +280,7 @@ fun AppNavHost(
     val libraryVm: LibraryViewModel = viewModel()
     val profileVm: ProfileViewModel = viewModel()
     val directMessagesVm: DirectMessagesViewModel = viewModel()
+    val globalChatVm: GlobalChatViewModel = viewModel()
     val serversVm: CommunityServersViewModel = viewModel()
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
@@ -284,19 +294,27 @@ fun AppNavHost(
     LaunchedEffect(currentUser?.uid) {
         if (!currentUser?.uid.isNullOrBlank()) {
             directMessagesVm.refreshConversations()
+            globalChatVm.refresh()
             serversVm.refreshServers()
         }
     }
 
     fun switchDmHubModeImmediately(mode: DmHubMode) {
+        dmSearchActive = false
+        dmSearchQuery = ""
         dmHubMode = mode
         dmWorkspacePrefs.saveHubMode(mode)
     }
 
     fun launchPortalTransition(targetMode: DmHubMode, originInRoot: Offset) {
-        if (portalTransition != null || dmHubMode == targetMode) return
+        if (dmHubMode == targetMode && portalTransition == null) return
+        if (portalTransition?.targetMode == targetMode) return
+        dmSearchActive = false
+        dmSearchQuery = ""
+        val originMode = dmHubMode
         portalNonce++
         portalTransition = PortalTransitionRequest(
+            fromMode = originMode,
             targetMode = targetMode,
             originInRoot = originInRoot,
             nonce = portalNonce
@@ -594,6 +612,10 @@ fun AppNavHost(
             showGlobalChat -> showGlobalChat = false
             showNotifications -> showNotifications = false
             selectedDirectUser != null -> selectedDirectUser = null
+            selectedTab == BottomNavTab.DM && dmSearchActive -> {
+                dmSearchActive = false
+                dmSearchQuery = ""
+            }
             selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
             else -> {
                 // No in-app screen is open. Let Android finish the Activity.
@@ -659,12 +681,16 @@ fun AppNavHost(
     var hideProfileBottomBar by remember { mutableStateOf(false) }
     var fullScreenProfile by remember { mutableStateOf(false) }
 
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     val isDmChatOpen = selectedTab == BottomNavTab.DM &&
         dmHubMode == DmHubMode.MESSAGES &&
         !activeDirectConversationId.isNullOrBlank()
     val isServerChannelOpen = selectedTab == BottomNavTab.DM &&
         dmHubMode == DmHubMode.SERVERS &&
         !activeServerChannelId.isNullOrBlank()
+    val isGlobalChatImeOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.GLOBAL_CHAT &&
+        imeBottomPx > 0
 
     val isImmersiveTabActive = (selectedTab == BottomNavTab.HOME && fullScreenHome) ||
         (selectedTab == BottomNavTab.PROFILE && fullScreenProfile) ||
@@ -677,6 +703,7 @@ fun AppNavHost(
         showProfileEdit || showSettings ||
         isDmChatOpen ||
         isServerChannelOpen ||
+        isGlobalChatImeOpen ||
         (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
         (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
 
@@ -712,7 +739,8 @@ fun AppNavHost(
                         selectedTab = selectedTab,
                         onTabSelected = { selectedTab = it },
                         dmUnreadPrivateCount = unreadPrivateChatCount,
-                        isServerModeActive = dmHubMode == DmHubMode.SERVERS
+                        isServerModeActive = dmHubMode == DmHubMode.SERVERS,
+                        dmHubMode = dmHubMode
                     )
                 }
             },
@@ -835,31 +863,84 @@ fun AppNavHost(
                             )
                         }
                         BottomNavTab.DM -> {
-                            when (dmHubMode) {
-                                DmHubMode.MESSAGES -> DirectMessagesScreen(
-                                    onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
-                                    onGlobalChatClick = { showGlobalChat = true },
-                                    onServersClick = { launchPortalTransition(DmHubMode.SERVERS, Offset.Zero) },
-                                    onSwitchToServers = { origin -> launchPortalTransition(DmHubMode.SERVERS, origin) },
-                                    initialUser = selectedDirectUser,
-                                    onInitialUserConsumed = { selectedDirectUser = null },
-                                    initialConversationId = selectedDirectConversationId,
-                                    onInitialConversationConsumed = { selectedDirectConversationId = null },
-                                    onActiveConversationChanged = { activeDirectConversationId = it },
-                                    onOpenProfile = ::openPublicProfile,
-                                    inboxListState = dmInboxListState,
-                                    canMessage = profile.moderation.canMessage,
-                                    viewModel = directMessagesVm
-                                )
-                                DmHubMode.SERVERS -> CommunityServersScreen(
-                                    onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
-                                    onSwitchToMessages = { origin -> launchPortalTransition(DmHubMode.MESSAGES, origin) },
-                                    unreadPrivateCount = unreadPrivateChatCount,
-                                    onOpenProfile = ::openPublicProfile,
-                                    hubListState = serverHubListState,
-                                    viewModel = serversVm,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (!isDmChatOpen && !isServerChannelOpen) {
+                                    LibraMessagingTopChrome(
+                                        activeMode = dmHubMode,
+                                        currentUser = profile,
+                                        unreadNotificationCount = unreadNotificationCount,
+                                        searchActive = dmSearchActive,
+                                        searchQuery = dmSearchQuery,
+                                        searchPlaceholder = when (dmHubMode) {
+                                            DmHubMode.MESSAGES -> "Sohbet veya kişi ara…"
+                                            DmHubMode.GLOBAL_CHAT -> "Genel Sohbet'te ara…"
+                                            DmHubMode.SERVERS -> "Sunucu veya kanal ara…"
+                                        },
+                                        onToggleSearch = {
+                                            if (dmSearchActive) {
+                                                dmSearchActive = false
+                                                dmSearchQuery = ""
+                                            } else {
+                                                dmSearchActive = true
+                                            }
+                                        },
+                                        onSearchQueryChange = { dmSearchQuery = it },
+                                        onNotificationsClick = { showNotifications = true },
+                                        onProfileClick = { selectedTab = BottomNavTab.PROFILE },
+                                        onSelectMode = { targetMode, origin ->
+                                            launchPortalTransition(targetMode, origin)
+                                        }
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                ) {
+                                    when (dmHubMode) {
+                                        DmHubMode.MESSAGES -> DirectMessagesScreen(
+                                            onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                                            onGlobalChatClick = { launchPortalTransition(DmHubMode.GLOBAL_CHAT, Offset.Zero) },
+                                            onServersClick = { launchPortalTransition(DmHubMode.SERVERS, Offset.Zero) },
+                                            onSwitchToServers = { origin -> launchPortalTransition(DmHubMode.SERVERS, origin) },
+                                            initialUser = selectedDirectUser,
+                                            onInitialUserConsumed = { selectedDirectUser = null },
+                                            initialConversationId = selectedDirectConversationId,
+                                            onInitialConversationConsumed = { selectedDirectConversationId = null },
+                                            onActiveConversationChanged = { activeDirectConversationId = it },
+                                            onOpenProfile = ::openPublicProfile,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            inboxFilter = dmInboxFilter,
+                                            onInboxFilterChange = { dmInboxFilter = it },
+                                            inboxListState = dmInboxListState,
+                                            canMessage = profile.moderation.canMessage,
+                                            viewModel = directMessagesVm
+                                        )
+                                        DmHubMode.GLOBAL_CHAT -> GlobalChatScreen(
+                                            onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
+                                            viewModel = globalChatVm,
+                                            onOpenProfile = ::openPublicProfile,
+                                            canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                                            isAdminModerator = hasAdminAccess && adminPermissions.manageGlobalChat,
+                                            embeddedInHub = true,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            listState = globalChatListState,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        DmHubMode.SERVERS -> CommunityServersScreen(
+                                            onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
+                                            onSwitchToMessages = { origin -> launchPortalTransition(DmHubMode.MESSAGES, origin) },
+                                            unreadPrivateCount = unreadPrivateChatCount,
+                                            onOpenProfile = ::openPublicProfile,
+                                            embeddedInHub = true,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            hubListState = serverHubListState,
+                                            viewModel = serversVm,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
                             }
                         }
                         BottomNavTab.LIBRARY -> {

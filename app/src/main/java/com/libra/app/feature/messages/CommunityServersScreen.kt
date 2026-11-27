@@ -159,13 +159,6 @@ import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.FullScreenImageViewerDialog
 import com.libra.app.ui.components.UserAvatar
-import com.libra.app.ui.theme.LibraLavender
-import com.libra.app.ui.theme.LibraLavenderBorder
-import com.libra.app.ui.theme.LibraLavenderDarkBorder
-import com.libra.app.ui.theme.LibraLavenderDarkSurface
-import com.libra.app.ui.theme.LibraLavenderDarkText
-import com.libra.app.ui.theme.LibraLavenderSurface
-import com.libra.app.ui.theme.LibraLavenderText
 import com.libra.app.ui.theme.LocalLibraDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -174,8 +167,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private val ServerIndigoAccent = Color(0xFF4F46E5)
-private val ServerUnreadDotColor = Color(0xFFF43F5E)
+private val LibraLavender = Color(0xFF2554C7)
+private val LibraLavenderSurface = Color(0xFFEAF0FE)
+private val LibraLavenderDarkSurface = Color(0xFF19243F)
+private val LibraLavenderText = Color(0xFF1E44A6)
+private val LibraLavenderDarkText = Color(0xFF9BB8FF)
+private val ServerIndigoAccent = Color(0xFF2554C7)
+private val ServerUnreadDotColor = Color(0xFFE11D48)
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -184,11 +182,13 @@ fun CommunityServersScreen(
     onSwitchToMessages: (Offset) -> Unit = { onBack() },
     unreadPrivateCount: Int = 0,
     onOpenProfile: (String) -> Unit = {},
+    embeddedInHub: Boolean = true,
+    externalSearchQuery: String = "",
     hubListState: LazyListState = rememberLazyListState(),
     viewModel: CommunityServersViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val currentUid = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
@@ -220,6 +220,13 @@ fun CommunityServersScreen(
                 compareByDescending<CommunityServer> { pinnedServerIds.contains(it.id) }
                     .thenByDescending { it.createdAt }
             )
+    }
+    val filteredServers = remember(sortedServers, externalSearchQuery) {
+        val q = externalSearchQuery.trim()
+        if (q.isBlank()) sortedServers
+        else sortedServers.filter { srv ->
+            srv.name.contains(q, ignoreCase = true) || srv.description.contains(q, ignoreCase = true)
+        }
     }
 
     // Live derived server object (prevents stale snapshots after name/avatar/banner edits!)
@@ -292,47 +299,54 @@ fun CommunityServersScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(palette.canvas)
     ) {
-        // Persistent Realm Top Bar with Reverse Mechanical Portal Button ("Mesajlar")
+        // Compact contextual action bar (hub top chrome handles brand + 3-realm switcher when embeddedInHub)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (!embeddedInHub) Modifier.statusBarsPadding() else Modifier)
                 .padding(horizontal = 16.dp)
-                .padding(top = 12.dp, bottom = 10.dp),
+                .padding(top = if (embeddedInHub) 2.dp else 10.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            MechanicalPortalTriggerButton(
-                title = "Mesajlar",
-                isServerDestination = false,
-                badgeCount = unreadPrivateCount,
-                compact = true,
-                onTrigger = onSwitchToMessages
-            )
+            if (!embeddedInHub) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Geri",
+                        tint = palette.inkPrimary
+                    )
+                }
+            }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = selectedServer?.name ?: "Sunucu Atlası",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.4).sp
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.2).sp
                     ),
+                    color = palette.inkPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = if (selectedServer != null) {
                         if (activeUnreadChannelsCount > 0) "$activeUnreadChannelsCount okunmamış kanal"
-                        else "${members.size} üye • ${channels.size} kanal"
+                        else "${members.size} üye · ${channels.size} kanal"
                     } else {
                         if (sortedServers.isEmpty()) "Topluluk alanların"
-                        else "${sortedServers.size} sunucu aktif"
+                        else "${sortedServers.size} sunucu"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (selectedServer != null && activeUnreadChannelsCount > 0) ServerUnreadDotColor
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selectedServer != null && activeUnreadChannelsCount > 0) palette.alertDot
+                    else palette.inkSecondary,
                     maxLines = 1
                 )
             }
@@ -344,24 +358,33 @@ fun CommunityServersScreen(
             )
             Surface(
                 modifier = Modifier
-                    .size(38.dp)
+                    .height(34.dp)
                     .clip(CircleShape)
-                    .appleBouncy(pressedScale = 0.88f, onClick = { showCreateSheet = true }),
+                    .appleBouncy(pressedScale = 0.9f, onClick = { showCreateSheet = true }),
                 shape = CircleShape,
-                color = ServerIndigoAccent
+                color = palette.server
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Sunucu oluştur",
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Kur",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White
                     )
                 }
             }
         }
 
-        // Libra Signature Horizontal Constellation Server Switcher Ribbon
+        // Libra Constellation Server Switcher Ribbon
         ConstellationServerRibbon(
             servers = sortedServers,
             pinnedIds = pinnedServerIds,
@@ -370,8 +393,8 @@ fun CommunityServersScreen(
             onSelectServer = { viewModel.selectServer(it.id) }
         )
 
-        Spacer(Modifier.height(6.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
+        Spacer(Modifier.height(4.dp))
+        HorizontalDivider(thickness = 0.85.dp, color = palette.hairline)
 
         // Main Realm Stage: Either Server Atlas Home or Selected Server Workspace
         AnimatedContent(
@@ -384,7 +407,7 @@ fun CommunityServersScreen(
         ) { activeServer ->
             if (activeServer == null) {
                 ServerAtlasHomeContent(
-                    servers = sortedServers,
+                    servers = filteredServers,
                     pinnedServerIds = pinnedServerIds,
                     currentUid = currentUid,
                     isLoading = isLoadingServers,
@@ -428,6 +451,7 @@ fun CommunityServersScreen(
                     inviteKey = activeInviteKey.ifBlank { activeServer.inviteKey },
                     latestByChannel = latestByChannel,
                     readAtByChannel = readAtByChannel,
+                    externalSearchQuery = externalSearchQuery,
                     onChannelClick = { viewModel.selectChannel(it.id) },
                     onOpenProfile = onOpenProfile,
                     onServerDeleted = { viewModel.onServerDeleted(activeServer.id) },
@@ -566,21 +590,22 @@ private fun ServerCircleAction(
     contentDescription: String,
     onClick: () -> Unit
 ) {
+    val palette = rememberLibraCommsColors()
     Surface(
         modifier = Modifier
-            .size(38.dp)
+            .size(34.dp)
             .clip(CircleShape)
             .appleBouncy(pressedScale = 0.88f, onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        color = palette.surface,
+        border = BorderStroke(0.85.dp, palette.hairline)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(18.dp)
+                tint = palette.inkPrimary,
+                modifier = Modifier.size(16.dp)
             )
         }
     }
@@ -594,7 +619,7 @@ private fun ConstellationServerRibbon(
     onSelectHub: () -> Unit,
     onSelectServer: (CommunityServer) -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -606,25 +631,24 @@ private fun ConstellationServerRibbon(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(56.dp)
+                    .width(54.dp)
                     .clickable(onClick = onSelectHub)
             ) {
                 Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (isHub) ServerIndigoAccent else MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(44.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isHub) palette.server else palette.surface,
                     border = BorderStroke(
-                        width = if (isHub) 2.dp else 1.dp,
-                        color = if (isHub) Color(0xFFA5B4FC) else MaterialTheme.colorScheme.outline
-                    ),
-                    shadowElevation = if (isHub) 3.dp else 0.dp
+                        width = if (isHub) 1.5.dp else 0.85.dp,
+                        color = if (isHub) palette.server else palette.hairline
+                    )
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Explore,
                             contentDescription = "Sunucu Atlası",
-                            tint = if (isHub) Color.White else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp)
+                            tint = if (isHub) Color.White else palette.inkPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -632,14 +656,10 @@ private fun ConstellationServerRibbon(
                 Text(
                     text = "Atlas",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = if (isHub) FontWeight.ExtraBold else FontWeight.Medium,
+                        fontWeight = if (isHub) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 10.5.sp
                     ),
-                    color = if (isHub) {
-                        if (darkTheme) Color(0xFFA5B4FC) else ServerIndigoAccent
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = if (isHub) palette.serverText else palette.inkSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -652,32 +672,32 @@ private fun ConstellationServerRibbon(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(58.dp)
+                    .width(56.dp)
                     .clickable { onSelectServer(server) }
             ) {
                 Box(contentAlignment = Alignment.TopEnd) {
                     LibraSquircleAvatar(
                         photoUrl = server.avatarUrl,
                         title = server.name,
-                        size = 48.dp,
-                        cornerRadius = if (selected) 15.dp else 18.dp,
-                        borderColor = if (selected) ServerIndigoAccent else MaterialTheme.colorScheme.outline,
-                        borderWidth = if (selected) 2.4.dp else 1.dp,
+                        size = 44.dp,
+                        cornerRadius = if (selected) 13.dp else 15.dp,
+                        borderColor = if (selected) palette.server else palette.hairline,
+                        borderWidth = if (selected) 2.dp else 0.85.dp,
                         onClick = { onSelectServer(server) }
                     )
                     if (pinned) {
                         Surface(
                             shape = CircleShape,
                             color = Color(0xFFF59E0B),
-                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.background),
-                            modifier = Modifier.size(16.dp)
+                            border = BorderStroke(1.5.dp, palette.canvas),
+                            modifier = Modifier.size(15.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Star,
                                     contentDescription = "Sabitli",
                                     tint = Color.White,
-                                    modifier = Modifier.size(10.dp)
+                                    modifier = Modifier.size(9.dp)
                                 )
                             }
                         }
@@ -687,14 +707,10 @@ private fun ConstellationServerRibbon(
                 Text(
                     text = server.name,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 10.5.sp
                     ),
-                    color = if (selected) {
-                        if (darkTheme) Color(0xFFA5B4FC) else ServerIndigoAccent
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = if (selected) palette.serverText else palette.inkSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -720,104 +736,75 @@ private fun ServerAtlasHomeContent(
     onSelectServer: (CommunityServer) -> Unit,
     onCreateServer: () -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Architectural Invite Key Portal Card
+        // Compact Flat Invite Key Bar
         item(key = "invite_portal_card") {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                color = if (darkTheme) Color(0xFF181728) else Color(0xFF1A192E),
-                border = BorderStroke(1.dp, ServerIndigoAccent.copy(alpha = 0.55f))
+                shape = RoundedCornerShape(16.dp),
+                color = palette.surface,
+                border = BorderStroke(0.85.dp, palette.hairline)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = ServerIndigoAccent.copy(alpha = 0.35f),
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.VpnKey,
-                                    contentDescription = null,
-                                    tint = Color(0xFFC7D2FE),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        Column(Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.VpnKey,
+                        contentDescription = null,
+                        tint = palette.server,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    TextField(
+                        value = inviteKeyInput,
+                        onValueChange = onInviteKeyChange,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.inkPrimary),
+                        placeholder = {
                             Text(
-                                text = "Bir Topluluğa Katıl",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                color = Color.White
+                                text = "Davet anahtarı (libra.sc/...)",
+                                color = palette.inkSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = "Davet anahtarını yaz ve sunucuyu anında keşfet",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFC7D2FE)
-                            )
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        )
+                    )
+                    val canLookup = inviteKeyInput.isNotBlank() && !inviteLookupLoading
+                    Button(
+                        enabled = canLookup,
+                        onClick = onLookupInvite,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.server,
+                            disabledContainerColor = palette.recessed
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                     ) {
-                        Surface(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color.White.copy(alpha = 0.10f),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
-                        ) {
-                            TextField(
-                                value = inviteKeyInput,
-                                onValueChange = onInviteKeyChange,
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
-                                placeholder = {
-                                    Text(
-                                        text = "libra.sc/anahtar",
-                                        color = Color.White.copy(alpha = 0.55f),
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                    cursorColor = Color(0xFFF59E0B)
-                                )
+                        if (inviteLookupLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp, color = Color.White)
+                        } else {
+                            Text(
+                                text = "Bul",
+                                color = if (canLookup) Color.White else palette.inkSecondary,
+                                fontWeight = FontWeight.Bold
                             )
-                        }
-                        val canLookup = inviteKeyInput.isNotBlank() && !inviteLookupLoading
-                        Button(
-                            enabled = canLookup,
-                            onClick = onLookupInvite,
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = ServerIndigoAccent,
-                                disabledContainerColor = Color.White.copy(alpha = 0.14f)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
-                        ) {
-                            if (inviteLookupLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                            } else {
-                                Text("Bul", color = Color.White, fontWeight = FontWeight.ExtraBold)
-                            }
                         }
                     }
                 }
@@ -829,18 +816,17 @@ private fun ServerAtlasHomeContent(
             item(key = "servers_error_banner") {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.WifiOff, null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.WifiOff, null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(17.dp))
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,
@@ -857,19 +843,25 @@ private fun ServerAtlasHomeContent(
 
         item(key = "section_joined_servers") {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Katıldığın Sunucular",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = palette.inkPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 if (servers.isNotEmpty()) {
                     Text(
                         text = "${servers.size} sunucu",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.inkSecondary
                     )
                 }
             }
@@ -877,63 +869,63 @@ private fun ServerAtlasHomeContent(
 
         if (isLoading && servers.isEmpty()) {
             items(3) {
-                val block = if (darkTheme) Color(0xFF22212E) else Color(0xFFECE9F5)
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(136.dp),
-                    shape = RoundedCornerShape(22.dp),
-                    color = block.copy(alpha = 0.7f)
+                        .height(112.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.recessed.copy(alpha = 0.7f)
                 ) {}
             }
         } else if (servers.isEmpty()) {
             item(key = "servers_empty_card") {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.surface,
+                    border = BorderStroke(0.85.dp, palette.hairline)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(26.dp),
+                            .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = if (darkTheme) Color(0xFF1F1D36) else Color(0xFFEEF2FF),
-                            modifier = Modifier.size(58.dp)
+                            shape = CircleShape,
+                            color = palette.serverSoft,
+                            modifier = Modifier.size(50.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Groups,
                                     contentDescription = null,
-                                    tint = if (darkTheme) Color(0xFFA5B4FC) else ServerIndigoAccent,
-                                    modifier = Modifier.size(28.dp)
+                                    tint = palette.server,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text(
                             text = "Henüz bir sunucun yok",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = palette.inkPrimary
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Yukarıdan davet anahtarıyla mevcut bir topluluğa katılabilir veya kendi sunucunu kurabilirsin.",
+                            text = "Davet anahtarıyla mevcut bir topluluğa katılabilir veya kendi sunucunu kurabilirsin.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = palette.inkSecondary
                         )
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(14.dp))
                         Button(
                             onClick = onCreateServer,
                             shape = CircleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = ServerIndigoAccent)
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.server)
                         ) {
-                            Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Kendi Sunucunu Kur", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Sunucu Oluştur", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -962,25 +954,25 @@ private fun ServerAtlasCard(
     onTogglePin: () -> Unit,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val palette = rememberLibraCommsColors()
+    val shape = RoundedCornerShape(16.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
             .appleBouncy(pressedScale = 0.98f, onClick = onClick),
         shape = shape,
-        color = MaterialTheme.colorScheme.surface,
+        color = palette.surface,
         border = BorderStroke(
-            1.dp,
-            if (isPinned) ServerIndigoAccent.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline
-        ),
-        shadowElevation = 1.dp
+            width = if (isPinned) 1.dp else 0.85.dp,
+            color = if (isPinned) palette.server.copy(alpha = 0.45f) else palette.hairline
+        )
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(84.dp)
+                    .height(66.dp)
             ) {
                 LibraArchitecturalBanner(
                     seedKey = server.id.ifBlank { server.name },
@@ -992,25 +984,25 @@ private fun ServerAtlasCard(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = 0.08f), Color.Black.copy(alpha = 0.50f))
+                                listOf(Color.Black.copy(alpha = 0.06f), Color.Black.copy(alpha = 0.44f))
                             )
                         )
                 )
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(10.dp),
+                        .padding(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isOwner) {
-                        LibraRoleChip(label = "Kurucu", highlighted = true, accentColor = ServerIndigoAccent)
+                        LibraRoleChip(label = "Kurucu", highlighted = true, accentColor = palette.server)
                     }
                     Surface(
                         shape = CircleShape,
-                        color = if (isPinned) Color(0xFFF59E0B) else Color.Black.copy(alpha = 0.45f),
+                        color = if (isPinned) Color(0xFFF59E0B) else Color.Black.copy(alpha = 0.42f),
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
                             .clickable(onClick = onTogglePin)
                     ) {
@@ -1019,7 +1011,7 @@ private fun ServerAtlasCard(
                                 imageVector = if (isPinned) Icons.Default.Star else Icons.Default.PushPin,
                                 contentDescription = if (isPinned) "Sabitlemeyi kaldır" else "Sabitle",
                                 tint = Color.White,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
@@ -1029,16 +1021,16 @@ private fun ServerAtlasCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LibraSquircleAvatar(
                     photoUrl = server.avatarUrl,
                     title = server.name,
-                    size = 48.dp,
-                    cornerRadius = 15.dp,
-                    borderColor = MaterialTheme.colorScheme.outline,
-                    borderWidth = 1.dp
+                    size = 44.dp,
+                    cornerRadius = 13.dp,
+                    borderColor = palette.hairline,
+                    borderWidth = 0.85.dp
                 )
                 Column(
                     modifier = Modifier
@@ -1047,22 +1039,27 @@ private fun ServerAtlasCard(
                 ) {
                     Text(
                         text = server.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = palette.inkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = server.description.ifBlank { "Kanalları keşfetmek ve sohbete katılmak için aç" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        text = server.description.ifBlank { "Kanalları görüntülemek için dokun" },
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = palette.inkSecondary,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = "Sunucuyu aç",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = palette.inkSecondary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1083,12 +1080,13 @@ private fun ServerWorkspaceContent(
     inviteKey: String,
     latestByChannel: Map<String, ServerMessage?>,
     readAtByChannel: Map<String, Long>,
+    externalSearchQuery: String = "",
     onChannelClick: (ServerChannel) -> Unit,
     onOpenProfile: (String) -> Unit,
     onServerDeleted: () -> Unit,
     onLeaveServer: () -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val repo = ServiceLocator.communityRepository
@@ -1115,11 +1113,11 @@ private fun ServerWorkspaceContent(
     var permissionChannel by remember { mutableStateOf<ServerChannel?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
 
-    val visibleChannels = remember(channels, channelPermissions, currentMember, currentRolePermissions, isOwner, channelSearch) {
-        val q = channelSearch.trim()
+    val effectiveQuery = (externalSearchQuery.takeIf { it.isNotBlank() } ?: channelSearch).trim()
+    val visibleChannels = remember(channels, channelPermissions, currentMember, currentRolePermissions, isOwner, effectiveQuery) {
         channels.filter { ch ->
             (isOwner || canViewServerChannel(ch, channelPermissions[ch.id].orEmpty(), currentMember, currentRolePermissions)) &&
-                (q.isBlank() || ch.name.contains(q, ignoreCase = true))
+                (effectiveQuery.isBlank() || ch.name.contains(effectiveQuery, ignoreCase = true))
         }
     }
     val visibleChannelsByCategory = remember(visibleChannels) { visibleChannels.groupBy { it.categoryId } }
@@ -1135,22 +1133,22 @@ private fun ServerWorkspaceContent(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Architectural Server Hero Banner Card
+        // Disciplined Server Header Card
         item(key = "server_workspace_hero") {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                shape = RoundedCornerShape(16.dp),
+                color = palette.surface,
+                border = BorderStroke(0.85.dp, palette.hairline)
             ) {
                 Column {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(112.dp)
+                            .height(92.dp)
                     ) {
                         LibraArchitecturalBanner(
                             seedKey = server.id.ifBlank { server.name },
@@ -1162,7 +1160,7 @@ private fun ServerWorkspaceContent(
                                 .fillMaxSize()
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(Color.Black.copy(alpha = 0.12f), Color.Black.copy(alpha = 0.65f))
+                                        listOf(Color.Black.copy(alpha = 0.08f), Color.Black.copy(alpha = 0.62f))
                                     )
                                 )
                         )
@@ -1170,24 +1168,24 @@ private fun ServerWorkspaceContent(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             LibraSquircleAvatar(
                                 photoUrl = server.avatarUrl,
                                 title = server.name,
-                                size = 54.dp,
-                                cornerRadius = 17.dp,
+                                size = 46.dp,
+                                cornerRadius = 14.dp,
                                 borderColor = Color.White.copy(alpha = 0.85f),
-                                borderWidth = 2.dp
+                                borderWidth = 1.5.dp
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = server.name,
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 20.sp
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp
                                     ),
                                     color = Color.White,
                                     maxLines = 1,
@@ -1195,8 +1193,8 @@ private fun ServerWorkspaceContent(
                                 )
                                 Text(
                                     text = buildString {
-                                        append("${members.size} üye • ${visibleChannels.size} kanal")
-                                        if (unreadCount > 0) append(" • $unreadCount okunmamış")
+                                        append("${members.size} üye · ${visibleChannels.size} kanal")
+                                        if (unreadCount > 0) append(" · $unreadCount okunmamış")
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.88f)
@@ -1209,20 +1207,19 @@ private fun ServerWorkspaceContent(
                         Text(
                             text = server.description,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = palette.inkSecondary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp)
+                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)
                         )
                     }
 
-                    // Quick Server Actions Strip
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
                         ServerActionChip(
                             icon = Icons.Default.Info,
@@ -1268,36 +1265,37 @@ private fun ServerWorkspaceContent(
             }
         }
 
-        // Channel Search Input
-        item(key = "channel_search_pill") {
-            val searchBg = if (darkTheme) Color(0xFF1A1923) else Color(0xFFF2F0F8)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = searchBg,
-                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
-            ) {
-                TextField(
-                    value = channelSearch,
-                    onValueChange = { channelSearch = it },
+        // Local Channel Search (only shown when top bar search isn't active)
+        if (externalSearchQuery.isBlank()) {
+            item(key = "channel_search_pill") {
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("Kanal ara…", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(19.dp)) },
-                    trailingIcon = if (channelSearch.isNotBlank()) {
-                        {
-                            IconButton(onClick = { channelSearch = "" }) {
-                                Icon(Icons.Default.Close, "Temizle")
+                    shape = RoundedCornerShape(14.dp),
+                    color = palette.surface,
+                    border = BorderStroke(0.85.dp, palette.hairline)
+                ) {
+                    TextField(
+                        value = channelSearch,
+                        onValueChange = { channelSearch = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Kanal ara…", color = palette.inkSecondary, style = MaterialTheme.typography.bodySmall) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = palette.inkSecondary, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = if (channelSearch.isNotBlank()) {
+                            {
+                                IconButton(onClick = { channelSearch = "" }) {
+                                    Icon(Icons.Default.Close, "Temizle", tint = palette.inkSecondary)
+                                }
                             }
-                        }
-                    } else null,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
+                        } else null,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -1670,34 +1668,30 @@ private fun ServerActionChip(
     highlighted: Boolean = false,
     onClick: () -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     Surface(
         modifier = Modifier
             .clip(CircleShape)
             .appleBouncy(pressedScale = 0.94f, onClick = onClick),
         shape = CircleShape,
-        color = when {
-            highlighted -> ServerIndigoAccent
-            darkTheme -> Color(0xFF1F1E2B)
-            else -> Color(0xFFF3F2FA)
-        },
-        border = if (!highlighted) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null
+        color = if (highlighted) palette.server else palette.recessed,
+        border = if (!highlighted) BorderStroke(0.85.dp, palette.hairline) else null
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (highlighted) Color.White else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(15.dp)
+                tint = if (highlighted) Color.White else palette.inkPrimary,
+                modifier = Modifier.size(14.dp)
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = if (highlighted) Color.White else MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = if (highlighted) Color.White else palette.inkPrimary
             )
         }
     }
@@ -1712,14 +1706,10 @@ private fun ServerChannelRowCard(
     onClick: () -> Unit,
     onManage: () -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
-    val shape = RoundedCornerShape(18.dp)
-    val bgColor = when {
-        isUnread && darkTheme -> Color(0xFF1E1B33)
-        isUnread -> Color(0xFFF2F1FF)
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val borderColor = if (isUnread) ServerIndigoAccent.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+    val palette = rememberLibraCommsColors()
+    val shape = RoundedCornerShape(14.dp)
+    val bgColor = if (isUnread) palette.serverSoft else palette.surface
+    val borderColor = if (isUnread) palette.server.copy(alpha = 0.4f) else palette.hairline
 
     Surface(
         modifier = Modifier
@@ -1733,28 +1723,26 @@ private fun ServerChannelRowCard(
             },
         shape = shape,
         color = bgColor,
-        border = BorderStroke(if (isUnread) 1.2.dp else 0.85.dp, borderColor)
+        border = BorderStroke(if (isUnread) 1.dp else 0.85.dp, borderColor)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(contentAlignment = Alignment.TopEnd) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isUnread) ServerIndigoAccent else {
-                        if (darkTheme) Color(0xFF232231) else Color(0xFFEEEBF8)
-                    },
-                    modifier = Modifier.size(38.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isUnread) palette.server else palette.recessed,
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Tag,
                             contentDescription = null,
-                            tint = if (isUnread) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (isUnread) Color.White else palette.inkSecondary,
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
@@ -1762,9 +1750,9 @@ private fun ServerChannelRowCard(
                     Box(
                         modifier = Modifier
                             .offset(x = 2.dp, y = (-2).dp)
-                            .size(10.dp)
+                            .size(9.dp)
                             .clip(CircleShape)
-                            .background(ServerUnreadDotColor)
+                            .background(palette.alertDot)
                     )
                 }
             }
@@ -1772,7 +1760,7 @@ private fun ServerChannelRowCard(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = 11.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1781,9 +1769,10 @@ private fun ServerChannelRowCard(
                     Text(
                         text = channel.name,
                         style = MaterialTheme.typography.titleSmall.copy(
-                            fontSize = 15.sp,
-                            fontWeight = if (isUnread) FontWeight.ExtraBold else FontWeight.SemiBold
+                            fontSize = 14.5.sp,
+                            fontWeight = if (isUnread) FontWeight.Bold else FontWeight.SemiBold
                         ),
+                        color = palette.inkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -1795,7 +1784,7 @@ private fun ServerChannelRowCard(
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal
                             ),
-                            color = if (isUnread) ServerUnreadDotColor else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isUnread) palette.alertDot else palette.inkSecondary
                         )
                     }
                 }
@@ -3269,10 +3258,11 @@ private fun ServerChatScreen(
                     val isSelected = message.id in selectedMessageIds
                     val isHighlighted = highlightedMessageId == message.id
                     val isMentioned = message.mentionedUserIds.contains(currentUid) || message.mentionsEveryone || message.mentionsHere
+                    val palette = rememberLibraCommsColors()
                     val rowBg by animateColorAsState(
                         targetValue = when {
-                            isHighlighted -> if (darkTheme) Color(0xFF4C1D95) else Color(0xFFEDE9FE)
-                            isSelected -> if (darkTheme) Color(0xFF2E1065) else Color(0xFFF3E8FF)
+                            isHighlighted -> palette.brand.copy(alpha = if (darkTheme) 0.28f else 0.16f)
+                            isSelected -> palette.brand.copy(alpha = if (darkTheme) 0.18f else 0.10f)
                             else -> Color.Transparent
                         },
                         label = "server_msg_highlight"
@@ -3280,16 +3270,17 @@ private fun ServerChatScreen(
 
                     val bubbleColor = when {
                         isMentioned && !mine -> if (darkTheme) Color(0xFF3B2814) else Color(0xFFFFF4E5)
-                        mine -> if (darkTheme) Color(0xFF4338CA) else ServerIndigoAccent
-                        else -> MaterialTheme.colorScheme.surface
+                        mine -> palette.sentBubble
+                        else -> palette.receivedBubble
                     }
-                    val primaryText = if (mine) Color.White else MaterialTheme.colorScheme.onSurface
-                    val secondaryText = if (mine) Color(0xFFE0E7FF) else MaterialTheme.colorScheme.onSurfaceVariant
+                    val primaryText = if (mine) Color.White else palette.inkPrimary
+                    val secondaryText = if (mine) Color.White.copy(alpha = 0.78f) else palette.inkSecondary
 
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
+                            .animateItem()
+                            .clip(RoundedCornerShape(14.dp))
                             .background(rowBg)
                             .let { mod ->
                                 if (isSelectionMode) {
@@ -3320,10 +3311,10 @@ private fun ServerChatScreen(
                                     .padding(start = 6.dp)
                                     .size(30.dp),
                                 shape = CircleShape,
-                                color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
+                                color = palette.brandSoft
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.AutoMirrored.Filled.Reply, "Yanıtla", modifier = Modifier.size(16.dp), tint = LibraLavender)
+                                    Icon(Icons.AutoMirrored.Filled.Reply, "Yanıtla", modifier = Modifier.size(16.dp), tint = palette.brandText)
                                 }
                             }
                         }
@@ -3341,8 +3332,8 @@ private fun ServerChatScreen(
                                         .padding(end = 6.dp, bottom = 6.dp)
                                         .size(20.dp),
                                     shape = CircleShape,
-                                    color = if (isSelected) ServerIndigoAccent else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(1.5.dp, if (isSelected) ServerIndigoAccent else MaterialTheme.colorScheme.outline)
+                                    color = if (isSelected) palette.brand else palette.surface,
+                                    border = BorderStroke(1.5.dp, if (isSelected) palette.brand else palette.hairline)
                                 ) {
                                     if (isSelected) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -3354,12 +3345,12 @@ private fun ServerChatScreen(
 
                             if (!mine) {
                                 if (groupedWithPrevious) {
-                                    Spacer(Modifier.width(36.dp))
+                                    Spacer(Modifier.width(34.dp))
                                 } else {
                                     UserAvatar(
                                         photoUrl = message.senderPhotoUrl,
                                         initials = message.senderName.take(1).uppercase().ifBlank { "U" },
-                                        size = 30.dp,
+                                        size = 28.dp,
                                         onClick = {
                                             if (isSelectionMode) toggleSelection(message.id)
                                             else onOpenProfile(message.senderId)
@@ -3372,10 +3363,10 @@ private fun ServerChatScreen(
                             Surface(
                                 color = bubbleColor,
                                 shape = RoundedCornerShape(
-                                    topStart = if (!mine && groupedWithPrevious) 6.dp else 18.dp,
-                                    topEnd = if (mine && groupedWithPrevious) 6.dp else 18.dp,
-                                    bottomStart = 18.dp,
-                                    bottomEnd = 18.dp
+                                    topStart = if (!mine && groupedWithPrevious) 5.dp else 16.dp,
+                                    topEnd = if (mine && groupedWithPrevious) 5.dp else 16.dp,
+                                    bottomStart = 16.dp,
+                                    bottomEnd = 16.dp
                                 ),
                                 border = when {
                                     isSelected -> BorderStroke(2.dp, if (mine) Color.White else ServerIndigoAccent)

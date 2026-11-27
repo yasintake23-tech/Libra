@@ -100,14 +100,15 @@ import com.libra.app.domain.model.ServerMember
 import com.libra.app.domain.model.ServerRoleDefinition
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.UserAvatar
-import com.libra.app.ui.theme.LibraLavender
-import com.libra.app.ui.theme.LibraLavenderDarkSurface
-import com.libra.app.ui.theme.LibraLavenderDarkText
-import com.libra.app.ui.theme.LibraLavenderSurface
-import com.libra.app.ui.theme.LibraLavenderText
 import com.libra.app.ui.theme.LocalLibraDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
+private val LibraLavender = Color(0xFF2554C7)
+private val LibraLavenderSurface = Color(0xFFEAF0FE)
+private val LibraLavenderDarkSurface = Color(0xFF19243F)
+private val LibraLavenderText = Color(0xFF1E44A6)
+private val LibraLavenderDarkText = Color(0xFF9BB8FF)
 
 private enum class ServerSettingsPage(val title: String, val description: String) {
     HOME("Sunucu Stüdyosu", "Kimlik, üyeler, roller ve kanallar"),

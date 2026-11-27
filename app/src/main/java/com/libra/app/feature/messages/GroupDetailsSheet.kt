@@ -112,13 +112,6 @@ import com.libra.app.domain.model.resolveGroupOwnerId
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.FullScreenImageViewerDialog
 import com.libra.app.ui.components.UserAvatar
-import com.libra.app.ui.theme.LibraLavender
-import com.libra.app.ui.theme.LibraLavenderBorder
-import com.libra.app.ui.theme.LibraLavenderDarkBorder
-import com.libra.app.ui.theme.LibraLavenderDarkSurface
-import com.libra.app.ui.theme.LibraLavenderDarkText
-import com.libra.app.ui.theme.LibraLavenderSurface
-import com.libra.app.ui.theme.LibraLavenderText
 import com.libra.app.ui.theme.LocalLibraDarkTheme
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -128,6 +121,14 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private val LibraLavender = Color(0xFF2554C7)
+private val LibraLavenderSurface = Color(0xFFEAF0FE)
+private val LibraLavenderDarkSurface = Color(0xFF19243F)
+private val LibraLavenderBorder = Color(0xFFC7D8FC)
+private val LibraLavenderDarkBorder = Color(0xFF2B3E6B)
+private val LibraLavenderText = Color(0xFF1E44A6)
+private val LibraLavenderDarkText = Color(0xFF9BB8FF)
 
 private enum class GroupAboutTab(val label: String) {
     OVERVIEW("Genel"),

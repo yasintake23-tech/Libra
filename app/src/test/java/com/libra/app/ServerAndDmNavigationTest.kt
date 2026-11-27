@@ -1,10 +1,12 @@
 package com.libra.app
 
 import com.libra.app.domain.model.DirectConversation
+import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GroupPermissions
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.countUnreadPrivateConversations
 import com.libra.app.feature.messages.DmHubMode
+import com.libra.app.feature.messages.computeUnreadDividerIndex
 import com.libra.app.feature.messages.countUnreadServerChannels
 import com.libra.app.feature.messages.deterministicSenderAccent
 import com.libra.app.feature.messages.isServerChannelUnread
@@ -18,17 +20,17 @@ class ServerAndDmNavigationTest {
 
     @Test
     fun countUnreadPrivateConversations_countsDistinctPeopleNotTotalMessages() {
-        // 1 person sends 10 messages -> badge must show 1
-        val singlePersonTenMsgs = listOf(
+        // 1 person sends 20 messages -> badge must show 1
+        val singlePersonTwentyMsgs = listOf(
             DirectConversation(
                 id = "a_b",
                 isGroup = false,
                 otherUserId = "user_b",
                 otherUserName = "Ayşe",
-                unreadCount = 10
+                unreadCount = 20
             )
         )
-        assertEquals(1, countUnreadPrivateConversations(singlePersonTenMsgs))
+        assertEquals(1, countUnreadPrivateConversations(singlePersonTwentyMsgs))
 
         // 3 distinct people send 50 messages total -> badge must show 3
         val threePeopleFiftyMsgs = listOf(
@@ -57,13 +59,33 @@ class ServerAndDmNavigationTest {
     }
 
     @Test
-    fun parseDmHubMode_persistsAndRecoversModesSafely() {
+    fun parseDmHubMode_persistsAndRecoversAllThreeModesSafely() {
         assertEquals(DmHubMode.MESSAGES, parseDmHubMode(null))
         assertEquals(DmHubMode.MESSAGES, parseDmHubMode(""))
         assertEquals(DmHubMode.MESSAGES, parseDmHubMode("UNKNOWN"))
         assertEquals(DmHubMode.MESSAGES, parseDmHubMode(DmHubMode.MESSAGES.name))
+        assertEquals(DmHubMode.GLOBAL_CHAT, parseDmHubMode(DmHubMode.GLOBAL_CHAT.name))
+        assertEquals(DmHubMode.GLOBAL_CHAT, parseDmHubMode("global"))
         assertEquals(DmHubMode.SERVERS, parseDmHubMode(DmHubMode.SERVERS.name))
         assertEquals(DmHubMode.SERVERS, parseDmHubMode("servers"))
+    }
+
+    @Test
+    fun computeUnreadDividerIndex_placesDividerBeforeFirstUnreadIncomingMessage() {
+        val me = "uid_me"
+        val peer = "uid_peer"
+        val messages = listOf(
+            DirectMessage(id = "1", senderId = me, text = "Selam"),
+            DirectMessage(id = "2", senderId = peer, text = "Merhaba"),
+            DirectMessage(id = "3", senderId = peer, text = "Nasılsın?"),
+            DirectMessage(id = "4", senderId = peer, text = "Kitabı okudun mu?")
+        )
+
+        assertEquals(-1, computeUnreadDividerIndex(messages, initialUnreadCount = 0, currentUid = me))
+        assertEquals(-1, computeUnreadDividerIndex(emptyList(), initialUnreadCount = 2, currentUid = me))
+        assertEquals(3, computeUnreadDividerIndex(messages, initialUnreadCount = 1, currentUid = me))
+        assertEquals(2, computeUnreadDividerIndex(messages, initialUnreadCount = 2, currentUid = me))
+        assertEquals(1, computeUnreadDividerIndex(messages, initialUnreadCount = 5, currentUid = me))
     }
 
     @Test

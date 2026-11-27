@@ -42,16 +42,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.libra.app.feature.messages.DmHubMode
 import com.libra.app.ui.animation.AppleSprings
 import com.libra.app.ui.animation.appleBouncy
 
-private val DmUnreadBadgeColor = Color(0xFFF43F5E)
-private val ServerModeRingColor = Color(0xFF4F46E5)
+private val DmUnreadBadgeColor = Color(0xFFE11D48)
+private val ServerModeRingColor = Color(0xFF273764)
+private val GlobalModeRingColor = Color(0xFF0E8A7D)
+private val MessagesModeRingColor = Color(0xFF2554C7)
 
 /**
- * Floating glass pill navigation dock with round circular 3D buttons.
- * Designed to mirror Apple iOS floating dynamic controls with elastic pull & stretch physics,
- * plus a live animated unread private-chat badge on the DM slot.
+ * Floating glass pill navigation dock with round circular buttons,
+ * plus a live animated distinct-unread-private-chats badge and realm cue on the DM slot.
  */
 @Composable
 fun LibraBottomBar(
@@ -59,14 +61,15 @@ fun LibraBottomBar(
     onTabSelected: (BottomNavTab) -> Unit,
     modifier: Modifier = Modifier,
     dmUnreadPrivateCount: Int = 0,
-    isServerModeActive: Boolean = false
+    isServerModeActive: Boolean = false,
+    dmHubMode: DmHubMode = if (isServerModeActive) DmHubMode.SERVERS else DmHubMode.MESSAGES
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 24.dp, vertical = 8.dp)
-            .shadow(12.dp, shape = RoundedCornerShape(32.dp)),
+            .shadow(10.dp, shape = RoundedCornerShape(32.dp)),
         shape = RoundedCornerShape(32.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -85,7 +88,7 @@ fun LibraBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected,
                 badgeCount = dmUnreadPrivateCount,
-                highlightServerMode = isServerModeActive
+                dmHubMode = dmHubMode
             )
             BottomItem(tab = BottomNavTab.LIBRARY, selectedTab = selectedTab, onTabSelected = onTabSelected)
             BottomItem(tab = BottomNavTab.PROFILE, selectedTab = selectedTab, onTabSelected = onTabSelected)
@@ -100,7 +103,7 @@ private fun BottomItem(
     onTabSelected: (BottomNavTab) -> Unit,
     modifier: Modifier = Modifier,
     badgeCount: Int = 0,
-    highlightServerMode: Boolean = false
+    dmHubMode: DmHubMode = DmHubMode.MESSAGES
 ) {
     val selected = selectedTab == tab
     var tapToken by remember { mutableIntStateOf(0) }
@@ -111,17 +114,23 @@ private fun BottomItem(
         label = "tab_icon_scale"
     )
 
+    val dmAccentColor = when {
+        tab != BottomNavTab.DM -> MaterialTheme.colorScheme.primary
+        dmHubMode == DmHubMode.SERVERS -> ServerModeRingColor
+        dmHubMode == DmHubMode.GLOBAL_CHAT -> GlobalModeRingColor
+        else -> MessagesModeRingColor
+    }
+    val showNonDefaultRealmCue = tab == BottomNavTab.DM && dmHubMode != DmHubMode.MESSAGES
+
     val buttonBgColor = when {
-        selected && highlightServerMode -> ServerModeRingColor.copy(alpha = 0.18f)
-        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        highlightServerMode -> ServerModeRingColor.copy(alpha = 0.08f)
+        selected -> dmAccentColor.copy(alpha = 0.16f)
+        showNonDefaultRealmCue -> dmAccentColor.copy(alpha = 0.08f)
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
     }
 
     val buttonBorderColor = when {
-        selected && highlightServerMode -> ServerModeRingColor.copy(alpha = 0.65f)
-        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-        highlightServerMode -> ServerModeRingColor.copy(alpha = 0.30f)
+        selected -> dmAccentColor.copy(alpha = 0.45f)
+        showNonDefaultRealmCue -> dmAccentColor.copy(alpha = 0.30f)
         else -> Color.Transparent
     }
 

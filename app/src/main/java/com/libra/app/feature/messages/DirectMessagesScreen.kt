@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,9 +65,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -76,6 +79,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -765,13 +769,13 @@ class DirectMessagesViewModel : ViewModel() {
 
 private fun authUserId(): String = ServiceLocator.authRepository.currentUser.value?.uid.orEmpty()
 
-private enum class MessageInboxFilter { ALL, UNREAD, PRIVATE, GROUPS }
+enum class MessageInboxFilter { ALL, UNREAD, GROUPS, PRIVATE }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DirectMessagesScreen(
     onFindFriends: () -> Unit,
-    onGlobalChatClick: () -> Unit,
+    onGlobalChatClick: () -> Unit = {},
     onServersClick: () -> Unit = {},
     onSwitchToServers: (Offset) -> Unit = { onServersClick() },
     initialUser: UserProfile? = null,
@@ -780,21 +784,22 @@ fun DirectMessagesScreen(
     onInitialConversationConsumed: () -> Unit = {},
     onActiveConversationChanged: (String?) -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
+    externalSearchQuery: String = "",
+    inboxFilter: MessageInboxFilter = MessageInboxFilter.ALL,
+    onInboxFilterChange: (MessageInboxFilter) -> Unit = {},
     inboxListState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     canMessage: Boolean = true,
     viewModel: DirectMessagesViewModel = viewModel()
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
 
-    var inboxFilter by remember { mutableStateOf(MessageInboxFilter.ALL) }
-    var conversationSearch by remember { mutableStateOf("") }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
     var selectedConversation by remember { mutableStateOf<DirectConversation?>(null) }
+    var initialUnreadForOpenChat by remember { mutableIntStateOf(0) }
     var showNewChat by remember { mutableStateOf(false) }
     var newChatInitialTab by remember { mutableStateOf(NewChatStudioTab.DIRECT) }
     var longPressedConversation by remember { mutableStateOf<DirectConversation?>(null) }
@@ -833,6 +838,7 @@ fun DirectMessagesScreen(
     LaunchedEffect(initialUser?.uid) {
         initialUser?.let {
             val dmId = listOf(authUserId(), it.uid).sorted().joinToString("_")
+            initialUnreadForOpenChat = conversations.firstOrNull { c -> c.id == dmId }?.unreadCount ?: 0
             LibraNotificationRuntimeState.activeDirectConversationId = dmId
             LibraNotificationHelper.cancelConversationNotification(context, authUserId(), dmId)
             selectedUser = it
@@ -846,6 +852,7 @@ fun DirectMessagesScreen(
         val targetConvId = initialConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         val matched = conversations.firstOrNull { it.id == targetConvId }
         if (matched != null) {
+            initialUnreadForOpenChat = matched.unreadCount
             LibraNotificationRuntimeState.activeDirectConversationId = matched.id
             LibraNotificationHelper.cancelConversationNotification(context, authUserId(), matched.id)
             if (matched.isGroup) {
@@ -882,10 +889,14 @@ fun DirectMessagesScreen(
             groupMemberCount = liveConv.participantIds.size,
             groupConversation = liveConv,
             peerLastReadAt = liveConv.peerLastReadAt,
+            initialUnreadCount = initialUnreadForOpenChat,
             conversations = conversations,
             messages = messages,
             error = error,
-            onBack = { selectedConversation = null },
+            onBack = {
+                selectedConversation = null
+                initialUnreadForOpenChat = 0
+            },
             onSend = { text, reply, onComplete -> viewModel.sendGroup(liveConv.id, text, reply, onComplete) },
             onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendGroupMedia(liveConv.id, url, type, text, reply, onComplete) },
             onEdit = { id, text -> viewModel.edit(liveConv.id, id, text) },
@@ -910,7 +921,10 @@ fun DirectMessagesScreen(
             onAddGroupMembers = { ids, done -> viewModel.addGroupMembers(liveConv.id, ids, done) },
             onRemoveGroupMember = { targetUid, done -> viewModel.removeGroupMember(liveConv.id, targetUid, done) },
             onSetGroupMemberAdmin = { targetUid, isAdmin, done -> viewModel.setGroupMemberAdmin(liveConv.id, targetUid, isAdmin, done) },
-            onLeaveGroup = { selectedConversation = null },
+            onLeaveGroup = {
+                selectedConversation = null
+                initialUnreadForOpenChat = 0
+            },
             canMessage = canMessage,
             modifier = modifier
         )
@@ -923,10 +937,14 @@ fun DirectMessagesScreen(
         DirectConversationScreen(
             user = user,
             peerLastReadAt = liveDmConv?.peerLastReadAt ?: 0L,
+            initialUnreadCount = initialUnreadForOpenChat,
             conversations = conversations,
             messages = messages,
             error = error,
-            onBack = { selectedUser = null },
+            onBack = {
+                selectedUser = null
+                initialUnreadForOpenChat = 0
+            },
             onSend = { text, reply, onComplete -> viewModel.send(user.uid, text, reply, onComplete) },
             onSendMedia = { url, type, text, reply, onComplete -> viewModel.sendMedia(user.uid, url, type, text, reply, onComplete) },
             onEdit = { id, text -> viewModel.edit(dmConvId, id, text) },
@@ -953,21 +971,17 @@ fun DirectMessagesScreen(
         return
     }
 
-    val unreadPrivateChats = remember(conversations) { countUnreadPrivateConversations(conversations) }
     val unreadChatsCount = remember(conversations) { conversations.count { it.unreadCount > 0 } }
-    val privateChatsCount = remember(conversations) { conversations.count { !it.isGroup } }
-    val groupChatsCount = remember(conversations) { conversations.count { it.isGroup } }
-
     val baseConversations = remember(conversations, inboxFilter) {
         when (inboxFilter) {
             MessageInboxFilter.ALL -> conversations
             MessageInboxFilter.UNREAD -> conversations.filter { it.unreadCount > 0 }
-            MessageInboxFilter.PRIVATE -> conversations.filter { !it.isGroup }
             MessageInboxFilter.GROUPS -> conversations.filter { it.isGroup }
+            MessageInboxFilter.PRIVATE -> conversations.filter { !it.isGroup }
         }
     }
-    val visibleConversations = remember(baseConversations, conversationSearch) {
-        val q = conversationSearch.trim()
+    val visibleConversations = remember(baseConversations, externalSearchQuery) {
+        val q = externalSearchQuery.trim()
         if (q.isBlank()) baseConversations
         else baseConversations.filter { conversation ->
             conversation.otherUserName.contains(q, ignoreCase = true) ||
@@ -977,627 +991,431 @@ fun DirectMessagesScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp)
-            .padding(top = 12.dp)
+            .background(palette.canvas)
     ) {
-        // Editorial Signature Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Mesajlar",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 27.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.6).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                val statusSubtitle = when {
-                    isLoading && conversations.isEmpty() -> "Sohbetlerin senkronize ediliyor…"
-                    unreadPrivateChats > 0 -> "$unreadPrivateChats okunmamış özel sohbet"
-                    unreadChatsCount > 0 -> "$unreadChatsCount okunmamış sohbet"
-                    conversations.isNotEmpty() -> "$privateChatsCount özel • $groupChatsCount grup"
-                    else -> "Özel sohbetlerin ve grupların"
-                }
-                Text(
-                    text = statusSubtitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (unreadPrivateChats > 0) {
-                        if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-
+            // Reference-Faithful Filter Pills: Tümü | Okunmamış [N] | Gruplar | Özel
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 4.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                InboxHeaderActionIcon(
-                    icon = Icons.Default.PersonAdd,
-                    contentDescription = "Arkadaş bul",
-                    onClick = onFindFriends
+                InboxFilterPill(
+                    label = "Tümü",
+                    badgeCount = 0,
+                    selected = inboxFilter == MessageInboxFilter.ALL,
+                    onClick = { onInboxFilterChange(MessageInboxFilter.ALL) }
                 )
-                InboxHeaderActionIcon(
-                    icon = Icons.Default.GroupAdd,
-                    contentDescription = "Yeni grup oluştur",
-                    onClick = {
-                        newChatInitialTab = NewChatStudioTab.CREATE_GROUP
-                        showNewChat = true
-                    }
+                InboxFilterPill(
+                    label = "Okunmamış",
+                    badgeCount = unreadChatsCount,
+                    selected = inboxFilter == MessageInboxFilter.UNREAD,
+                    onClick = { onInboxFilterChange(MessageInboxFilter.UNREAD) }
                 )
+                InboxFilterPill(
+                    label = "Gruplar",
+                    badgeCount = 0,
+                    selected = inboxFilter == MessageInboxFilter.GROUPS,
+                    onClick = { onInboxFilterChange(MessageInboxFilter.GROUPS) }
+                )
+                InboxFilterPill(
+                    label = "Özel",
+                    badgeCount = 0,
+                    selected = inboxFilter == MessageInboxFilter.PRIVATE,
+                    onClick = { onInboxFilterChange(MessageInboxFilter.PRIVATE) }
+                )
+            }
+
+            // Error Recovery Banner
+            error?.let { errMsg ->
                 Surface(
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .appleBouncy(
-                            pressedScale = 0.88f,
-                            onClick = {
-                                newChatInitialTab = NewChatStudioTab.DIRECT
-                                showNewChat = true
-                            }
-                        ),
-                    shape = CircleShape,
-                    color = LibraLavender,
-                    shadowElevation = 2.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Yeni sohbet",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        // Dual-Realm Command Deck: Active "Mesajlar" realm + Mechanical "Sunuculara Geçiş Yap" Portal Trigger
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ActiveMessagesRealmButton(
-                unreadPrivateCount = unreadPrivateChats,
-                onClick = {
-                    inboxFilter = MessageInboxFilter.ALL
-                    conversationSearch = ""
-                    scope.launch {
-                        runCatching { inboxListState.animateScrollToItem(0) }
-                    }
-                },
-                modifier = Modifier.weight(0.84f)
-            )
-            MechanicalPortalTriggerButton(
-                title = "Sunuculara Geçiş Yap",
-                subtitle = "Topluluk atlası",
-                isServerDestination = true,
-                onTrigger = onSwitchToServers,
-                modifier = Modifier.weight(1.24f)
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Theme-Synced Recessed Search Field
-        val searchPillBg = if (darkTheme) Color(0xFF1A1923) else Color(0xFFF2F0F8)
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            color = searchPillBg,
-            border = BorderStroke(
-                width = if (conversationSearch.isNotBlank()) 1.2.dp else 0.8.dp,
-                color = if (conversationSearch.isNotBlank()) LibraLavender
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
-            )
-        ) {
-            TextField(
-                value = conversationSearch,
-                onValueChange = { conversationSearch = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                placeholder = {
-                    Text(
-                        text = "Kişi, grup veya mesaj ara…",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        tint = if (conversationSearch.isNotBlank()) LibraLavender
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                trailingIcon = if (conversationSearch.isNotBlank()) {
-                    {
-                        IconButton(onClick = { conversationSearch = "" }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Temizle",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else null,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = LibraLavender
-                )
-            )
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // Filter Chips + Direct 1-Tap "Ortak Akış" (Global Chat) Entry Pill
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            InboxFilterPill(
-                label = "Tümü",
-                badgeCount = 0,
-                selected = inboxFilter == MessageInboxFilter.ALL,
-                darkTheme = darkTheme,
-                onClick = { inboxFilter = MessageInboxFilter.ALL }
-            )
-            InboxFilterPill(
-                label = "Okunmamış",
-                badgeCount = unreadChatsCount,
-                selected = inboxFilter == MessageInboxFilter.UNREAD,
-                darkTheme = darkTheme,
-                onClick = { inboxFilter = MessageInboxFilter.UNREAD }
-            )
-            InboxFilterPill(
-                label = "Özel",
-                badgeCount = privateChatsCount,
-                selected = inboxFilter == MessageInboxFilter.PRIVATE,
-                darkTheme = darkTheme,
-                onClick = { inboxFilter = MessageInboxFilter.PRIVATE }
-            )
-            InboxFilterPill(
-                label = "Gruplar",
-                badgeCount = groupChatsCount,
-                selected = inboxFilter == MessageInboxFilter.GROUPS,
-                darkTheme = darkTheme,
-                onClick = { inboxFilter = MessageInboxFilter.GROUPS }
-            )
-            Surface(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .appleBouncy(pressedScale = 0.94f, onClick = onGlobalChatClick),
-                shape = CircleShape,
-                color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
-                border = BorderStroke(
-                    1.dp,
-                    if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Public,
-                        contentDescription = null,
-                        tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = "Ortak Akış",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // Connection / Error Recovery Banner
-        error?.let { errMsg ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.errorContainer,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
-            ) {
-                Row(
-                    modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(bottom = 10.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.WifiOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = errMsg,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(
-                        onClick = { viewModel.refreshConversations() },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Yenile",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                        Icon(
+                            imageVector = Icons.Default.WifiOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(17.dp)
                         )
+                        Text(
+                            text = errMsg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { viewModel.refreshConversations() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Yenile",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        LazyColumn(
-            state = inboxListState,
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
-        ) {
-            if (isLoading && conversations.isEmpty()) {
-                items(4) {
-                    InboxConversationSkeletonRow(darkTheme = darkTheme)
-                }
-            } else if (visibleConversations.isEmpty()) {
-                item(key = "inbox_empty") {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Column(
+            LazyColumn(
+                state = inboxListState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 86.dp)
+            ) {
+                if (isLoading && conversations.isEmpty()) {
+                    items(5) {
+                        InboxConversationSkeletonRow()
+                    }
+                } else if (visibleConversations.isEmpty()) {
+                    item(key = "inbox_empty") {
+                        Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .padding(top = 6.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = palette.surface,
+                            border = BorderStroke(0.85.dp, palette.hairline)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
-                                modifier = Modifier.size(58.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = when (inboxFilter) {
-                                            MessageInboxFilter.GROUPS -> Icons.Default.Groups
-                                            else -> Icons.Default.ChatBubbleOutline
-                                        },
-                                        contentDescription = null,
-                                        tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                                        modifier = Modifier.size(28.dp)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(14.dp))
-                            Text(
-                                text = when {
-                                    conversationSearch.isNotBlank() -> "Aramana uygun sohbet bulunamadı"
-                                    inboxFilter == MessageInboxFilter.UNREAD -> "Okunmamış mesajın yok"
-                                    inboxFilter == MessageInboxFilter.PRIVATE -> "Henüz özel sohbetin yok"
-                                    inboxFilter == MessageInboxFilter.GROUPS -> "Henüz bir grubun yok"
-                                    else -> "Sohbet akışın hazır"
-                                },
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = when {
-                                    conversationSearch.isNotBlank() -> "Farklı bir isim, kullanıcı adı veya mesaj kelimesi dene."
-                                    inboxFilter == MessageInboxFilter.UNREAD -> "Tüm mesajlarını okudun."
-                                    inboxFilter == MessageInboxFilter.GROUPS -> "Arkadaşlarınla ortak bir grup oluşturup paylaşmaya başla."
-                                    else -> "Yeni bir özel sohbet başlat, grup kur veya Sunuculara geçiş yap."
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (conversationSearch.isBlank() && inboxFilter != MessageInboxFilter.UNREAD) {
-                                Spacer(Modifier.height(16.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = {
-                                            newChatInitialTab = if (inboxFilter == MessageInboxFilter.GROUPS) {
-                                                NewChatStudioTab.CREATE_GROUP
-                                            } else {
-                                                NewChatStudioTab.DIRECT
-                                            }
-                                            showNewChat = true
-                                        },
-                                        shape = CircleShape,
-                                        colors = ButtonDefaults.buttonColors(containerColor = LibraLavender)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (inboxFilter == MessageInboxFilter.GROUPS) Icons.Default.GroupAdd else Icons.Default.Add,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = Color.White
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            text = if (inboxFilter == MessageInboxFilter.GROUPS) "Grup Oluştur" else "Yeni Sohbet",
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    if (inboxFilter != MessageInboxFilter.GROUPS) {
-                                        OutlinedButton(
-                                            onClick = onFindFriends,
-                                            shape = CircleShape
-                                        ) {
-                                            Text("Arkadaş Bul")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                itemsIndexed(visibleConversations, key = { _, item -> item.id }) { _, conversation ->
-                    val hasUnread = conversation.unreadCount > 0
-                    val displayName = if (conversation.isGroup) {
-                        conversation.groupName.ifBlank { "Grup sohbeti" }
-                    } else {
-                        conversation.otherUserName.ifBlank { "Libra Üyesi" }
-                    }
-                    val openConv = {
-                        LibraNotificationRuntimeState.activeDirectConversationId = conversation.id
-                        LibraNotificationHelper.cancelConversationNotification(context, authUserId(), conversation.id)
-                        onActiveConversationChanged(conversation.id)
-                        if (conversation.isGroup) {
-                            selectedConversation = conversation
-                            selectedUser = null
-                        } else {
-                            selectedUser = UserProfile(
-                                uid = conversation.otherUserId,
-                                displayName = conversation.otherUserName,
-                                username = conversation.otherUserUsername,
-                                profileImageUrl = conversation.otherUserPhotoUrl
-                            )
-                            selectedConversation = null
-                        }
-                        viewModel.openConversation(conversation)
-                    }
-
-                    val rowContainerColor = when {
-                        hasUnread && darkTheme -> Color(0xFF1F1A2C)
-                        hasUnread -> Color(0xFFF6F2FF)
-                        else -> MaterialTheme.colorScheme.surface
-                    }
-                    val rowBorderColor = when {
-                        hasUnread -> LibraLavender.copy(alpha = if (darkTheme) 0.55f else 0.45f)
-                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
-                    }
-                    val rowShape = RoundedCornerShape(20.dp)
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(rowShape)
-                            .combinedClickable(
-                                onClick = openConv,
-                                onLongClick = {
-                                    runCatching {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                    longPressedConversation = conversation
-                                }
-                            ),
-                        shape = rowShape,
-                        color = rowContainerColor,
-                        border = BorderStroke(if (hasUnread) 1.2.dp else 0.85.dp, rowBorderColor)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 14.dp, top = 11.dp, bottom = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Leading kinetic unread indicator stripe
-                            Box(
-                                modifier = Modifier
-                                    .padding(start = 5.dp, end = 9.dp)
-                                    .width(3.5.dp)
-                                    .height(if (hasUnread) 36.dp else 0.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (!conversation.isGroup) Color(0xFFF43F5E) else LibraLavender
-                                    )
-                            )
-
-                            // Distinct Avatar Silhouette: Squircle for Groups, Circle for People
-                            Box(contentAlignment = Alignment.BottomEnd) {
-                                if (conversation.isGroup) {
-                                    LibraSquircleAvatar(
-                                        photoUrl = conversation.groupPhotoUrl,
-                                        title = displayName,
-                                        size = 52.dp,
-                                        cornerRadius = 16.dp,
-                                        borderColor = if (hasUnread) LibraLavender else MaterialTheme.colorScheme.outline,
-                                        borderWidth = if (hasUnread) 2.dp else 1.dp,
-                                        onClick = openConv
-                                    )
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = LibraLavender,
-                                        border = BorderStroke(1.5.dp, rowContainerColor),
-                                        modifier = Modifier.size(20.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Default.Groups,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(11.dp)
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Surface(
-                                        shape = CircleShape,
-                                        border = if (hasUnread) BorderStroke(2.dp, Color(0xFFF43F5E)) else null,
-                                        color = Color.Transparent
-                                    ) {
-                                        UserAvatar(
-                                            photoUrl = conversation.otherUserPhotoUrl,
-                                            initials = displayName.take(1).uppercase(),
-                                            size = 52.dp,
-                                            modifier = Modifier.padding(if (hasUnread) 2.dp else 0.dp),
-                                            onClick = { onOpenProfile(conversation.otherUserId) }
-                                        )
-                                    }
-                                }
-                            }
-
                             Column(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 13.dp)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 28.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Surface(
+                                    shape = CircleShape,
+                                    color = palette.brandSoft,
+                                    modifier = Modifier.size(50.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = when (inboxFilter) {
+                                                MessageInboxFilter.GROUPS -> Icons.Default.Groups
+                                                else -> Icons.Default.ChatBubbleOutline
+                                            },
+                                            contentDescription = null,
+                                            tint = palette.brand,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = when {
+                                        externalSearchQuery.isNotBlank() -> "Aramana uygun sohbet bulunamadı"
+                                        inboxFilter == MessageInboxFilter.UNREAD -> "Okunmamış mesajın yok"
+                                        inboxFilter == MessageInboxFilter.GROUPS -> "Henüz bir grubun yok"
+                                        inboxFilter == MessageInboxFilter.PRIVATE -> "Henüz özel sohbetin yok"
+                                        else -> "Henüz sohbetin yok"
+                                    },
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = palette.inkPrimary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = when {
+                                        externalSearchQuery.isNotBlank() -> "Başka bir isim veya mesaj kelimesi dene."
+                                        inboxFilter == MessageInboxFilter.UNREAD -> "Tüm sohbetlerini okudun."
+                                        inboxFilter == MessageInboxFilter.GROUPS -> "Sağ alttan arkadaşlarınla yeni grup kurabilirsin."
+                                        else -> "Sağ alttan yeni bir sohbet veya grup başlatabilirsin."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = palette.inkSecondary
+                                )
+                                if (externalSearchQuery.isBlank() && inboxFilter != MessageInboxFilter.UNREAD) {
+                                    Spacer(Modifier.height(14.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = {
+                                                newChatInitialTab = if (inboxFilter == MessageInboxFilter.GROUPS) {
+                                                    NewChatStudioTab.CREATE_GROUP
+                                                } else {
+                                                    NewChatStudioTab.DIRECT
+                                                }
+                                                showNewChat = true
+                                            },
+                                            shape = CircleShape,
+                                            colors = ButtonDefaults.buttonColors(containerColor = palette.brand)
+                                        ) {
+                                            Text(
+                                                text = if (inboxFilter == MessageInboxFilter.GROUPS) "Grup Oluştur" else "Yeni Sohbet",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        if (inboxFilter != MessageInboxFilter.GROUPS) {
+                                            OutlinedButton(
+                                                onClick = onFindFriends,
+                                                shape = CircleShape
+                                            ) {
+                                                Text("Arkadaş Bul")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    itemsIndexed(visibleConversations, key = { _, item -> item.id }) { _, conversation ->
+                        val hasUnread = conversation.unreadCount > 0
+                        val displayName = if (conversation.isGroup) {
+                            conversation.groupName.ifBlank { "Grup sohbeti" }
+                        } else {
+                            conversation.otherUserName.ifBlank { "Libra Üyesi" }
+                        }
+                        val avatarUrl = if (conversation.isGroup) {
+                            conversation.groupPhotoUrl
+                        } else {
+                            conversation.otherUserPhotoUrl
+                        }
+                        val openConv = {
+                            initialUnreadForOpenChat = conversation.unreadCount
+                            LibraNotificationRuntimeState.activeDirectConversationId = conversation.id
+                            LibraNotificationHelper.cancelConversationNotification(context, authUserId(), conversation.id)
+                            onActiveConversationChanged(conversation.id)
+                            if (conversation.isGroup) {
+                                selectedConversation = conversation
+                                selectedUser = null
+                            } else {
+                                selectedUser = UserProfile(
+                                    uid = conversation.otherUserId,
+                                    displayName = conversation.otherUserName,
+                                    username = conversation.otherUserUsername,
+                                    profileImageUrl = conversation.otherUserPhotoUrl
+                                )
+                                selectedConversation = null
+                            }
+                            viewModel.openConversation(conversation)
+                        }
+
+                        val rowShape = RoundedCornerShape(16.dp)
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .clip(rowShape)
+                                .combinedClickable(
+                                    onClick = openConv,
+                                    onLongClick = {
+                                        runCatching {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        longPressedConversation = conversation
+                                    }
+                                ),
+                            shape = rowShape,
+                            color = palette.surface,
+                            border = BorderStroke(
+                                width = if (hasUnread) 1.dp else 0.8.dp,
+                                color = if (hasUnread) palette.brand.copy(alpha = 0.35f) else palette.hairline
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Reference-faithful 48dp circular avatar + compact group badge bottom-right
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    UserAvatar(
+                                        photoUrl = avatarUrl,
+                                        initials = displayName.take(1).uppercase(),
+                                        size = 48.dp,
+                                        onClick = {
+                                            if (conversation.isGroup) openConv()
+                                            else onOpenProfile(conversation.otherUserId)
+                                        }
+                                    )
+                                    if (conversation.isGroup) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = palette.brand,
+                                            border = BorderStroke(1.5.dp, palette.surface),
+                                            modifier = Modifier.size(19.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Groups,
+                                                    contentDescription = "Grup",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Name & Last Message Preview
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 12.dp, end = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.weight(1f),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                                     ) {
                                         Text(
                                             text = displayName,
                                             style = MaterialTheme.typography.titleSmall.copy(
-                                                fontSize = 15.5.sp,
-                                                fontWeight = if (hasUnread) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
                                                 letterSpacing = (-0.2).sp
                                             ),
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = palette.inkPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
                                         )
                                         if (conversation.isGroup && conversation.participantIds.isNotEmpty()) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
-                                            ) {
-                                                Text(
-                                                    text = "${conversation.participantIds.size} üye",
-                                                    style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 10.sp
-                                                    ),
-                                                    color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp)
-                                                )
-                                            }
+                                            Text(
+                                                text = "· ${conversation.participantIds.size}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = palette.inkSecondary
+                                            )
                                         }
                                     }
-                                    if (conversation.updatedAt > 0L) {
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = formatConversationRelativeTime(conversation.updatedAt),
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Medium
-                                            ),
-                                            color = if (hasUnread) {
-                                                if (!conversation.isGroup) Color(0xFFF43F5E)
-                                                else if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
+
+                                    val rawLast = conversation.lastMessage.trim()
+                                    val isPhotoPreview = rawLast.contains("Fotoğraf", ignoreCase = true) ||
+                                        rawLast.startsWith("📷")
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isPhotoPreview) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.PhotoCamera,
+                                                contentDescription = null,
+                                                tint = palette.inkSecondary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                        val cleanPreview = rawLast
+                                            .removePrefix("📷")
+                                            .trim()
+                                            .ifBlank {
+                                                when {
+                                                    isPhotoPreview -> "Fotoğraf"
+                                                    conversation.isGroup -> "Grup sohbeti"
+                                                    conversation.otherUserUsername.isNotBlank() -> "@${conversation.otherUserUsername}"
+                                                    else -> "Sohbeti açmak için dokun"
+                                                }
                                             }
+                                        Text(
+                                            text = cleanPreview,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontSize = 13.5.sp,
+                                                fontWeight = if (hasUnread) FontWeight.Medium else FontWeight.Normal
+                                            ),
+                                            color = if (hasUnread) palette.inkPrimary else palette.inkSecondary
                                         )
                                     }
                                 }
 
-                                Spacer(Modifier.height(4.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                // Right Column: Timestamp on top + Unread Circle Badge underneath (matching reference)
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
-                                    val subtitlePreview = conversation.lastMessage.ifBlank {
-                                        when {
-                                            conversation.isGroup -> "Grup sohbeti — ilk mesajı yaz"
-                                            conversation.otherUserUsername.isNotBlank() -> "@${conversation.otherUserUsername}"
-                                            else -> "Sohbeti açmak için dokun"
-                                        }
+                                    if (conversation.updatedAt > 0L) {
+                                        Text(
+                                            text = formatConversationRelativeTime(conversation.updatedAt),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 12.sp,
+                                                fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal
+                                            ),
+                                            color = if (hasUnread) palette.brandText else palette.inkSecondary
+                                        )
                                     }
-                                    Text(
-                                        text = subtitlePreview,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontSize = 13.5.sp,
-                                            fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal
-                                        ),
-                                        color = if (hasUnread) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    )
                                     if (hasUnread) {
-                                        Spacer(Modifier.width(8.dp))
                                         Surface(
                                             shape = CircleShape,
-                                            color = if (!conversation.isGroup) Color(0xFFF43F5E) else LibraLavender
+                                            color = palette.unreadBadge
                                         ) {
-                                            Text(
-                                                text = if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(),
-                                                color = Color.White,
-                                                style = MaterialTheme.typography.labelSmall.copy(
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    fontSize = 11.sp
-                                                ),
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
+                                                    .padding(horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(),
+                                                    color = Color.White,
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp
+                                                    )
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        Spacer(Modifier.height(22.dp))
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // Reference-faithful Floating Compose Button bottom-right
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 18.dp, bottom = 14.dp)
+                .size(54.dp)
+                .clip(CircleShape)
+                .appleBouncy(
+                    pressedScale = 0.88f,
+                    onClick = {
+                        newChatInitialTab = if (inboxFilter == MessageInboxFilter.GROUPS) {
+                            NewChatStudioTab.CREATE_GROUP
+                        } else {
+                            NewChatStudioTab.DIRECT
+                        }
+                        showNewChat = true
+                    }
+                ),
+            shape = CircleShape,
+            color = palette.brand,
+            shadowElevation = 4.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Yeni sohbet veya grup",
+                    tint = Color.White,
+                    modifier = Modifier.size(23.dp)
+                )
             }
         }
     }
@@ -1608,6 +1426,7 @@ fun DirectMessagesScreen(
             onDismiss = { longPressedConversation = null },
             onOpenConversation = {
                 longPressedConversation = null
+                initialUnreadForOpenChat = targetConv.unreadCount
                 if (targetConv.isGroup) {
                     selectedConversation = targetConv
                     selectedUser = null
@@ -1661,7 +1480,7 @@ fun DirectMessagesScreen(
         val label = if (targetConv.isGroup) targetConv.groupName.ifBlank { "bu grubu" } else targetConv.otherUserName.ifBlank { "bu sohbeti" }
         AlertDialog(
             onDismissRequest = { confirmDeleteConversation = null },
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = palette.surface,
             title = { Text("Sohbeti Kalıcı Sil", fontWeight = FontWeight.Bold) },
             text = {
                 Text("\"$label\" sohbetindeki tüm mesajların ve medyaların kalıcı olarak silinecek, geçmiş tamamen sıfırlanacak. Sohbeti tekrar açtığında sıfırdan başlar.")
@@ -1690,6 +1509,7 @@ fun DirectMessagesScreen(
             onDismiss = { showNewChat = false },
             onDirectUser = { user ->
                 showNewChat = false
+                initialUnreadForOpenChat = 0
                 selectedConversation = null
                 selectedUser = user
                 viewModel.openConversation(user)
@@ -1706,6 +1526,7 @@ fun DirectMessagesScreen(
                     onDone(conversation != null)
                     if (conversation != null) {
                         showNewChat = false
+                        initialUnreadForOpenChat = 0
                         selectedUser = null
                         selectedConversation = conversation
                         viewModel.openConversation(conversation)
@@ -1719,129 +1540,45 @@ fun DirectMessagesScreen(
 }
 
 @Composable
-private fun InboxHeaderActionIcon(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .appleBouncy(pressedScale = 0.88f, onClick = onClick),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(19.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ActiveMessagesRealmButton(
-    unreadPrivateCount: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val darkTheme = LocalLibraDarkTheme.current
-    val shape = RoundedCornerShape(20.dp)
-    Surface(
-        modifier = modifier
-            .clip(shape)
-            .appleBouncy(pressedScale = 0.96f, onClick = onClick),
-        shape = shape,
-        color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
-        border = BorderStroke(1.2.dp, LibraLavender.copy(alpha = 0.7f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = LibraLavender,
-                modifier = Modifier.size(30.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Forum,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Mesajlar",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.2).sp
-                    ),
-                    color = if (darkTheme) Color.White else Color(0xFF2E1065),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (unreadPrivateCount > 0) "$unreadPrivateCount yeni" else "Aktif alan",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                    maxLines = 1
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun InboxConversationSkeletonRow(darkTheme: Boolean) {
-    val blockColor = if (darkTheme) Color(0xFF22212E) else Color(0xFFECE9F5)
+private fun InboxConversationSkeletonRow() {
+    val palette = rememberLibraCommsColors()
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f))
+        shape = RoundedCornerShape(16.dp),
+        color = palette.surface,
+        border = BorderStroke(0.8.dp, palette.hairline)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(blockColor)
+                    .background(palette.recessed)
             )
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 13.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(start = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.46f)
-                        .height(14.dp)
+                        .fillMaxWidth(0.42f)
+                        .height(13.dp)
                         .clip(CircleShape)
-                        .background(blockColor)
+                        .background(palette.recessed)
                 )
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.78f)
+                        .fillMaxWidth(0.72f)
                         .height(11.dp)
                         .clip(CircleShape)
-                        .background(blockColor.copy(alpha = 0.72f))
+                        .background(palette.recessed.copy(alpha = 0.7f))
                 )
             }
         }
@@ -1857,6 +1594,7 @@ private fun DirectConversationScreen(
     groupMemberCount: Int = 0,
     groupConversation: DirectConversation? = null,
     peerLastReadAt: Long = 0L,
+    initialUnreadCount: Int = 0,
     conversations: List<DirectConversation> = emptyList(),
     messages: List<DirectMessage>,
     error: String?,
@@ -1883,6 +1621,7 @@ private fun DirectConversationScreen(
     modifier: Modifier = Modifier
 ) {
     val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
@@ -1901,6 +1640,7 @@ private fun DirectConversationScreen(
     var showClearChatConfirm by remember { mutableStateOf(false) }
     var showConversationMenu by remember { mutableStateOf(false) }
     var showGroupDetails by remember(conversationIdOverride) { mutableStateOf(false) }
+    var showDirectChatAbout by remember(conversationIdOverride) { mutableStateOf(false) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var highlightNonce by remember { mutableIntStateOf(0) }
 
@@ -2074,26 +1814,25 @@ private fun DirectConversationScreen(
     val lastSentMessageId = remember(messages, currentUid) {
         messages.lastOrNull { it.senderId == currentUid }?.id.orEmpty()
     }
+    val unreadDividerIndex = remember(messages, initialUnreadCount, currentUid) {
+        computeUnreadDividerIndex(messages, initialUnreadCount, currentUid)
+    }
 
-    val sentBubbleColor = if (darkTheme) Color(0xFF6D28D9) else LibraLavender
+    val sentBubbleColor = palette.sentBubble
     val sentBubbleTextColor = Color.White
-    val sentTimestampColor = Color(0xFFEDE9FE)
-    val receivedBubbleColor = MaterialTheme.colorScheme.surface
-    val receivedBubbleBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    val sentTimestampColor = Color.White.copy(alpha = 0.78f)
+    val receivedBubbleColor = palette.receivedBubble
+    val receivedBubbleBorder = BorderStroke(0.85.dp, palette.hairline)
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(palette.canvas)
     ) {
-        // Aesthetic Top Header (transforms into contextual batch-action bar in selection mode)
+        // Disciplined flat header (transforms into contextual batch-action bar in selection mode)
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = if (isSelectionMode) {
-                if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
+            color = if (isSelectionMode) palette.brandSoft else palette.surface
         ) {
             Column {
                 if (isSelectionMode) {
@@ -2101,7 +1840,7 @@ private fun DirectConversationScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                            .padding(horizontal = 8.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
@@ -2110,11 +1849,12 @@ private fun DirectConversationScreen(
                                 selectedMessageIds = emptySet()
                             }
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Seçimi Kapat")
+                            Icon(Icons.Default.Close, contentDescription = "Seçimi Kapat", tint = palette.inkPrimary)
                         }
                         Text(
                             text = "${selectedMessageIds.size} seçildi",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = palette.inkPrimary,
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(start = 6.dp)
@@ -2130,7 +1870,7 @@ private fun DirectConversationScreen(
                             Text(
                                 text = if (allSelected) "Temizle" else "Tümü",
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                color = palette.brandText
                             )
                         }
                         IconButton(
@@ -2150,7 +1890,7 @@ private fun DirectConversationScreen(
                                 selectedMessageIds = emptySet()
                             }
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Kopyala")
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Kopyala", tint = palette.inkPrimary)
                         }
                         IconButton(
                             enabled = selectedMessageIds.isNotEmpty(),
@@ -2168,33 +1908,35 @@ private fun DirectConversationScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
                             onClick = onBack,
                             modifier = Modifier.appleBouncy(pressedScale = 0.86f, onClick = onBack)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Geri",
+                                tint = palette.inkPrimary
+                            )
                         }
                         if (isGroup && groupConversation != null) {
                             LibraSquircleAvatar(
                                 photoUrl = groupConversation.groupPhotoUrl,
                                 title = user.displayName.ifBlank { "Grup" },
-                                size = 42.dp,
-                                cornerRadius = 14.dp,
-                                borderColor = LibraLavender.copy(alpha = 0.45f),
-                                borderWidth = 1.2.dp,
+                                size = 38.dp,
+                                cornerRadius = 12.dp,
+                                borderColor = palette.hairline,
+                                borderWidth = 1.dp,
                                 onClick = { showGroupDetails = true }
                             )
                         } else {
                             UserAvatar(
                                 photoUrl = user.profileImageUrl,
                                 initials = user.initials,
-                                size = 42.dp,
-                                onClick = {
-                                    if (!isGroup) onOpenProfile()
-                                }
+                                size = 38.dp,
+                                onClick = { showDirectChatAbout = true }
                             )
                         }
                         Column(
@@ -2203,7 +1945,7 @@ private fun DirectConversationScreen(
                                 .padding(start = 10.dp)
                                 .clickable {
                                     if (isGroup && groupConversation != null) showGroupDetails = true
-                                    else if (!isGroup) onOpenProfile()
+                                    else showDirectChatAbout = true
                                 }
                         ) {
                             Row(
@@ -2212,7 +1954,12 @@ private fun DirectConversationScreen(
                             ) {
                                 Text(
                                     text = user.displayName.ifBlank { "Libra Üyesi" },
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontSize = 15.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = (-0.2).sp
+                                    ),
+                                    color = palette.inkPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
@@ -2227,55 +1974,46 @@ private fun DirectConversationScreen(
                                             highlighted = myRole == GroupMemberRole.PRESIDENT
                                         )
                                     }
-                                    Icon(
-                                        imageVector = Icons.Default.ChevronRight,
-                                        contentDescription = "Grup bilgisi",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
                                 }
                             }
                             Text(
                                 text = if (isGroup) {
-                                    val countText = if (groupMemberCount > 0) "$groupMemberCount katılımcı • " else ""
-                                    "${countText}Grup bilgisi ve ayarlar"
+                                    val countText = if (groupMemberCount > 0) "$groupMemberCount katılımcı · " else ""
+                                    "${countText}Grup bilgisi"
                                 } else {
-                                    user.handle
+                                    user.handle.ifBlank { "Sohbet hakkında" }
                                 },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isGroup) {
-                                    if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = if (isGroup) palette.brandText else palette.inkSecondary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        if (!isGroup) {
-                            IconButton(
-                                onClick = onOpenProfile,
-                                modifier = Modifier.appleBouncy(pressedScale = 0.88f, onClick = onOpenProfile)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Profili Gör",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        IconButton(
+                            onClick = {
+                                if (isGroup && groupConversation != null) showGroupDetails = true
+                                else showDirectChatAbout = true
                             }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = if (isGroup) "Grup Bilgisi" else "Sohbet Hakkında",
+                                tint = palette.inkSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                         Box {
                             IconButton(onClick = { showConversationMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "Sohbet seçenekleri",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = palette.inkSecondary
                                 )
                             }
                             DropdownMenu(
                                 expanded = showConversationMenu,
                                 onDismissRequest = { showConversationMenu = false },
-                                containerColor = MaterialTheme.colorScheme.surface
+                                containerColor = palette.surface
                             ) {
                                 if (isGroup && groupConversation != null) {
                                     DropdownMenuItem(
@@ -2284,6 +2022,23 @@ private fun DirectConversationScreen(
                                         onClick = {
                                             showConversationMenu = false
                                             showGroupDetails = true
+                                        }
+                                    )
+                                } else {
+                                    DropdownMenuItem(
+                                        text = { Text("Sohbet Hakkında") },
+                                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                        onClick = {
+                                            showConversationMenu = false
+                                            showDirectChatAbout = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Profili Görüntüle") },
+                                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                                        onClick = {
+                                            showConversationMenu = false
+                                            onOpenProfile()
                                         }
                                     )
                                 }
@@ -2315,7 +2070,7 @@ private fun DirectConversationScreen(
                         }
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                HorizontalDivider(thickness = 0.85.dp, color = palette.hairline)
             }
         }
 
@@ -2336,7 +2091,7 @@ private fun DirectConversationScreen(
             }
         }
 
-        // Messages List + Empty Slate + Floating Scroll-to-Bottom Pill
+        // Messages List + Empty State + Scroll-to-Bottom Pill
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -2347,23 +2102,24 @@ private fun DirectConversationScreen(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(horizontal = 28.dp),
-                    shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.surface,
+                    border = BorderStroke(0.85.dp, palette.hairline)
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Text(
-                            text = "Sohbet sıfırdan başlıyor ✨",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                            text = "Sohbet henüz boş",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = palette.inkPrimary
                         )
                         Text(
-                            text = "Burada henüz mesaj yok. İlk mesajı yazarak konuşmayı başlatabilirsin.",
+                            text = "İlk mesajı yazarak konuşmayı başlatabilirsin.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = palette.inkSecondary
                         )
                     }
                 }
@@ -2372,7 +2128,7 @@ private fun DirectConversationScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(messages, key = { _, msg -> msg.id }) { index, message ->
@@ -2392,8 +2148,8 @@ private fun DirectConversationScreen(
 
                 val highlightContainerColor by animateColorAsState(
                     targetValue = when {
-                        isHighlighted -> if (darkTheme) Color(0xFF4C1D95) else Color(0xFFEDE9FE)
-                        isSelected -> if (darkTheme) Color(0xFF2E1065) else Color(0xFFF3E8FF)
+                        isHighlighted -> palette.brand.copy(alpha = if (darkTheme) 0.28f else 0.16f)
+                        isSelected -> palette.brand.copy(alpha = if (darkTheme) 0.18f else 0.10f)
                         else -> Color.Transparent
                     },
                     label = "message_highlight_bg"
@@ -2402,33 +2158,73 @@ private fun DirectConversationScreen(
                 var dragX by remember(message.id) { mutableFloatStateOf(0f) }
                 var swipeHapticFired by remember(message.id) { mutableStateOf(false) }
 
+                Column(modifier = Modifier.animateItem()) {
+                if (index == unreadDividerIndex && initialUnreadCount > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            thickness = 0.8.dp,
+                            color = palette.brand.copy(alpha = 0.35f)
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = palette.brandSoft,
+                            border = BorderStroke(0.8.dp, palette.brand.copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = "$initialUnreadCount okunmamış mesaj",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                ),
+                                color = palette.brandText,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            thickness = 0.8.dp,
+                            color = palette.brand.copy(alpha = 0.35f)
+                        )
+                    }
+                }
+
                 if (groupPos.showTimestampDivider && message.createdAt > 0L) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                            color = palette.surface,
+                            border = BorderStroke(0.8.dp, palette.hairline)
                         ) {
                             Text(
                                 text = formatChatTimeHeader(message.createdAt),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.sp
+                                ),
+                                color = palette.inkSecondary,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 4.dp)
                             )
                         }
                     }
-                } else if (groupPos.isFirstInGroup && index > 0) {
-                    Spacer(Modifier.height(8.dp))
+                } else if (groupPos.isFirstInGroup && index > 0 && index != unreadDividerIndex) {
+                    Spacer(Modifier.height(7.dp))
                 }
 
                 val bubbleShape = remember(mine, groupPos) {
-                    val outer = 20.dp
-                    val inner = 6.dp
+                    val outer = 16.dp
+                    val inner = 5.dp
                     if (mine) {
                         RoundedCornerShape(
                             topStart = outer,
@@ -2458,7 +2254,7 @@ private fun DirectConversationScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(highlightContainerColor)
                         .let { mod ->
                             if (isSelectionMode) {
@@ -2467,8 +2263,8 @@ private fun DirectConversationScreen(
                                 mod.pointerInput(message.id) {
                                     detectHorizontalDragGestures(
                                         onHorizontalDrag = { _, amount ->
-                                            dragX = (dragX + amount).coerceIn(0f, 96f)
-                                            if (dragX >= 58f && !swipeHapticFired) {
+                                            dragX = (dragX + amount).coerceIn(0f, 92f)
+                                            if (dragX >= 56f && !swipeHapticFired) {
                                                 swipeHapticFired = true
                                                 runCatching { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
                                             }
@@ -2478,7 +2274,7 @@ private fun DirectConversationScreen(
                                             swipeHapticFired = false
                                         },
                                         onDragEnd = {
-                                            if (dragX >= 58f) replyTarget = message
+                                            if (dragX >= 56f) replyTarget = message
                                             dragX = 0f
                                             swipeHapticFired = false
                                         }
@@ -2492,17 +2288,17 @@ private fun DirectConversationScreen(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .padding(start = 6.dp)
-                                .size(32.dp),
+                                .size(30.dp),
                             shape = CircleShape,
-                            color = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface,
-                            border = BorderStroke(1.dp, if (darkTheme) LibraLavenderDarkBorder else LibraLavenderBorder)
+                            color = palette.brandSoft,
+                            border = BorderStroke(0.8.dp, palette.brand.copy(alpha = 0.35f))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Reply,
                                     contentDescription = "Yanıtla",
-                                    tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                                    modifier = Modifier.size(16.dp)
+                                    tint = palette.brandText,
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         }
@@ -2520,14 +2316,14 @@ private fun DirectConversationScreen(
                             Surface(
                                 modifier = Modifier
                                     .padding(start = 4.dp, end = 8.dp, bottom = 6.dp)
-                                    .size(22.dp)
+                                    .size(21.dp)
                                     .clip(CircleShape)
                                     .clickable { toggleMessageSelection(message.id) },
                                 shape = CircleShape,
-                                color = if (isSelected) LibraLavender else MaterialTheme.colorScheme.surface,
+                                color = if (isSelected) palette.brand else palette.surface,
                                 border = BorderStroke(
-                                    1.5.dp,
-                                    if (isSelected) LibraLavender else MaterialTheme.colorScheme.outline
+                                    1.4.dp,
+                                    if (isSelected) palette.brand else palette.hairline
                                 )
                             ) {
                                 if (isSelected) {
@@ -2536,7 +2332,7 @@ private fun DirectConversationScreen(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Seçili",
                                             tint = Color.White,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(13.dp)
                                         )
                                     }
                                 }
@@ -2548,7 +2344,7 @@ private fun DirectConversationScreen(
                                 UserAvatar(
                                     photoUrl = message.senderPhotoUrl.ifBlank { user.profileImageUrl },
                                     initials = (message.senderName.ifBlank { user.displayName }).take(1).uppercase(),
-                                    size = 30.dp,
+                                    size = 28.dp,
                                     onClick = {
                                         if (isSelectionMode) toggleMessageSelection(message.id)
                                         else if (isGroup && message.senderId.isNotBlank()) onOpenUserProfile(message.senderId)
@@ -2556,13 +2352,13 @@ private fun DirectConversationScreen(
                                     }
                                 )
                             } else {
-                                Spacer(Modifier.width(30.dp))
+                                Spacer(Modifier.width(28.dp))
                             }
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(7.dp))
                         }
 
                         Column(
-                            modifier = Modifier.widthIn(max = 310.dp),
+                            modifier = Modifier.widthIn(max = 296.dp),
                             horizontalAlignment = if (mine) Alignment.End else Alignment.Start
                         ) {
                             if (groupPos.showSenderName) {
@@ -2575,7 +2371,7 @@ private fun DirectConversationScreen(
                                 val senderColor = deterministicSenderAccent(message.senderId, darkTheme)
                                 Row(
                                     modifier = Modifier
-                                        .padding(start = 6.dp, bottom = 3.dp)
+                                        .padding(start = 4.dp, bottom = 3.dp)
                                         .clickable(enabled = !isSelectionMode && message.senderId.isNotBlank()) {
                                             onOpenUserProfile(message.senderId)
                                         },
@@ -2616,25 +2412,19 @@ private fun DirectConversationScreen(
                                 color = if (mine) sentBubbleColor else receivedBubbleColor,
                                 shape = bubbleShape,
                                 border = when {
-                                    isSelected -> BorderStroke(2.dp, if (mine) Color.White else LibraLavender)
+                                    isSelected -> BorderStroke(1.8.dp, if (mine) Color.White else palette.brand)
                                     mine -> null
                                     else -> receivedBubbleBorder
                                 }
                             ) {
-                                val primaryTextColor = if (mine) sentBubbleTextColor else MaterialTheme.colorScheme.onSurface
-                                val secondaryTextColor = if (mine) sentTimestampColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                val primaryTextColor = if (mine) sentBubbleTextColor else palette.inkPrimary
+                                val secondaryTextColor = if (mine) sentTimestampColor else palette.inkSecondary
 
-                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)) {
+                                Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
                                     if (replyPreview) {
-                                        val quoteBg = if (mine) {
-                                            Color(0xFF5B21B6)
-                                        } else if (darkTheme) {
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        } else {
-                                            Color(0xFFF5F3FF)
-                                        }
-                                        val quoteTitleColor = if (mine) Color.White else if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                                        val quoteBodyColor = if (mine) Color(0xFFEDE9FE) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        val quoteBg = if (mine) palette.sentBubbleQuote else palette.brandSoft
+                                        val quoteTitleColor = if (mine) Color.White else palette.brandText
+                                        val quoteBodyColor = if (mine) Color.White.copy(alpha = 0.82f) else palette.inkSecondary
                                         val replySenderTitle = message.replyToSenderName.ifBlank {
                                             if (message.replyToSenderId == currentUid) "Sen" else user.displayName.ifBlank { "Yanıtlanan mesaj" }
                                         }
@@ -2642,8 +2432,8 @@ private fun DirectConversationScreen(
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(bottom = 6.dp)
-                                                .clip(RoundedCornerShape(12.dp))
+                                                .padding(bottom = 5.dp)
+                                                .clip(RoundedCornerShape(10.dp))
                                                 .clickable {
                                                     if (isSelectionMode) {
                                                         toggleMessageSelection(message.id)
@@ -2668,21 +2458,21 @@ private fun DirectConversationScreen(
                                                         }
                                                     }
                                                 },
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(10.dp),
                                             color = quoteBg
                                         ) {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                                                    .padding(horizontal = 9.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Box(
                                                     modifier = Modifier
                                                         .width(3.dp)
-                                                        .height(28.dp)
+                                                        .height(26.dp)
                                                         .clip(RoundedCornerShape(3.dp))
-                                                        .background(if (mine) Color.White else LibraLavender)
+                                                        .background(if (mine) Color.White else palette.brand)
                                                 )
                                                 Spacer(Modifier.width(8.dp))
                                                 Column {
@@ -2694,7 +2484,7 @@ private fun DirectConversationScreen(
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
-                                                        text = message.replyToText.ifBlank { "📷 Fotoğraf" },
+                                                        text = message.replyToText.ifBlank { "Fotoğraf" },
                                                         maxLines = 2,
                                                         overflow = TextOverflow.Ellipsis,
                                                         color = quoteBodyColor,
@@ -2717,14 +2507,14 @@ private fun DirectConversationScreen(
                                             }
                                         }
 
-                                        val sharedCardBg = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                        val sharedCardBg = if (mine) palette.sentBubbleQuote else palette.recessed
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(bottom = 4.dp),
-                                            shape = RoundedCornerShape(14.dp),
+                                            shape = RoundedCornerShape(12.dp),
                                             color = sharedCardBg,
-                                            border = if (mine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                            border = if (mine) null else BorderStroke(0.8.dp, palette.hairline)
                                         ) {
                                             Column(
                                                 modifier = Modifier.padding(9.dp),
@@ -2740,7 +2530,7 @@ private fun DirectConversationScreen(
                                                         else -> "Paylaşılan içerik"
                                                     },
                                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = if (mine) Color(0xFFDDD6FE) else LibraLavender
+                                                    color = if (mine) Color.White.copy(alpha = 0.85f) else palette.brandText
                                                 )
                                                 sharedUrl?.takeIf { it.isNotBlank() }?.let { resolvedSharedImg ->
                                                     AsyncImage(
@@ -2815,15 +2605,15 @@ private fun DirectConversationScreen(
                                             }
                                         }
 
-                                        val imgShape = RoundedCornerShape(15.dp)
+                                        val imgShape = RoundedCornerShape(12.dp)
                                         when {
                                             !signingDone -> {
                                                 Surface(
                                                     modifier = Modifier
-                                                        .width(230.dp)
-                                                        .height(165.dp),
+                                                        .width(224.dp)
+                                                        .height(160.dp),
                                                     shape = imgShape,
-                                                    color = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                                    color = if (mine) palette.sentBubbleQuote else palette.recessed
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Column(
@@ -2831,8 +2621,8 @@ private fun DirectConversationScreen(
                                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                                         ) {
                                                             CircularProgressIndicator(
-                                                                modifier = Modifier.size(24.dp),
-                                                                strokeWidth = 2.5.dp,
+                                                                modifier = Modifier.size(22.dp),
+                                                                strokeWidth = 2.dp,
                                                                 color = primaryTextColor
                                                             )
                                                             Text(
@@ -2848,12 +2638,12 @@ private fun DirectConversationScreen(
                                             mediaFailed || resolvedMediaUrl.isNullOrBlank() -> {
                                                 Surface(
                                                     modifier = Modifier
-                                                        .width(230.dp)
-                                                        .height(140.dp)
+                                                        .width(224.dp)
+                                                        .height(136.dp)
                                                         .clip(imgShape)
                                                         .clickable { reloadKey++ },
                                                     shape = imgShape,
-                                                    color = if (mine) Color(0xFF5B21B6) else MaterialTheme.colorScheme.surfaceVariant
+                                                    color = if (mine) palette.sentBubbleQuote else palette.recessed
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Column(
@@ -2866,7 +2656,7 @@ private fun DirectConversationScreen(
                                                                 tint = primaryTextColor
                                                             )
                                                             Text(
-                                                                text = "Fotoğraf yüklenemedi • Dokun",
+                                                                text = "Fotoğraf yüklenemedi · Dokun",
                                                                 style = MaterialTheme.typography.labelSmall,
                                                                 color = secondaryTextColor
                                                             )
@@ -2881,8 +2671,8 @@ private fun DirectConversationScreen(
                                                     model = dmImgUrl,
                                                     contentDescription = "Gönderilen fotoğraf",
                                                     modifier = Modifier
-                                                        .widthIn(min = 170.dp, max = 250.dp)
-                                                        .heightIn(min = 120.dp, max = 290.dp)
+                                                        .widthIn(min = 170.dp, max = 248.dp)
+                                                        .heightIn(min = 120.dp, max = 284.dp)
                                                         .clip(imgShape)
                                                         .combinedClickable(
                                                             onClick = {
@@ -2917,10 +2707,13 @@ private fun DirectConversationScreen(
                                         Text(
                                             text = message.text,
                                             color = primaryTextColor,
-                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontSize = 14.5.sp,
+                                                lineHeight = 20.sp
+                                            ),
                                             modifier = Modifier.padding(
-                                                start = 4.dp,
-                                                end = 4.dp,
+                                                start = 3.dp,
+                                                end = 3.dp,
                                                 top = if (message.mediaUrl.isNotBlank()) 6.dp else 1.dp,
                                                 bottom = 1.dp
                                             )
@@ -2932,13 +2725,13 @@ private fun DirectConversationScreen(
                                     Row(
                                         modifier = Modifier
                                             .align(Alignment.End)
-                                            .padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                                            .padding(top = 2.dp, start = 4.dp, end = 3.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         if (message.editedAt != null) {
                                             Text(
-                                                text = "düzenlendi •",
+                                                text = "düzenlendi ·",
                                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                                 color = secondaryTextColor
                                             )
@@ -2980,7 +2773,7 @@ private fun DirectConversationScreen(
                                         imageVector = Icons.Default.DoneAll,
                                         contentDescription = null,
                                         modifier = Modifier.size(13.dp),
-                                        tint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                        tint = palette.brandText
                                     )
                                     Text(
                                         text = "Görüldü",
@@ -2988,7 +2781,7 @@ private fun DirectConversationScreen(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold
                                         ),
-                                        color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                                        color = palette.brandText
                                     )
                                 }
                             }
@@ -3000,15 +2793,15 @@ private fun DirectConversationScreen(
                                 }
                                 Surface(
                                     modifier = Modifier
-                                        .offset(y = (-6).dp)
+                                        .offset(y = (-5).dp)
                                         .padding(horizontal = 8.dp),
                                     shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                    shadowElevation = 2.dp
+                                    color = palette.surface,
+                                    border = BorderStroke(0.85.dp, palette.hairline),
+                                    shadowElevation = 1.dp
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -3029,11 +2822,7 @@ private fun DirectConversationScreen(
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 11.sp
                                                         ),
-                                                        color = if (emoji == myReaction) {
-                                                            if (darkTheme) LibraLavenderDarkText else LibraLavenderText
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                        }
+                                                        color = if (emoji == myReaction) palette.brandText else palette.inkSecondary
                                                     )
                                                 }
                                             }
@@ -3044,7 +2833,8 @@ private fun DirectConversationScreen(
                         }
                     }
                 }
-            }
+                }
+                }
             }
 
             androidx.compose.animation.AnimatedVisibility(
@@ -3057,7 +2847,7 @@ private fun DirectConversationScreen(
             ) {
                 Surface(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .appleBouncy(
                             pressedScale = 0.86f,
@@ -3068,15 +2858,15 @@ private fun DirectConversationScreen(
                             }
                         ),
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    shadowElevation = 4.dp
+                    color = palette.surface,
+                    border = BorderStroke(0.85.dp, palette.hairline),
+                    shadowElevation = 2.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "En alta git",
-                            tint = MaterialTheme.colorScheme.onSurface
+                            tint = palette.inkPrimary
                         )
                     }
                 }
@@ -3094,10 +2884,9 @@ private fun DirectConversationScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    shadowElevation = 4.dp
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.surface,
+                    border = BorderStroke(0.85.dp, palette.hairline)
                 ) {
                     Row(
                         modifier = Modifier
@@ -3110,21 +2899,21 @@ private fun DirectConversationScreen(
                                 model = localUri,
                                 contentDescription = "Gönderilecek fotoğraf",
                                 modifier = Modifier
-                                    .size(66.dp)
-                                    .clip(RoundedCornerShape(13.dp)),
+                                    .size(62.dp)
+                                    .clip(RoundedCornerShape(11.dp)),
                                 contentScale = ContentScale.Crop
                             )
                             if (mediaUploading) {
                                 Surface(
                                     shape = CircleShape,
                                     color = Color.Black.copy(alpha = 0.65f),
-                                    modifier = Modifier.size(34.dp)
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         CircularProgressIndicator(
                                             progress = { (mediaProgress / 100f).coerceIn(0.05f, 1f) },
-                                            modifier = Modifier.size(22.dp),
-                                            strokeWidth = 2.5.dp,
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
                                             color = Color.White
                                         )
                                     }
@@ -3148,7 +2937,7 @@ private fun DirectConversationScreen(
                                 },
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.labelLarge,
-                                color = if (mediaError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                color = if (mediaError != null) MaterialTheme.colorScheme.error else palette.inkPrimary
                             )
 
                             val metaParts = listOfNotNull(
@@ -3165,9 +2954,9 @@ private fun DirectConversationScreen(
                                 )
                             } else if (metaParts.isNotEmpty()) {
                                 Text(
-                                    text = metaParts.joinToString(" • "),
+                                    text = metaParts.joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = palette.inkSecondary
                                 )
                             }
 
@@ -3179,7 +2968,7 @@ private fun DirectConversationScreen(
                                         .padding(top = 6.dp)
                                         .height(4.dp)
                                         .clip(CircleShape),
-                                    color = LibraLavender
+                                    color = palette.brand
                                 )
                             }
                         }
@@ -3189,7 +2978,7 @@ private fun DirectConversationScreen(
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
                                     contentDescription = "Tekrar Dene",
-                                    tint = LibraLavender
+                                    tint = palette.brand
                                 )
                             }
                         }
@@ -3205,7 +2994,7 @@ private fun DirectConversationScreen(
                             mediaUploading = false
                             mediaProgress = 0
                         }) {
-                            Icon(Icons.Default.Close, contentDescription = "Fotoğrafı kaldır")
+                            Icon(Icons.Default.Close, contentDescription = "Fotoğrafı kaldır", tint = palette.inkSecondary)
                         }
                     }
                 }
@@ -3218,7 +3007,7 @@ private fun DirectConversationScreen(
             }
             RichReplyBanner(
                 senderName = "Yanıtlanıyor: $replyName",
-                text = target.text.ifBlank { "📷 Fotoğraf" },
+                text = target.text.ifBlank { "Fotoğraf" },
                 onCancel = { replyTarget = null }
             )
         }
@@ -3234,21 +3023,20 @@ private fun DirectConversationScreen(
             )
         }
 
-        // Instagram-Style Pill Composer Dock
+        // Clean Pill Composer Dock
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            shadowElevation = 2.dp
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            shape = RoundedCornerShape(26.dp),
+            color = palette.surface,
+            border = BorderStroke(0.9.dp, palette.hairline)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val currentUserBlockedByGroupMsg = groupConversation != null && !canSendInGroup(groupConversation, currentUid)
@@ -3256,12 +3044,10 @@ private fun DirectConversationScreen(
                 val effectiveCanSend = canMessage && !currentUserBlockedByGroupMsg
                 val effectiveCanAttachMedia = effectiveCanSend && !currentUserBlockedByGroupMedia
                 val canAttach = effectiveCanAttachMedia && !sending && editingMessage == null
-                val galleryCircleColor = if (darkTheme) LibraLavenderDarkSurface else LibraLavenderSurface
-                val galleryIconTint = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
 
                 Surface(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .clickable(enabled = !canAttach && effectiveCanSend && currentUserBlockedByGroupMedia) {
                             Toast.makeText(
@@ -3272,14 +3058,14 @@ private fun DirectConversationScreen(
                         }
                         .appleBouncy(enabled = canAttach, pressedScale = 0.86f, onClick = { launchPhotoPicker() }),
                     shape = CircleShape,
-                    color = if (canAttach) galleryCircleColor else MaterialTheme.colorScheme.surfaceVariant
+                    color = if (canAttach) palette.brandSoft else palette.recessed
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.AddPhotoAlternate,
                             contentDescription = "Fotoğraf ekle",
-                            tint = if (canAttach) galleryIconTint else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(21.dp)
+                            tint = if (canAttach) palette.brandText else palette.inkSecondary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -3298,7 +3084,7 @@ private fun DirectConversationScreen(
                                 pendingMediaUri != null -> "Fotoğrafa açıklama ekle…"
                                 else -> "Mesaj yaz…"
                             },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = palette.inkSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -3369,17 +3155,17 @@ private fun DirectConversationScreen(
 
                 Surface(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .appleBouncy(enabled = canSend, pressedScale = 0.84f, onClick = onSendClick),
                     shape = CircleShape,
-                    color = if (canSend) LibraLavender else MaterialTheme.colorScheme.surfaceVariant
+                    color = if (canSend) palette.brand else palette.recessed
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         when {
                             sending || sendWhenUploadReady -> {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(17.dp),
                                     strokeWidth = 2.dp,
                                     color = Color.White
                                 )
@@ -3388,16 +3174,16 @@ private fun DirectConversationScreen(
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "Kaydet",
-                                    tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = if (canSend) Color.White else palette.inkSecondary,
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
                             else -> {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Gönder",
-                                    tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(19.dp)
+                                    tint = if (canSend) Color.White else palette.inkSecondary,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
@@ -3420,7 +3206,7 @@ private fun DirectConversationScreen(
             previewTimestamp = buildString {
                 if (message.createdAt > 0L) append(formatMessageHour(message.createdAt))
                 if (message.editedAt != null) {
-                    if (isNotEmpty()) append(" • ")
+                    if (isNotEmpty()) append(" · ")
                     append("düzenlendi")
                 }
             },
@@ -3478,7 +3264,7 @@ private fun DirectConversationScreen(
         }
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = palette.surface,
             title = { Text("Seçilen Mesajları Sil (${chosen.size})", fontWeight = FontWeight.Bold) },
             text = { Text(confirmBody) },
             confirmButton = {
@@ -3504,7 +3290,7 @@ private fun DirectConversationScreen(
     if (showClearChatConfirm) {
         AlertDialog(
             onDismissRequest = { showClearChatConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = palette.surface,
             title = { Text("Sohbeti Sıfırla", fontWeight = FontWeight.Bold) },
             text = {
                 Text("Bu sohbette gönderdiğin tüm mesajlar ve fotoğraflar kalıcı olarak silinecek, tüm sohbet geçmişin sıfırlanacak.")
@@ -3560,6 +3346,19 @@ private fun DirectConversationScreen(
             onLeaveCompleted = onLeaveGroup
         )
     }
+
+    if (showDirectChatAbout && !isGroup) {
+        DirectChatAboutSheet(
+            user = user,
+            messages = messages,
+            onDismiss = { showDirectChatAbout = false },
+            onOpenProfile = {
+                showDirectChatAbout = false
+                onOpenProfile()
+            },
+            onClearConversation = onClearConversation
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3571,7 +3370,7 @@ private fun ForwardOrShareMessageSheet(
     onForwardToConversation: (DirectConversation, (Boolean) -> Unit) -> Unit,
     onForwardToGlobalChat: ((Boolean) -> Unit) -> Unit
 ) {
-    val darkTheme = LocalLibraDarkTheme.current
+    val palette = rememberLibraCommsColors()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
@@ -3591,7 +3390,7 @@ private fun ForwardOrShareMessageSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = palette.canvas
     ) {
         Column(
             modifier = Modifier
@@ -3607,37 +3406,37 @@ private fun ForwardOrShareMessageSheet(
                 Text(
                     text = "Mesajı Paylaş / İlet",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = palette.inkPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Kapat")
+                    Icon(Icons.Default.Close, contentDescription = "Kapat", tint = palette.inkSecondary)
                 }
             }
 
-            // Preview card
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                shape = RoundedCornerShape(14.dp),
+                color = palette.surface,
+                border = BorderStroke(0.85.dp, palette.hairline)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = if (message.mediaUrl.isNotBlank()) "📷 Fotoğraflı mesaj" else "Mesaj önizlemesi",
+                        text = if (message.mediaUrl.isNotBlank()) "Fotoğraflı mesaj" else "Mesaj önizlemesi",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
+                        color = palette.brandText
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
                         text = resolveShareableMessageText(message).ifBlank { "Fotoğraf" },
                         style = MaterialTheme.typography.bodySmall,
+                        color = palette.inkPrimary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // External share button
             OutlinedButton(
                 enabled = !sharingExternally,
                 onClick = {
@@ -3648,7 +3447,7 @@ private fun ForwardOrShareMessageSheet(
                         onDismiss()
                     }
                 },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (sharingExternally) {
@@ -3680,7 +3479,7 @@ private fun ForwardOrShareMessageSheet(
                     val isSent = "global" in sentKeys.value
                     val isBusy = sendingTargetKey == "global"
                     ForwardTargetRow(
-                        title = "Genel Chat",
+                        title = "Genel Sohbet",
                         subtitle = "Tüm Libra üyeleriyle paylaş",
                         photoUrl = "",
                         isGlobal = true,
@@ -3692,7 +3491,7 @@ private fun ForwardOrShareMessageSheet(
                                 sendingTargetKey = null
                                 if (ok) {
                                     sentKeys.value = sentKeys.value + "global"
-                                    Toast.makeText(context, "Genel Chate iletildi.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Genel Sohbet'e iletildi.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -3742,11 +3541,12 @@ private fun ForwardTargetRow(
     isBusy: Boolean,
     onSend: () -> Unit
 ) {
+    val palette = rememberLibraCommsColors()
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        shape = RoundedCornerShape(14.dp),
+        color = palette.surface,
+        border = BorderStroke(0.85.dp, palette.hairline)
     ) {
         Row(
             modifier = Modifier
@@ -3757,11 +3557,16 @@ private fun ForwardTargetRow(
             if (isGlobal) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = palette.communitySoft,
                     modifier = Modifier.size(40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = null,
+                            tint = palette.community,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             } else {
@@ -3775,6 +3580,7 @@ private fun ForwardTargetRow(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = palette.inkPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -3782,7 +3588,7 @@ private fun ForwardTargetRow(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = palette.inkSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -3794,7 +3600,7 @@ private fun ForwardTargetRow(
                 shape = CircleShape,
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSent) MaterialTheme.colorScheme.surfaceVariant else LibraLavender
+                    containerColor = if (isSent) palette.recessed else palette.brand
                 )
             ) {
                 if (isBusy) {
@@ -3803,7 +3609,7 @@ private fun ForwardTargetRow(
                     Text(
                         text = if (isSent) "İletildi ✓" else "Gönder",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (isSent) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
+                        color = if (isSent) palette.inkSecondary else Color.White
                     )
                 }
             }
@@ -3816,26 +3622,22 @@ private fun InboxFilterPill(
     label: String,
     badgeCount: Int,
     selected: Boolean,
-    darkTheme: Boolean,
     onClick: () -> Unit
 ) {
+    val palette = rememberLibraCommsColors()
     Surface(
         modifier = Modifier
             .clip(CircleShape)
-            .appleBouncy(pressedScale = 0.94f, onClick = onClick),
+            .appleBouncy(pressedScale = 0.95f, onClick = onClick),
         shape = CircleShape,
-        color = when {
-            selected -> LibraLavender
-            darkTheme -> Color(0xFF1D1C24)
-            else -> MaterialTheme.colorScheme.surface
-        },
+        color = if (selected) palette.brand else palette.surface,
         border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) LibraLavender else MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)
+            width = 0.9.dp,
+            color = if (selected) palette.brand else palette.hairline
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -3845,22 +3647,28 @@ private fun InboxFilterPill(
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     fontSize = 13.sp
                 ),
-                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+                color = if (selected) Color.White else palette.inkPrimary
             )
             if (badgeCount > 0) {
                 Surface(
                     shape = CircleShape,
-                    color = if (selected) Color.White.copy(alpha = 0.24f) else LibraLavender.copy(alpha = 0.16f)
+                    color = if (selected) Color.White.copy(alpha = 0.24f) else palette.brand
                 ) {
-                    Text(
-                        text = if (badgeCount > 99) "99+" else badgeCount.toString(),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        ),
-                        color = if (selected) Color.White else if (darkTheme) LibraLavenderDarkText else LibraLavenderText,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                            .padding(horizontal = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            ),
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }

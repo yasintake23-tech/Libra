@@ -78,14 +78,15 @@ import com.libra.app.domain.model.StorageUploadRequest
 import com.libra.app.domain.model.UserProfile
 import com.libra.app.ui.animation.appleBouncy
 import com.libra.app.ui.components.UserAvatar
-import com.libra.app.ui.theme.LibraLavender
-import com.libra.app.ui.theme.LibraLavenderDarkSurface
-import com.libra.app.ui.theme.LibraLavenderDarkText
-import com.libra.app.ui.theme.LibraLavenderSurface
-import com.libra.app.ui.theme.LibraLavenderText
 import com.libra.app.ui.theme.LocalLibraDarkTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+private val LibraLavender = Color(0xFF2554C7)
+private val LibraLavenderSurface = Color(0xFFEAF0FE)
+private val LibraLavenderDarkSurface = Color(0xFF19243F)
+private val LibraLavenderText = Color(0xFF1E44A6)
+private val LibraLavenderDarkText = Color(0xFF9BB8FF)
 
 enum class NewChatStudioTab { DIRECT, CREATE_GROUP }
 
