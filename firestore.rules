@@ -139,7 +139,8 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.recipientId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
-      allow delete: if false;
+      allow delete: if request.auth != null
+        && resource.data.recipientId == request.auth.uid;
     }
 
     match /adminNotificationDrafts/{draftId} {

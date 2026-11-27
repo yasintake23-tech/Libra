@@ -528,6 +528,11 @@ fun AppNavHost(
         }
     }
 
+    val runtimeUnreadCount by LibraNotificationRuntimeState.unreadCount.collectAsState()
+    LaunchedEffect(runtimeUnreadCount) {
+        unreadNotificationCount = runtimeUnreadCount
+    }
+
     LaunchedEffect(currentUser?.uid) {
         val uid = currentUser?.uid.orEmpty()
         if (uid.isBlank()) {
@@ -545,7 +550,8 @@ fun AppNavHost(
         ServiceLocator.notificationRepository.observeNotifications(uid, limit = 120).collect { result ->
             when (result) {
                 is com.libra.app.core.result.AppResult.Success -> {
-                    val list = result.data
+                    val dismissed = NotificationPreferencesStore(context).getDismissedNotificationIds(uid)
+                    val list = if (dismissed.isEmpty()) result.data else result.data.filterNot { it.id in dismissed }
                     unreadNotificationCount = list.count { !it.read }
                     NotificationSyncCoordinator.processIncomingNotifications(
                         context = context,

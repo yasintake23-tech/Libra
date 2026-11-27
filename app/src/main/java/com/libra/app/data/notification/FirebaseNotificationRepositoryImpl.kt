@@ -123,6 +123,56 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         }
     }
 
+    override suspend fun markNotificationsRead(notificationIds: List<String>): AppResult<Int> {
+        val validIds = notificationIds.filter { it.isNotBlank() && !it.startsWith("rtdb_") }.distinct()
+        if (validIds.isEmpty()) return AppResult.Success(0)
+        return try {
+            var marked = 0
+            validIds.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { id -> batch.update(ref.document(id), "read", true) }
+                batch.commit().await()
+                marked += chunk.size
+            }
+            AppResult.Success(marked)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Seçilen bildirimler okunamadı.", e))
+        }
+    }
+
+    override suspend fun deleteNotification(notificationId: String): AppResult<Unit> {
+        return when (val res = deleteNotifications(listOf(notificationId))) {
+            is AppResult.Success -> AppResult.Success(Unit)
+            is AppResult.Error -> res
+        }
+    }
+
+    override suspend fun deleteNotifications(notificationIds: List<String>): AppResult<Int> {
+        val validIds = notificationIds.filter { it.isNotBlank() && !it.startsWith("rtdb_") }.distinct()
+        if (validIds.isEmpty()) return AppResult.Success(0)
+        return try {
+            var deleted = 0
+            validIds.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { id -> batch.delete(ref.document(id)) }
+                batch.commit().await()
+                deleted += chunk.size
+            }
+            AppResult.Success(deleted)
+        } catch (e: Exception) {
+            // If Firestore delete rules haven't been deployed yet, still mark them read on Firestore
+            // so unread badges stay zeroed while the client stores local dismissal.
+            runCatching {
+                validIds.chunked(400).forEach { chunk ->
+                    val batch = firestore.batch()
+                    chunk.forEach { id -> batch.update(ref.document(id), "read", true) }
+                    batch.commit().await()
+                }
+            }
+            AppResult.Error(AppError.Database("Bildirimler sunucudan kaldırılamadı.", e))
+        }
+    }
+
     override suspend fun markConversationNotificationsRead(uid: String, conversationId: String): AppResult<Unit> {
         if (uid.isBlank() || conversationId.isBlank()) return AppResult.Success(Unit)
         return try {

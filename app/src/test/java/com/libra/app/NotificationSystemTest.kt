@@ -41,6 +41,7 @@ import com.libra.app.notification.PendingTrayMessage
 import com.libra.app.notification.appendAndMergeTrayMessages
 import com.libra.app.notification.buildRtdbFallbackDmNotifications
 import com.libra.app.notification.classifyNotificationCategory
+import com.libra.app.notification.maskNotificationBodyForPrivacy
 import com.libra.app.notification.selectNewNotificationsForDelivery
 import com.libra.app.notification.shouldSuppressActiveNotification
 import kotlinx.coroutines.Dispatchers
@@ -259,7 +260,27 @@ class NotificationSystemTest {
     fun notificationPreferencesDefaultIsEphemeralAndRequestCodeIsDeterministic() {
         val defaults = NotificationPreferencesState()
         assertTrue(defaults.masterEnabled)
+        assertTrue(defaults.inAppBannerEnabled)
+        assertTrue(defaults.showPreviewEnabled)
+        assertTrue(defaults.groupChatNotifications)
+        assertFalse(defaults.silentModeEnabled)
         assertFalse(defaults.backgroundServiceEnabled)
+
+        val secretMsg = AppNotification(
+            id = "n_secret",
+            type = LibraNotificationTypes.MESSAGE,
+            body = "Sürpriz toplantı saat 19:00"
+        )
+        assertEquals("Sürpriz toplantı saat 19:00", maskNotificationBodyForPrivacy(secretMsg, showPreviewEnabled = true))
+        assertEquals("Yeni bir mesajın var.", maskNotificationBodyForPrivacy(secretMsg, showPreviewEnabled = false))
+        assertEquals(
+            "Yeni bir etkileşimin var.",
+            maskNotificationBodyForPrivacy(secretMsg.copy(type = LibraNotificationTypes.LIKE), showPreviewEnabled = false)
+        )
+        assertEquals(
+            "Yeni bir Libra duyurusu var.",
+            maskNotificationBodyForPrivacy(secretMsg.copy(type = LibraNotificationTypes.ADMIN_BROADCAST), showPreviewEnabled = false)
+        )
 
         val codeA = LibraNotificationHelper.notificationRequestCode("notif_abc", LibraNotificationTypes.MESSAGE, 1234L)
         val codeB = LibraNotificationHelper.notificationRequestCode("notif_abc", LibraNotificationTypes.MESSAGE, 5678L)

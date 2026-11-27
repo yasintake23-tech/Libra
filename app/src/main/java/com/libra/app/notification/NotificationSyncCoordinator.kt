@@ -65,6 +65,15 @@ object NotificationSyncCoordinator {
         if (uid.isBlank()) return
         val appContext = context.applicationContext
         syncMutex.withLock {
+            val store = NotificationPreferencesStore(appContext)
+            val prefs = store.readPreferences()
+            val dismissedIds = store.getDismissedNotificationIds(uid)
+            val activeNotifications = if (dismissedIds.isEmpty()) {
+                notifications
+            } else {
+                notifications.filterNot { it.id in dismissedIds }
+            }
+
             val isForeground = LibraNotificationRuntimeState.isAppInForeground
             val notifScreenOpen = isForeground && LibraNotificationRuntimeState.isNotificationsScreenOpen
             val messagesTabOpen = isForeground && LibraNotificationRuntimeState.isMessagesTabOpen
@@ -73,7 +82,7 @@ object NotificationSyncCoordinator {
             // Automatically clear any unread chat notifications belonging to the currently active conversation
             // so viewing a DM keeps both Notification bell count and tray clean.
             if (!activeConvId.isNullOrBlank()) {
-                val activeUnreadIds = notifications.filter { item ->
+                val activeUnreadIds = activeNotifications.filter { item ->
                     !item.read &&
                         !item.id.startsWith("rtdb_") &&
                         (item.type == LibraNotificationTypes.MESSAGE || item.type == LibraNotificationTypes.GROUP_MESSAGE) &&
@@ -91,17 +100,15 @@ object NotificationSyncCoordinator {
                 if (updateUnreadBadgeCount) {
                     val activeSet = activeUnreadIds.toSet()
                     LibraNotificationRuntimeState.updateUnreadCount(
-                        notifications.count { !it.read && it.id !in activeSet }
+                        activeNotifications.count { !it.read && it.id !in activeSet }
                     )
                 }
             } else if (updateUnreadBadgeCount) {
-                LibraNotificationRuntimeState.updateUnreadCount(notifications.count { !it.read })
+                LibraNotificationRuntimeState.updateUnreadCount(activeNotifications.count { !it.read })
             }
 
-            val store = NotificationPreferencesStore(appContext)
-            val prefs = store.readPreferences()
             val selection = selectNewNotificationsForDelivery(
-                notifications = notifications,
+                notifications = activeNotifications,
                 hasBaseline = store.hasBaseline(uid),
                 baselineMs = store.getBaselineTimestamp(uid),
                 alreadyNotifiedIds = store.getNotifiedIds(uid),
@@ -126,8 +133,15 @@ object NotificationSyncCoordinator {
             }
 
             otherNotifications.forEach { freshNotification ->
+                val bannerNotif = if (prefs.showPreviewEnabled) {
+                    freshNotification
+                } else {
+                    freshNotification.copy(body = maskNotificationBodyForPrivacy(freshNotification, false))
+                }
                 if (isForeground) {
-                    LibraNotificationRuntimeState.emitInAppBanner(freshNotification)
+                    if (prefs.inAppBannerEnabled) {
+                        LibraNotificationRuntimeState.emitInAppBanner(bannerNotif)
+                    }
                 } else {
                     LibraNotificationHelper.dispatchSystemNotification(appContext, freshNotification)
                 }
@@ -151,17 +165,30 @@ object NotificationSyncCoordinator {
                         timestampMs = notif.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
                     )
                 }
-                val stacked = store.appendChatTrayMessages(uid, convKey, pendingIncoming)
+                val stacked = if (prefs.groupChatNotifications) {
+                    store.appendChatTrayMessages(uid, convKey, pendingIncoming)
+                } else {
+                    pendingIncoming.takeLast(1)
+                }
                 val latest = sortedItems.last()
 
                 if (isForeground) {
-                    val latestBody = latest.body.ifBlank { stacked.lastOrNull()?.body.orEmpty() }
-                    val bannerNotif = if (stacked.size > 1) {
-                        latest.copy(body = "${stacked.size} okunmamış mesaj: $latestBody")
-                    } else {
-                        latest
+                    if (prefs.inAppBannerEnabled) {
+                        val latestBody = maskNotificationBodyForPrivacy(latest, prefs.showPreviewEnabled)
+                            .ifBlank { stacked.lastOrNull()?.body.orEmpty() }
+                        val bannerNotif = if (prefs.groupChatNotifications && stacked.size > 1) {
+                            latest.copy(
+                                body = if (prefs.showPreviewEnabled) {
+                                    "${stacked.size} okunmamış mesaj: $latestBody"
+                                } else {
+                                    "${stacked.size} okunmamış mesaj"
+                                }
+                            )
+                        } else {
+                            latest.copy(body = latestBody)
+                        }
+                        LibraNotificationRuntimeState.emitInAppBanner(bannerNotif)
                     }
-                    LibraNotificationRuntimeState.emitInAppBanner(bannerNotif)
                 } else {
                     LibraNotificationHelper.dispatchGroupedChatNotification(
                         context = appContext,

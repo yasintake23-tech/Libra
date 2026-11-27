@@ -11,62 +11,58 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.ui.unit.sp
+import com.libra.app.feature.messages.rememberLibraCommsColors
 
 @Composable
 fun NotificationPermissionRationaleDialog(
     onAllowClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = rememberLibraCommsColors()
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = palette.surface,
         icon = {
             Surface(
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(50.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
+                color = palette.brandSoft
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.NotificationsActive,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp)
+                        tint = palette.brand,
+                        modifier = Modifier.size(25.dp)
                     )
                 }
             }
@@ -75,6 +71,7 @@ fun NotificationPermissionRationaleDialog(
             Text(
                 text = "Bildirimleri Aç",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = palette.inkPrimary,
                 textAlign = TextAlign.Center
             )
         },
@@ -82,16 +79,17 @@ fun NotificationPermissionRationaleDialog(
             Text(
                 text = "Yeni mesajlar, gönderi ve kitap beğenileri, yorum yanıtları ile yönetim duyurularını anında görebilmek için bildirim izni verebilirsin.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.inkSecondary,
                 textAlign = TextAlign.Center
             )
         },
         confirmButton = {
             Button(
                 onClick = onAllowClick,
-                shape = RoundedCornerShape(12.dp)
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.brand)
             ) {
-                Text("İzin Ver")
+                Text("İzin Ver", color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -106,224 +104,201 @@ fun NotificationPermissionRationaleDialog(
 @Composable
 fun NotificationPreferencesBottomSheet(
     preferences: NotificationPreferencesState,
-    systemPermissionGranted: Boolean,
+    systemPermissionGranted: Boolean = true,
     onPreferencesChanged: (NotificationPreferencesState) -> Unit,
-    onRequestOrOpenSystemPermission: () -> Unit,
+    onRequestOrOpenSystemPermission: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var ignoringBattery by remember {
-        mutableStateOf(LibraNotificationHelper.isIgnoringBatteryOptimizations(context))
-    }
-    var exactAlarmGranted by remember {
-        mutableStateOf(LibraNotificationHelper.canScheduleExactAlarms(context))
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                ignoringBattery = LibraNotificationHelper.isIgnoringBatteryOptimizations(context)
-                exactAlarmGranted = LibraNotificationHelper.canScheduleExactAlarms(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    val palette = rememberLibraCommsColors()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = palette.canvas
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 10.dp),
+                .padding(horizontal = 18.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Bildirim Tercihleri",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-            )
-
-            Surface(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Android Bildirim İzni",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = if (systemPermissionGranted) {
-                                "Sistem bildirimleri açık"
-                            } else {
-                                "Kapalı — yeni mesaj ve beğeniler için izin ver"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    OutlinedButton(
-                        onClick = onRequestOrOpenSystemPermission,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(if (systemPermissionGranted) "Ayarlar" else "İzin Ver")
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Bildirim Özelleştirmeleri",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        ),
+                        color = palette.inkPrimary
+                    )
+                    Text(
+                        text = "Hangi bildirimleri nasıl almak istediğini seç",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.inkSecondary
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Kapat",
+                        tint = palette.inkSecondary
+                    )
                 }
             }
 
-            if (!ignoringBattery) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Pil Kısıtlaması (Kapalıyken Bildirim)",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                            )
-                            Text(
-                                text = "Uygulama kapalıyken uyandırma kontrolü için 'Kısıtlanmamış' yap",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        OutlinedButton(
-                            onClick = { LibraNotificationHelper.openBatteryOptimizationSettings(context) },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Aç")
-                        }
+            // Section 1: General & Quiet control
+            PreferenceSectionCard(title = "GENEL KONTROL") {
+                NotificationToggleItem(
+                    title = "Tüm Bildirimler",
+                    subtitle = "Uygulama içi ve telefon bildirimlerini aç veya kapat",
+                    checked = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(masterEnabled = it))
                     }
-                }
+                )
+                HorizontalDivider(
+                    thickness = 0.75.dp,
+                    color = palette.hairline,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                NotificationToggleItem(
+                    title = "Sessiz Mod",
+                    subtitle = "Bildirimler ses ve titreşim olmadan sessiz düşer",
+                    checked = preferences.silentModeEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(silentModeEnabled = it))
+                    }
+                )
             }
 
-            if (!exactAlarmGranted) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Tam Zamanlı Uyanma İzni",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                            )
-                            Text(
-                                text = "Kapalıyken gecikmesiz uyanma döngüsü için izin ver",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        OutlinedButton(
-                            onClick = { LibraNotificationHelper.openExactAlarmSettings(context) },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("İzin Ver")
-                        }
+            // Section 2: Categories
+            PreferenceSectionCard(title = "BİLDİRİM KATEGORİLERİ") {
+                NotificationToggleItem(
+                    title = "Mesajlar ve Sohbetler",
+                    subtitle = "DM, grup sohbetleri ve sunucu bahsedilmeleri",
+                    checked = preferences.messagesEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(messagesEnabled = it))
                     }
-                }
+                )
+                HorizontalDivider(
+                    thickness = 0.75.dp,
+                    color = palette.hairline,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                NotificationToggleItem(
+                    title = "Beğeni, Yorum ve Takipler",
+                    subtitle = "Gönderi, kitap ve hikâye etkileşimleri",
+                    checked = preferences.socialEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(socialEnabled = it))
+                    }
+                )
+                HorizontalDivider(
+                    thickness = 0.75.dp,
+                    color = palette.hairline,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                NotificationToggleItem(
+                    title = "Duyurular ve Yönetim",
+                    subtitle = "Libra genel ve özel duyuruları",
+                    checked = preferences.announcementsEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(announcementsEnabled = it))
+                    }
+                )
             }
 
-            NotificationToggleItem(
-                title = "Tüm Bildirimler",
-                subtitle = "Uygulama içi ve sistem bildirimlerini yönet",
-                checked = preferences.masterEnabled,
-                onCheckedChange = {
-                    onPreferencesChanged(preferences.copy(masterEnabled = it))
-                }
-            )
-            NotificationToggleItem(
-                title = "Anlık Canlı Bağlantı (İsteğe Bağlı)",
-                subtitle = "Kapalıyken uygulama yalnızca bildirim kontrolünde kısa süre uyanıp kapanır; kesintisiz anlık iletim için açabilirsin",
-                checked = preferences.backgroundServiceEnabled,
-                enabled = preferences.masterEnabled,
-                onCheckedChange = {
-                    onPreferencesChanged(preferences.copy(backgroundServiceEnabled = it))
-                }
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            NotificationToggleItem(
-                title = "Mesajlar ve Sohbetler",
-                subtitle = "DM, grup mesajları ve sunucu etiketleri",
-                checked = preferences.messagesEnabled,
-                enabled = preferences.masterEnabled,
-                onCheckedChange = {
-                    onPreferencesChanged(preferences.copy(messagesEnabled = it))
-                }
-            )
-            NotificationToggleItem(
-                title = "Beğeni, Yorum ve Takipler",
-                subtitle = "Gönderi, kitap ve hikâye etkileşimleri",
-                checked = preferences.socialEnabled,
-                enabled = preferences.masterEnabled,
-                onCheckedChange = {
-                    onPreferencesChanged(preferences.copy(socialEnabled = it))
-                }
-            )
-            NotificationToggleItem(
-                title = "Duyurular ve Yönetim",
-                subtitle = "Libra genel ve kategorize yönetim bildirimleri",
-                checked = preferences.announcementsEnabled,
-                enabled = preferences.masterEnabled,
-                onCheckedChange = {
-                    onPreferencesChanged(preferences.copy(announcementsEnabled = it))
-                }
-            )
-
-            OutlinedButton(
-                onClick = {
-                    if (!LibraNotificationHelper.hasNotificationPermission(context)) {
-                        onRequestOrOpenSystemPermission()
-                    } else {
-                        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
-                        LibraNotificationHelper.sendTestNotification(context, uid)
+            // Section 3: Display & Privacy customizations
+            PreferenceSectionCard(title = "GÖRÜNÜM VE GİZLİLİK") {
+                NotificationToggleItem(
+                    title = "İçerik Önizlemesini Göster",
+                    subtitle = "Kapalıyken kilit ekranı ve bantta mesaj içeriği gizlenir",
+                    checked = preferences.showPreviewEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(showPreviewEnabled = it))
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Test Bildirimi Gönder (Yanıtla + Okundu İşaretle)")
+                )
+                HorizontalDivider(
+                    thickness = 0.75.dp,
+                    color = palette.hairline,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                NotificationToggleItem(
+                    title = "Uygulama İçi Bildirim Bandı",
+                    subtitle = "Uygulama içindeyken üstten açılan anlık bildirim bandı",
+                    checked = preferences.inAppBannerEnabled,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(inAppBannerEnabled = it))
+                    }
+                )
+                HorizontalDivider(
+                    thickness = 0.75.dp,
+                    color = palette.hairline,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                NotificationToggleItem(
+                    title = "Sohbet Bildirimlerini Grupla",
+                    subtitle = "Aynı kişiden gelen mesajları tek bildirimde toplar",
+                    checked = preferences.groupChatNotifications,
+                    enabled = preferences.masterEnabled,
+                    onCheckedChange = {
+                        onPreferencesChanged(preferences.copy(groupChatNotifications = it))
+                    }
+                )
             }
 
             Button(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.brand)
             ) {
-                Text("Tamam")
+                Text("Tamam", color = Color.White, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun PreferenceSectionCard(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    val palette = rememberLibraCommsColors()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.7.sp
+            ),
+            color = palette.inkSecondary,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = palette.surface,
+            border = BorderStroke(0.85.dp, palette.hairline)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                content()
+            }
         }
     }
 }
@@ -336,26 +311,34 @@ private fun NotificationToggleItem(
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val palette = rememberLibraCommsColors()
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = if (enabled) palette.inkPrimary else palette.inkSecondary.copy(alpha = 0.55f)
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                color = if (enabled) palette.inkSecondary else palette.inkSecondary.copy(alpha = 0.45f)
             )
         }
-        Spacer(Modifier.width(8.dp))
         Switch(
             checked = checked,
             enabled = enabled,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = palette.brand,
+                uncheckedThumbColor = palette.inkSecondary,
+                uncheckedTrackColor = palette.recessed,
+                uncheckedBorderColor = palette.hairline
+            )
         )
     }
 }

@@ -18,6 +18,10 @@ data class NotificationPreferencesState(
     val messagesEnabled: Boolean = true,
     val socialEnabled: Boolean = true,
     val announcementsEnabled: Boolean = true,
+    val inAppBannerEnabled: Boolean = true,
+    val showPreviewEnabled: Boolean = true,
+    val groupChatNotifications: Boolean = true,
+    val silentModeEnabled: Boolean = false,
     val backgroundServiceEnabled: Boolean = false
 ) {
     fun allowsType(type: String): Boolean {
@@ -27,6 +31,15 @@ data class NotificationPreferencesState(
             NotificationPreferenceCategory.SOCIAL -> socialEnabled
             NotificationPreferenceCategory.ANNOUNCEMENTS -> announcementsEnabled
         }
+    }
+}
+
+fun maskNotificationBodyForPrivacy(notification: AppNotification, showPreviewEnabled: Boolean): String {
+    if (showPreviewEnabled) return notification.body
+    return when (classifyNotificationCategory(notification.type)) {
+        NotificationPreferenceCategory.MESSAGES -> "Yeni bir mesajın var."
+        NotificationPreferenceCategory.ANNOUNCEMENTS -> "Yeni bir Libra duyurusu var."
+        NotificationPreferenceCategory.SOCIAL -> "Yeni bir etkileşimin var."
     }
 }
 
@@ -236,6 +249,10 @@ class NotificationPreferencesStore(context: Context) {
         messagesEnabled = prefs.getBoolean(KEY_MESSAGES_ENABLED, true),
         socialEnabled = prefs.getBoolean(KEY_SOCIAL_ENABLED, true),
         announcementsEnabled = prefs.getBoolean(KEY_ANNOUNCEMENTS_ENABLED, true),
+        inAppBannerEnabled = prefs.getBoolean(KEY_IN_APP_BANNER, true),
+        showPreviewEnabled = prefs.getBoolean(KEY_SHOW_PREVIEW, true),
+        groupChatNotifications = prefs.getBoolean(KEY_GROUP_CHAT_NOTIF, true),
+        silentModeEnabled = prefs.getBoolean(KEY_SILENT_MODE, false),
         backgroundServiceEnabled = prefs.getBoolean(KEY_BACKGROUND_SERVICE, false)
     )
 
@@ -246,8 +263,41 @@ class NotificationPreferencesStore(context: Context) {
             .putBoolean(KEY_MESSAGES_ENABLED, state.messagesEnabled)
             .putBoolean(KEY_SOCIAL_ENABLED, state.socialEnabled)
             .putBoolean(KEY_ANNOUNCEMENTS_ENABLED, state.announcementsEnabled)
+            .putBoolean(KEY_IN_APP_BANNER, state.inAppBannerEnabled)
+            .putBoolean(KEY_SHOW_PREVIEW, state.showPreviewEnabled)
+            .putBoolean(KEY_GROUP_CHAT_NOTIF, state.groupChatNotifications)
+            .putBoolean(KEY_SILENT_MODE, state.silentModeEnabled)
             .putBoolean(KEY_BACKGROUND_SERVICE, state.backgroundServiceEnabled)
             .apply()
+    }
+
+    @Synchronized
+    fun getDismissedNotificationIds(uid: String): Set<String> {
+        if (uid.isBlank()) return emptySet()
+        val raw = prefs.getString(dismissedIdsKey(uid), "").orEmpty()
+        if (raw.isBlank()) return emptySet()
+        return raw.split(",").filter { it.isNotBlank() }.toSet()
+    }
+
+    @Synchronized
+    fun addDismissedNotificationIds(uid: String, ids: Collection<String>) {
+        if (uid.isBlank() || ids.isEmpty()) return
+        val existing = prefs.getString(dismissedIdsKey(uid), "")
+            .orEmpty()
+            .split(",")
+            .filter { it.isNotBlank() }
+            .toMutableList()
+        ids.forEach { id ->
+            if (id.isNotBlank() && id !in existing) {
+                existing.add(id)
+            }
+        }
+        val capped = if (existing.size > MAX_DISMISSED_IDS) {
+            existing.takeLast(MAX_DISMISSED_IDS)
+        } else {
+            existing
+        }
+        prefs.edit().putString(dismissedIdsKey(uid), capped.joinToString(",")).apply()
     }
 
     @Synchronized
@@ -391,6 +441,7 @@ class NotificationPreferencesStore(context: Context) {
 
     private fun baselineKey(uid: String): String = "baseline_ms_$uid"
     private fun notifiedIdsKey(uid: String): String = "notified_ids_$uid"
+    private fun dismissedIdsKey(uid: String): String = "dismissed_ids_$uid"
     private fun dmNotifiedKey(uid: String, convId: String): String = "dm_notified_${uid}_$convId"
     private fun trayMessagesKey(uid: String, convKey: String): String = "tray_msgs_${uid}_$convKey"
 
@@ -400,9 +451,14 @@ class NotificationPreferencesStore(context: Context) {
         private const val KEY_MESSAGES_ENABLED = "messages_enabled"
         private const val KEY_SOCIAL_ENABLED = "social_enabled"
         private const val KEY_ANNOUNCEMENTS_ENABLED = "announcements_enabled"
+        private const val KEY_IN_APP_BANNER = "in_app_banner_enabled"
+        private const val KEY_SHOW_PREVIEW = "show_preview_enabled"
+        private const val KEY_GROUP_CHAT_NOTIF = "group_chat_notifications"
+        private const val KEY_SILENT_MODE = "silent_mode_enabled"
         private const val KEY_BACKGROUND_SERVICE = "background_live_service_opt_in_v2"
         private const val KEY_PERMISSION_PROMPTED = "permission_prompted_v1"
         private const val KEY_BATTERY_PROMPTED = "battery_prompted_v1"
         private const val MAX_STORED_IDS = 500
+        private const val MAX_DISMISSED_IDS = 600
     }
 }

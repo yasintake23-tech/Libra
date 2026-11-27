@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -14,26 +13,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Universal Apple-style 3D Bouncy & Elastic Pull-Stretch Interaction Modifier.
+ * Scroll-safe Apple-style 3D Bouncy interaction modifier.
  *
- * Implements the full physical tactile feel of Apple iOS 18 & VisionOS:
- * 1. Finger Touch-Down: Compresses inward ([pressedScale], default 0.92x) with snappy spring.
- * 2. Finger Drag / Pull ("Çekiştirme"): The button physically stretches and follows the finger
- *    with a dampened rubber-band formula [x / (1 + |x| / maxStretch)] and dynamic directional elongation!
- * 3. Finger Release: Snaps back to resting position with playful organic spring overshoot
- *    ([AppleSprings.OffsetBouncy] & [AppleSprings.FloatBouncy]), producing tactile haptic feedback.
- * 4. Activation Check: If released within the activation bounds, fires [onClick]. If pulled
- *    beyond the cancellation threshold, cancels the click cleanly.
+ * Plays a crisp press scale on touch-down, immediately yields & springs back if the user
+ * drags past [touchSlop] or a parent scrollable consumes the gesture (never blocking scroll
+ * and never misfiring clicks during scroll), and cleanly triggers [onClick] / [onLongClick]
+ * on intentional stationary taps or holds.
  */
 fun Modifier.appleBouncy(
     enabled: Boolean = true,
@@ -60,80 +58,108 @@ fun Modifier.appleBouncy(
             translationX = ox
             translationY = oy
 
-            // Dynamic 3D elongation along the stretch vector
-            val stretchXFactor = (abs(ox) / (maxStretchPx.coerceAtLeast(1f))) * 0.16f
-            val stretchYFactor = (abs(oy) / (maxStretchPx.coerceAtLeast(1f))) * 0.16f
+            val stretchXFactor = (abs(ox) / (maxStretchPx.coerceAtLeast(1f))) * 0.12f
+            val stretchYFactor = (abs(oy) / (maxStretchPx.coerceAtLeast(1f))) * 0.12f
             scaleX = scale.value + stretchXFactor
             scaleY = scale.value + stretchYFactor
         }
         .pointerInput(enabled, pressedScale, maxStretchPx, onClick, onLongClick, onDoubleTap) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                val downTime = System.currentTimeMillis()
+                val pointerId = down.id
+                val slopPx = viewConfiguration.touchSlop
+                val longPressTimeoutMs = viewConfiguration.longPressTimeoutMillis
+
+                var totalDrag = Offset.Zero
+                var dragCancelled = false
+                var longPressTriggered = false
+                var pointerActive = true
 
                 scope.launch {
                     scale.animateTo(pressedScale, animationSpec = AppleSprings.FloatSnappy)
                 }
-                runCatching {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
 
-                var totalDrag = Offset.Zero
-                var longPressTriggered = false
-                val pointerId = down.id
-
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
-
-                    if (!change.pressed) {
-                        change.consume()
-                        break
-                    }
-
-                    val dragDelta = change.positionChange()
-                    if (dragDelta != Offset.Zero) {
-                        totalDrag += dragDelta
-                        change.consume()
-
-                        // Apple rubber-band formula
-                        val dampedX = totalDrag.x / (1f + (abs(totalDrag.x) / maxStretchPx))
-                        val dampedY = totalDrag.y / (1f + (abs(totalDrag.y) / maxStretchPx))
-
-                        scope.launch {
-                            offset.snapTo(Offset(dampedX, dampedY))
+                val longPressJob = if (onLongClick != null) {
+                    scope.launch {
+                        delay(longPressTimeoutMs)
+                        if (pointerActive && !dragCancelled) {
+                            longPressTriggered = true
+                            scope.launch {
+                                offset.animateTo(Offset.Zero, animationSpec = AppleSprings.OffsetBouncy)
+                            }
+                            scope.launch {
+                                scale.animateTo(1f, animationSpec = AppleSprings.FloatBouncy)
+                            }
+                            runCatching {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                            onLongClick()
                         }
                     }
+                } else null
 
-                    // Long press detection while holding relatively still
-                    if (onLongClick != null && !longPressTriggered &&
-                        (System.currentTimeMillis() - downTime > 450L) &&
-                        totalDrag.getDistance() < 14f
-                    ) {
-                        longPressTriggered = true
-                        runCatching {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+
+                        if (!change.pressed) {
+                            pointerActive = false
+                            longPressJob?.cancel()
+                            if (!dragCancelled && !longPressTriggered && !change.isConsumed) {
+                                change.consume()
+                                runCatching {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                                onClick()
+                            }
+                            break
                         }
-                        onLongClick()
+
+                        // Intentionally NEVER consume move events here so parent LazyColumn,
+                        // LazyRow, ModalBottomSheet, and scroll containers always scroll smoothly.
+                        val dragDelta = change.positionChange()
+                        if (dragDelta != Offset.Zero) {
+                            totalDrag += dragDelta
+                            val dragDistance = totalDrag.getDistance()
+                            if (!dragCancelled && (change.isConsumed || dragDistance > slopPx)) {
+                                dragCancelled = true
+                                longPressJob?.cancel()
+                                scope.launch {
+                                    offset.animateTo(Offset.Zero, animationSpec = AppleSprings.OffsetBouncy)
+                                }
+                                scope.launch {
+                                    scale.animateTo(1f, animationSpec = AppleSprings.FloatBouncy)
+                                }
+                            } else if (!dragCancelled && !longPressTriggered) {
+                                val dampedX = (totalDrag.x * 0.45f) / (1f + (abs(totalDrag.x) / maxStretchPx))
+                                val dampedY = (totalDrag.y * 0.45f) / (1f + (abs(totalDrag.y) / maxStretchPx))
+                                scope.launch {
+                                    offset.snapTo(Offset(dampedX, dampedY))
+                                }
+                            }
+                        } else if (!dragCancelled && change.isConsumed) {
+                            dragCancelled = true
+                            longPressJob?.cancel()
+                            scope.launch {
+                                offset.animateTo(Offset.Zero, animationSpec = AppleSprings.OffsetBouncy)
+                            }
+                            scope.launch {
+                                scale.animateTo(1f, animationSpec = AppleSprings.FloatBouncy)
+                            }
+                        }
                     }
-                }
-
-                // Snap back with bouncy spring physics
-                scope.launch {
-                    offset.animateTo(Offset.Zero, animationSpec = AppleSprings.OffsetBouncy)
-                }
-                scope.launch {
-                    scale.animateTo(1f, animationSpec = AppleSprings.FloatBouncy)
-                }
-
-                val dragDistance = totalDrag.getDistance()
-                val isInsideClickBounds = dragDistance < (maxStretchPx * 1.35f)
-
-                if (isInsideClickBounds && !longPressTriggered) {
-                    runCatching {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                } catch (e: CancellationException) {
+                    throw e
+                } finally {
+                    pointerActive = false
+                    longPressJob?.cancel()
+                    scope.launch {
+                        offset.animateTo(Offset.Zero, animationSpec = AppleSprings.OffsetBouncy)
                     }
-                    onClick()
+                    scope.launch {
+                        scale.animateTo(1f, animationSpec = AppleSprings.FloatBouncy)
+                    }
                 }
             }
         }

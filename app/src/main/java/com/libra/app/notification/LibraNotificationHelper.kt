@@ -297,6 +297,7 @@ object LibraNotificationHelper {
 
         if (!hasNotificationPermission(context)) return
         ensureChannels(context)
+        val prefs = NotificationPreferencesStore(context).readPreferences()
 
         val category = classifyNotificationCategory(notification.type)
         val channelId = when (category) {
@@ -304,10 +305,11 @@ object LibraNotificationHelper {
             NotificationPreferenceCategory.SOCIAL -> CHANNEL_SOCIAL
             NotificationPreferenceCategory.ANNOUNCEMENTS -> CHANNEL_ANNOUNCEMENTS
         }
-        val priority = when (category) {
-            NotificationPreferenceCategory.MESSAGES,
-            NotificationPreferenceCategory.ANNOUNCEMENTS -> NotificationCompat.PRIORITY_HIGH
-            NotificationPreferenceCategory.SOCIAL -> NotificationCompat.PRIORITY_DEFAULT
+        val priority = when {
+            prefs.silentModeEnabled -> NotificationCompat.PRIORITY_LOW
+            category == NotificationPreferenceCategory.MESSAGES ||
+                category == NotificationPreferenceCategory.ANNOUNCEMENTS -> NotificationCompat.PRIORITY_HIGH
+            else -> NotificationCompat.PRIORITY_DEFAULT
         }
         val compatCategory = when (category) {
             NotificationPreferenceCategory.MESSAGES -> NotificationCompat.CATEGORY_MESSAGE
@@ -317,7 +319,8 @@ object LibraNotificationHelper {
 
         val requestCode = notificationRequestCode(notification.id, notification.type, notification.createdAt)
         val title = notification.title.ifBlank { "Libra" }
-        val body = notification.body.ifBlank { "Yeni bir bildirimin var." }
+        val body = maskNotificationBodyForPrivacy(notification, prefs.showPreviewEnabled)
+            .ifBlank { "Yeni bir bildirimin var." }
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -341,6 +344,7 @@ object LibraNotificationHelper {
             .setContentText(body)
             .setPriority(priority)
             .setCategory(compatCategory)
+            .setSilent(prefs.silentModeEnabled)
             .setAutoCancel(true)
             .setContentIntent(contentPendingIntent)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -379,6 +383,7 @@ object LibraNotificationHelper {
     ) {
         if (!hasNotificationPermission(context)) return
         ensureChannels(context)
+        val prefs = NotificationPreferencesStore(context).readPreferences()
 
         val safeMessages = messages.ifEmpty {
             listOf(
@@ -393,12 +398,21 @@ object LibraNotificationHelper {
                 )
             )
         }
-        val lastMsg = safeMessages.last()
+        val maskedMessages = if (prefs.showPreviewEnabled) {
+            safeMessages
+        } else {
+            safeMessages.map { it.copy(body = "Yeni bir mesaj") }
+        }
+        val lastMsg = maskedMessages.last()
         val requestCode = conversationRequestCode(convKey)
         val title = latestNotification.title.ifBlank { lastMsg.senderName.ifBlank { "Libra" } }
-        val latestBody = lastMsg.body.ifBlank { "Yeni bir mesajın var." }
-        val msgCount = safeMessages.size
-        val summaryPreview = if (msgCount > 1) "$msgCount okunmamış mesaj: $latestBody" else latestBody
+        val latestBody = if (prefs.showPreviewEnabled) {
+            lastMsg.body.ifBlank { "Yeni bir mesajın var." }
+        } else {
+            "Yeni bir mesajın var."
+        }
+        val msgCount = maskedMessages.size
+        val summaryPreview = if (msgCount > 1) "$msgCount okunmamış mesaj" + if (prefs.showPreviewEnabled) ": $latestBody" else "" else latestBody
         val senderDisplayName = lastMsg.senderName.ifBlank {
             latestNotification.actorName.ifBlank {
                 latestNotification.actorUsername.takeIf { it.isNotBlank() }?.let { "@$it" } ?: title
@@ -446,7 +460,7 @@ object LibraNotificationHelper {
             messagingStyle.setConversationTitle(title)
             messagingStyle.setGroupConversation(true)
         }
-        safeMessages.forEach { msg ->
+        maskedMessages.forEach { msg ->
             val personName = msg.senderName.ifBlank { senderDisplayName }
             val senderPerson = Person.Builder()
                 .setName(personName)
@@ -460,8 +474,9 @@ object LibraNotificationHelper {
             .setSmallIcon(R.drawable.ic_libra_notification)
             .setContentTitle(title)
             .setContentText(summaryPreview)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (prefs.silentModeEnabled) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setSilent(prefs.silentModeEnabled)
             .setAutoCancel(true)
             .setNumber(msgCount)
             .setWhen(lastMsg.timestampMs.takeIf { it > 0L } ?: System.currentTimeMillis())

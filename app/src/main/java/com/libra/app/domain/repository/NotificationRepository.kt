@@ -26,6 +26,25 @@ interface NotificationRepository {
         }
     }
 
+    suspend fun markNotificationsRead(notificationIds: List<String>): AppResult<Int> {
+        var markedCount = 0
+        notificationIds.forEach { id ->
+            if (id.isNotBlank() && markRead(id) is AppResult.Success) {
+                markedCount++
+            }
+        }
+        return AppResult.Success(markedCount)
+    }
+
+    suspend fun deleteNotification(notificationId: String): AppResult<Unit> =
+        when (val res = deleteNotifications(listOf(notificationId))) {
+            is AppResult.Success -> AppResult.Success(Unit)
+            is AppResult.Error -> res
+        }
+
+    suspend fun deleteNotifications(notificationIds: List<String>): AppResult<Int> =
+        AppResult.Success(notificationIds.size)
+
     suspend fun fetchUnreadNotifications(uid: String, limit: Long = 25): AppResult<List<AppNotification>> =
         AppResult.Success(emptyList())
 
