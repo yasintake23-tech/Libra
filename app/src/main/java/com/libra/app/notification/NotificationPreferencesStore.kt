@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.LibraNotificationTypes
+import org.json.JSONArray
+import org.json.JSONObject
 
 enum class NotificationPreferenceCategory {
     MESSAGES,
@@ -99,15 +101,68 @@ fun selectNewNotificationsForDelivery(
     )
 }
 
+data class PendingTrayMessage(
+    val id: String,
+    val senderId: String,
+    val senderName: String,
+    val body: String,
+    val timestampMs: Long
+)
+
+fun appendAndMergeTrayMessages(
+    existing: List<PendingTrayMessage>,
+    incoming: List<PendingTrayMessage>,
+    maxMessages: Int = 25
+): List<PendingTrayMessage> {
+    val merged = LinkedHashMap<String, PendingTrayMessage>()
+    fun stableKey(msg: PendingTrayMessage): String =
+        msg.id.ifBlank { "${msg.senderId}_${msg.timestampMs}_${msg.body.trim()}" }
+
+    existing.forEach { msg ->
+        merged[stableKey(msg)] = msg.copy(body = msg.body.trim())
+    }
+    incoming.forEach { raw ->
+        val msg = raw.copy(body = raw.body.trim())
+        val key = stableKey(msg)
+        if (merged.containsKey(key)) return@forEach
+        val isRtdbFallback = msg.id.startsWith("rtdb_")
+        val duplicateRtdbOverlay = if (isRtdbFallback) {
+            merged.values.any { prev ->
+                !prev.id.startsWith("rtdb_") &&
+                    prev.body == msg.body &&
+                    kotlin.math.abs(prev.timestampMs - msg.timestampMs) <= 10_000L
+            }
+        } else {
+            false
+        }
+        if (!duplicateRtdbOverlay) {
+            if (!isRtdbFallback) {
+                val staleKeys = merged.entries.filter { (_, prev) ->
+                    prev.id.startsWith("rtdb_") &&
+                        prev.body == msg.body &&
+                        kotlin.math.abs(prev.timestampMs - msg.timestampMs) <= 10_000L
+                }.map { it.key }
+                staleKeys.forEach { merged.remove(it) }
+            }
+            merged[key] = msg
+        }
+    }
+    return merged.values
+        .sortedBy { it.timestampMs }
+        .takeLast(maxMessages.coerceAtLeast(1))
+}
+
 fun shouldSuppressActiveNotification(
     notification: AppNotification,
     isNotificationsScreenOpen: Boolean,
-    activeDirectConversationId: String?
+    activeDirectConversationId: String?,
+    isMessagesScreenOpen: Boolean = false
 ): Boolean {
     if (isNotificationsScreenOpen) return true
-    if (activeDirectConversationId.isNullOrBlank()) return false
     val isChatType = notification.type == LibraNotificationTypes.MESSAGE ||
         notification.type == LibraNotificationTypes.GROUP_MESSAGE
+    if (isChatType && isMessagesScreenOpen) return true
+    if (activeDirectConversationId.isNullOrBlank()) return false
     return isChatType && notification.referenceId == activeDirectConversationId
 }
 
@@ -277,9 +332,67 @@ class NotificationPreferencesStore(context: Context) {
         editor.apply()
     }
 
+    @Synchronized
+    fun getChatTrayMessages(uid: String, convKey: String): List<PendingTrayMessage> {
+        if (uid.isBlank() || convKey.isBlank()) return emptyList()
+        val raw = prefs.getString(trayMessagesKey(uid, convKey), null).orEmpty()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val body = obj.optString("body").trim()
+                    if (body.isBlank()) continue
+                    add(
+                        PendingTrayMessage(
+                            id = obj.optString("id"),
+                            senderId = obj.optString("senderId"),
+                            senderName = obj.optString("senderName"),
+                            body = body,
+                            timestampMs = obj.optLong("timestampMs", 0L)
+                        )
+                    )
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    @Synchronized
+    fun appendChatTrayMessages(
+        uid: String,
+        convKey: String,
+        incoming: List<PendingTrayMessage>
+    ): List<PendingTrayMessage> {
+        if (uid.isBlank() || convKey.isBlank()) return incoming
+        val existing = getChatTrayMessages(uid, convKey)
+        val merged = appendAndMergeTrayMessages(existing, incoming)
+        val array = JSONArray()
+        merged.forEach { msg ->
+            array.put(
+                JSONObject().apply {
+                    put("id", msg.id)
+                    put("senderId", msg.senderId)
+                    put("senderName", msg.senderName)
+                    put("body", msg.body)
+                    put("timestampMs", msg.timestampMs)
+                }
+            )
+        }
+        prefs.edit().putString(trayMessagesKey(uid, convKey), array.toString()).apply()
+        return merged
+    }
+
+    @Synchronized
+    fun clearChatTrayMessages(uid: String, convKey: String) {
+        if (uid.isBlank() || convKey.isBlank()) return
+        prefs.edit().remove(trayMessagesKey(uid, convKey)).apply()
+    }
+
     private fun baselineKey(uid: String): String = "baseline_ms_$uid"
     private fun notifiedIdsKey(uid: String): String = "notified_ids_$uid"
     private fun dmNotifiedKey(uid: String, convId: String): String = "dm_notified_${uid}_$convId"
+    private fun trayMessagesKey(uid: String, convKey: String): String = "tray_msgs_${uid}_$convKey"
 
     companion object {
         private const val PREFS_NAME = "libra_notification_prefs"

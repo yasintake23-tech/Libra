@@ -37,6 +37,8 @@ import com.libra.app.feature.admin.resolveAdminNotificationRecipients
 import com.libra.app.notification.LibraNotificationHelper
 import com.libra.app.notification.NotificationPreferenceCategory
 import com.libra.app.notification.NotificationPreferencesState
+import com.libra.app.notification.PendingTrayMessage
+import com.libra.app.notification.appendAndMergeTrayMessages
 import com.libra.app.notification.buildRtdbFallbackDmNotifications
 import com.libra.app.notification.classifyNotificationCategory
 import com.libra.app.notification.selectNewNotificationsForDelivery
@@ -246,6 +248,9 @@ class NotificationSystemTest {
         assertTrue(shouldSuppressActiveNotification(postLike, isNotificationsScreenOpen = true, activeDirectConversationId = null))
         assertTrue(shouldSuppressActiveNotification(dm, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_123"))
         assertTrue(shouldSuppressActiveNotification(groupMsg, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_123"))
+        assertTrue(shouldSuppressActiveNotification(dm, isNotificationsScreenOpen = false, activeDirectConversationId = null, isMessagesScreenOpen = true))
+        assertTrue(shouldSuppressActiveNotification(groupMsg, isNotificationsScreenOpen = false, activeDirectConversationId = null, isMessagesScreenOpen = true))
+        assertFalse(shouldSuppressActiveNotification(postLike, isNotificationsScreenOpen = false, activeDirectConversationId = null, isMessagesScreenOpen = true))
         assertFalse(shouldSuppressActiveNotification(dm, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_other"))
         assertFalse(shouldSuppressActiveNotification(postLike, isNotificationsScreenOpen = false, activeDirectConversationId = "conv_123"))
     }
@@ -262,6 +267,41 @@ class NotificationSystemTest {
         val fallbackB = LibraNotificationHelper.notificationRequestCode("", LibraNotificationTypes.MESSAGE, 999L)
         assertEquals(codeA, codeB)
         assertEquals(fallbackA, fallbackB)
+
+        val msg1 = AppNotification(id = "n_1", type = LibraNotificationTypes.MESSAGE, referenceId = "u1_u2", createdAt = 1000L)
+        val msg2 = AppNotification(id = "n_2", type = LibraNotificationTypes.MESSAGE, referenceId = "u1_u2", createdAt = 2000L)
+        val otherConv = AppNotification(id = "n_3", type = LibraNotificationTypes.MESSAGE, referenceId = "u1_u3", createdAt = 3000L)
+        assertEquals(
+            LibraNotificationHelper.conversationRequestCode(LibraNotificationHelper.conversationNotificationKey(msg1)),
+            LibraNotificationHelper.conversationRequestCode(LibraNotificationHelper.conversationNotificationKey(msg2))
+        )
+        assertFalse(
+            LibraNotificationHelper.conversationRequestCode(LibraNotificationHelper.conversationNotificationKey(msg1)) ==
+                LibraNotificationHelper.conversationRequestCode(LibraNotificationHelper.conversationNotificationKey(otherConv))
+        )
+    }
+
+    @Test
+    fun appendAndMergeTrayMessages_stacksChronologicallyAndDedupesRtdbOverlay() {
+        val m1 = PendingTrayMessage("fs_1", "u_peer", "Ahmet", "Selam", nowMs + 1000L)
+        val m2SameText = PendingTrayMessage("fs_2", "u_peer", "Ahmet", "Selam", nowMs + 2500L)
+        val rtdbDup = PendingTrayMessage("rtdb_conv1_${nowMs + 2600L}", "u_peer", "Ahmet", "Selam", nowMs + 2600L)
+        val m3Late = PendingTrayMessage("fs_3", "u_peer", "Ahmet", "Görüşelim mi?", nowMs + 5000L)
+
+        // Two genuinely distinct Firestore IDs with the same body are both kept
+        val afterFirstBatch = appendAndMergeTrayMessages(emptyList(), listOf(m2SameText, m1))
+        assertEquals(listOf("fs_1", "fs_2"), afterFirstBatch.map { it.id })
+
+        // Overlapping RTDB fallback within 10s with identical body is deduplicated, while newer message appends chronologically
+        val afterSecondBatch = appendAndMergeTrayMessages(afterFirstBatch, listOf(rtdbDup, m3Late))
+        assertEquals(listOf("fs_1", "fs_2", "fs_3"), afterSecondBatch.map { it.id })
+        assertEquals(listOf("Selam", "Selam", "Görüşelim mi?"), afterSecondBatch.map { it.body })
+
+        // Earlier RTDB-only message is replaced once matching real Firestore document arrives
+        val rtdbFirst = PendingTrayMessage("rtdb_conv2_${nowMs + 1000L}", "u_peer", "Ahmet", "Naber", nowMs + 1000L)
+        val fsLate = PendingTrayMessage("fs_real", "u_peer", "Ahmet", "Naber", nowMs + 1500L)
+        val replaced = appendAndMergeTrayMessages(listOf(rtdbFirst), listOf(fsLate))
+        assertEquals(listOf("fs_real"), replaced.map { it.id })
     }
 
     @Test

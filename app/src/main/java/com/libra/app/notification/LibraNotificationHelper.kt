@@ -48,6 +48,7 @@ object LibraNotificationHelper {
     const val EXTRA_NOTIFICATION_BODY = "extra_libra_notif_body"
     const val EXTRA_NOTIFICATION_REQUEST_CODE = "extra_libra_notif_req_code"
     const val EXTRA_NOTIFICATION_ACTOR_NAME = "extra_libra_notif_actor_name"
+    const val EXTRA_NOTIFICATION_CONV_KEY = "extra_libra_notif_conv_key"
 
     const val KEY_REPLY_TEXT = "key_libra_reply_text"
 
@@ -200,6 +201,23 @@ object LibraNotificationHelper {
     fun notificationRequestCode(notificationId: String, type: String, createdAt: Long): Int =
         notificationId.ifBlank { "${type}_$createdAt" }.hashCode()
 
+    fun conversationNotificationKey(notification: AppNotification): String {
+        val isChat = notification.type == LibraNotificationTypes.MESSAGE ||
+            notification.type == LibraNotificationTypes.GROUP_MESSAGE
+        return if (isChat) {
+            notification.referenceId.ifBlank {
+                if (notification.actorId.isNotBlank()) "actor_${notification.actorId}" else notification.id
+            }.ifBlank { "${notification.type}_${notification.createdAt}" }
+        } else {
+            notification.id.ifBlank { "${notification.type}_${notification.createdAt}" }
+        }
+    }
+
+    fun conversationRequestCode(convKey: String): Int {
+        val hash = ("conv_$convKey").hashCode()
+        return if (hash == 0) 1001 else hash
+    }
+
     fun buildForegroundSyncNotification(context: Context): Notification {
         ensureChannels(context)
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -248,10 +266,35 @@ object LibraNotificationHelper {
         intent.removeExtra(EXTRA_NOTIFICATION_ACTOR_ID)
         intent.removeExtra(EXTRA_NOTIFICATION_TITLE)
         intent.removeExtra(EXTRA_NOTIFICATION_BODY)
+        intent.removeExtra(EXTRA_NOTIFICATION_CONV_KEY)
     }
 
     @SuppressLint("MissingPermission")
     fun dispatchSystemNotification(context: Context, notification: AppNotification) {
+        val isChatNotification = notification.type == LibraNotificationTypes.MESSAGE ||
+            notification.type == LibraNotificationTypes.GROUP_MESSAGE
+        if (isChatNotification) {
+            val convKey = conversationNotificationKey(notification)
+            val senderDisplayName = notification.actorName.ifBlank {
+                notification.actorUsername.takeIf { it.isNotBlank() }?.let { "@$it" }
+                    ?: notification.title.ifBlank { "Libra" }
+            }
+            val singleMsg = PendingTrayMessage(
+                id = notification.id,
+                senderId = notification.actorId,
+                senderName = senderDisplayName,
+                body = notification.body.ifBlank { "Sana bir mesaj gönderdi." },
+                timestampMs = notification.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+            )
+            dispatchGroupedChatNotification(
+                context = context,
+                convKey = convKey,
+                messages = listOf(singleMsg),
+                latestNotification = notification
+            )
+            return
+        }
+
         if (!hasNotificationPermission(context)) return
         ensureChannels(context)
 
@@ -275,9 +318,6 @@ object LibraNotificationHelper {
         val requestCode = notificationRequestCode(notification.id, notification.type, notification.createdAt)
         val title = notification.title.ifBlank { "Libra" }
         val body = notification.body.ifBlank { "Yeni bir bildirimin var." }
-        val senderDisplayName = notification.actorName.ifBlank {
-            notification.actorUsername.takeIf { it.isNotBlank() }?.let { "@$it" } ?: title
-        }
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -303,74 +343,180 @@ object LibraNotificationHelper {
             .setCategory(compatCategory)
             .setAutoCancel(true)
             .setContentIntent(contentPendingIntent)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
 
-        val isChatNotification = notification.type == LibraNotificationTypes.MESSAGE ||
-            notification.type == LibraNotificationTypes.GROUP_MESSAGE
-
-        if (isChatNotification) {
-            val mePerson = Person.Builder()
-                .setName("Sen")
-                .setKey("libra_self")
-                .build()
-            val senderPerson = Person.Builder()
-                .setName(senderDisplayName)
-                .setKey(notification.actorId.ifBlank { "libra_sender" })
-                .build()
-            val timestamp = notification.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-            val messagingStyle = NotificationCompat.MessagingStyle(mePerson)
-            if (notification.type == LibraNotificationTypes.GROUP_MESSAGE) {
-                messagingStyle.setConversationTitle(title)
-                messagingStyle.setGroupConversation(true)
-            }
-            messagingStyle.addMessage(body, timestamp, senderPerson)
-            builder.setStyle(messagingStyle)
-
-            // WhatsApp-style inline reply action
-            val remoteInput = RemoteInput.Builder(KEY_REPLY_TEXT)
-                .setLabel("Yanıt yaz...")
-                .build()
-            val replyIntent = Intent(context, LibraNotificationActionReceiver::class.java).apply {
-                action = LibraNotificationActionReceiver.ACTION_INLINE_REPLY
-                putExtra(EXTRA_NOTIFICATION_ID, notification.id)
-                putExtra(EXTRA_NOTIFICATION_TYPE, notification.type)
-                putExtra(EXTRA_NOTIFICATION_REF_ID, notification.referenceId)
-                putExtra(EXTRA_NOTIFICATION_ACTOR_ID, notification.actorId)
-                putExtra(EXTRA_NOTIFICATION_TITLE, title)
-                putExtra(EXTRA_NOTIFICATION_BODY, body)
-                putExtra(EXTRA_NOTIFICATION_ACTOR_NAME, senderDisplayName)
-                putExtra(EXTRA_NOTIFICATION_REQUEST_CODE, requestCode)
-            }
-            val replyFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-            val replyPendingIntent = PendingIntent.getBroadcast(
-                context,
-                requestCode * 31 + 1,
-                replyIntent,
-                replyFlags
-            )
-            val replyAction = NotificationCompat.Action.Builder(
-                android.R.drawable.ic_menu_send,
-                "Yanıtla",
-                replyPendingIntent
-            )
-                .addRemoteInput(remoteInput)
-                .setAllowGeneratedReplies(true)
-                .build()
-            builder.addAction(replyAction)
-        } else {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
-        }
-
-        // "Okundu İşaretle" button across notifications (marks Firestore read + DM Görüldü)
         val markReadIntent = Intent(context, LibraNotificationActionReceiver::class.java).apply {
             action = LibraNotificationActionReceiver.ACTION_MARK_READ
             putExtra(EXTRA_NOTIFICATION_ID, notification.id)
             putExtra(EXTRA_NOTIFICATION_TYPE, notification.type)
             putExtra(EXTRA_NOTIFICATION_REF_ID, notification.referenceId)
             putExtra(EXTRA_NOTIFICATION_ACTOR_ID, notification.actorId)
+            putExtra(EXTRA_NOTIFICATION_REQUEST_CODE, requestCode)
+        }
+        val markReadPendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode * 31 + 2,
+            markReadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        builder.addAction(
+            android.R.drawable.ic_menu_view,
+            "Okundu İşaretle",
+            markReadPendingIntent
+        )
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(requestCode, builder.build())
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun dispatchGroupedChatNotification(
+        context: Context,
+        convKey: String,
+        messages: List<PendingTrayMessage>,
+        latestNotification: AppNotification
+    ) {
+        if (!hasNotificationPermission(context)) return
+        ensureChannels(context)
+
+        val safeMessages = messages.ifEmpty {
+            listOf(
+                PendingTrayMessage(
+                    id = latestNotification.id,
+                    senderId = latestNotification.actorId,
+                    senderName = latestNotification.actorName.ifBlank {
+                        latestNotification.title.ifBlank { "Libra" }
+                    },
+                    body = latestNotification.body.ifBlank { "Yeni bir mesajın var." },
+                    timestampMs = latestNotification.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
+            )
+        }
+        val lastMsg = safeMessages.last()
+        val requestCode = conversationRequestCode(convKey)
+        val title = latestNotification.title.ifBlank { lastMsg.senderName.ifBlank { "Libra" } }
+        val latestBody = lastMsg.body.ifBlank { "Yeni bir mesajın var." }
+        val msgCount = safeMessages.size
+        val summaryPreview = if (msgCount > 1) "$msgCount okunmamış mesaj: $latestBody" else latestBody
+        val senderDisplayName = lastMsg.senderName.ifBlank {
+            latestNotification.actorName.ifBlank {
+                latestNotification.actorUsername.takeIf { it.isNotBlank() }?.let { "@$it" } ?: title
+            }
+        }
+
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_NOTIFICATION_ID, latestNotification.id)
+            putExtra(EXTRA_NOTIFICATION_TYPE, latestNotification.type)
+            putExtra(EXTRA_NOTIFICATION_REF_ID, latestNotification.referenceId)
+            putExtra(EXTRA_NOTIFICATION_ACTOR_ID, latestNotification.actorId)
+            putExtra(EXTRA_NOTIFICATION_TITLE, title)
+            putExtra(EXTRA_NOTIFICATION_BODY, latestBody)
+            putExtra(EXTRA_NOTIFICATION_CONV_KEY, convKey)
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val dismissIntent = Intent(context, LibraNotificationActionReceiver::class.java).apply {
+            action = LibraNotificationActionReceiver.ACTION_DISMISSED
+            putExtra(EXTRA_NOTIFICATION_TYPE, latestNotification.type)
+            putExtra(EXTRA_NOTIFICATION_REF_ID, latestNotification.referenceId)
+            putExtra(EXTRA_NOTIFICATION_CONV_KEY, convKey)
+            putExtra(EXTRA_NOTIFICATION_REQUEST_CODE, requestCode)
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode * 31 + 3,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val mePerson = Person.Builder()
+            .setName("Sen")
+            .setKey("libra_self")
+            .build()
+        val messagingStyle = NotificationCompat.MessagingStyle(mePerson)
+        val isGroupChat = latestNotification.type == LibraNotificationTypes.GROUP_MESSAGE
+        if (isGroupChat) {
+            messagingStyle.setConversationTitle(title)
+            messagingStyle.setGroupConversation(true)
+        }
+        safeMessages.forEach { msg ->
+            val personName = msg.senderName.ifBlank { senderDisplayName }
+            val senderPerson = Person.Builder()
+                .setName(personName)
+                .setKey(msg.senderId.ifBlank { "libra_sender_${personName.hashCode()}" })
+                .build()
+            val msgTs = msg.timestampMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+            messagingStyle.addMessage(msg.body, msgTs, senderPerson)
+        }
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_libra_notification)
+            .setContentTitle(title)
+            .setContentText(summaryPreview)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setNumber(msgCount)
+            .setWhen(lastMsg.timestampMs.takeIf { it > 0L } ?: System.currentTimeMillis())
+            .setContentIntent(contentPendingIntent)
+            .setDeleteIntent(dismissPendingIntent)
+            .setStyle(messagingStyle)
+        if (msgCount > 1) {
+            builder.setSubText("$msgCount okunmamış mesaj")
+        }
+
+        // WhatsApp-style inline reply action
+        val remoteInput = RemoteInput.Builder(KEY_REPLY_TEXT)
+            .setLabel("Yanıt yaz...")
+            .build()
+        val replyIntent = Intent(context, LibraNotificationActionReceiver::class.java).apply {
+            action = LibraNotificationActionReceiver.ACTION_INLINE_REPLY
+            putExtra(EXTRA_NOTIFICATION_ID, latestNotification.id)
+            putExtra(EXTRA_NOTIFICATION_TYPE, latestNotification.type)
+            putExtra(EXTRA_NOTIFICATION_REF_ID, latestNotification.referenceId)
+            putExtra(EXTRA_NOTIFICATION_ACTOR_ID, latestNotification.actorId)
+            putExtra(EXTRA_NOTIFICATION_TITLE, title)
+            putExtra(EXTRA_NOTIFICATION_BODY, latestBody)
+            putExtra(EXTRA_NOTIFICATION_ACTOR_NAME, senderDisplayName)
+            putExtra(EXTRA_NOTIFICATION_CONV_KEY, convKey)
+            putExtra(EXTRA_NOTIFICATION_REQUEST_CODE, requestCode)
+        }
+        val replyFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode * 31 + 1,
+            replyIntent,
+            replyFlags
+        )
+        val replyAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_send,
+            "Yanıtla",
+            replyPendingIntent
+        )
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(true)
+            .build()
+        builder.addAction(replyAction)
+
+        // "Okundu İşaretle" button across chat notifications
+        val markReadIntent = Intent(context, LibraNotificationActionReceiver::class.java).apply {
+            action = LibraNotificationActionReceiver.ACTION_MARK_READ
+            putExtra(EXTRA_NOTIFICATION_ID, latestNotification.id)
+            putExtra(EXTRA_NOTIFICATION_TYPE, latestNotification.type)
+            putExtra(EXTRA_NOTIFICATION_REF_ID, latestNotification.referenceId)
+            putExtra(EXTRA_NOTIFICATION_ACTOR_ID, latestNotification.actorId)
+            putExtra(EXTRA_NOTIFICATION_CONV_KEY, convKey)
             putExtra(EXTRA_NOTIFICATION_REQUEST_CODE, requestCode)
         }
         val markReadPendingIntent = PendingIntent.getBroadcast(
@@ -429,6 +575,14 @@ object LibraNotificationHelper {
         runCatching {
             NotificationManagerCompat.from(context).notify(requestCode, notification)
         }
+    }
+
+    fun cancelConversationNotification(context: Context, uid: String, conversationId: String) {
+        if (conversationId.isBlank()) return
+        if (uid.isNotBlank()) {
+            NotificationPreferencesStore(context).clearChatTrayMessages(uid, conversationId)
+        }
+        cancelNotification(context, conversationRequestCode(conversationId))
     }
 
     fun cancelNotification(context: Context, requestCode: Int) {

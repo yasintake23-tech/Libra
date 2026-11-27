@@ -6,7 +6,9 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.FirebaseApp
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.messaging.FirebaseMessaging
+import com.libra.app.core.di.ServiceLocator
 import com.libra.app.domain.model.AppNotification
+import com.libra.app.domain.model.LibraNotificationTypes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +32,9 @@ object LibraNotificationRuntimeState {
     var isNotificationsScreenOpen: Boolean = false
 
     @Volatile
+    var isMessagesTabOpen: Boolean = false
+
+    @Volatile
     var activeDirectConversationId: String? = null
 
     private val _unreadCount = MutableStateFlow(0)
@@ -49,6 +54,7 @@ object LibraNotificationRuntimeState {
 
 object NotificationSyncCoordinator {
     private val syncMutex = Mutex()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun processIncomingNotifications(
         context: Context,
@@ -59,7 +65,36 @@ object NotificationSyncCoordinator {
         if (uid.isBlank()) return
         val appContext = context.applicationContext
         syncMutex.withLock {
-            if (updateUnreadBadgeCount) {
+            val isForeground = LibraNotificationRuntimeState.isAppInForeground
+            val notifScreenOpen = isForeground && LibraNotificationRuntimeState.isNotificationsScreenOpen
+            val messagesTabOpen = isForeground && LibraNotificationRuntimeState.isMessagesTabOpen
+            val activeConvId = if (isForeground) LibraNotificationRuntimeState.activeDirectConversationId else null
+
+            // Automatically clear any unread chat notifications belonging to the currently active conversation
+            // so viewing a DM keeps both Notification bell count and tray clean.
+            if (!activeConvId.isNullOrBlank()) {
+                val activeUnreadIds = notifications.filter { item ->
+                    !item.read &&
+                        !item.id.startsWith("rtdb_") &&
+                        (item.type == LibraNotificationTypes.MESSAGE || item.type == LibraNotificationTypes.GROUP_MESSAGE) &&
+                        item.referenceId == activeConvId
+                }.map { it.id }
+
+                LibraNotificationHelper.cancelConversationNotification(appContext, uid, activeConvId)
+                if (activeUnreadIds.isNotEmpty()) {
+                    cleanupScope.launch {
+                        activeUnreadIds.forEach { id ->
+                            runCatching { ServiceLocator.notificationRepository.markRead(id) }
+                        }
+                    }
+                }
+                if (updateUnreadBadgeCount) {
+                    val activeSet = activeUnreadIds.toSet()
+                    LibraNotificationRuntimeState.updateUnreadCount(
+                        notifications.count { !it.read && it.id !in activeSet }
+                    )
+                }
+            } else if (updateUnreadBadgeCount) {
                 LibraNotificationRuntimeState.updateUnreadCount(notifications.count { !it.read })
             }
 
@@ -77,21 +112,63 @@ object NotificationSyncCoordinator {
                 store.recordDeliverySelection(uid, selection)
             }
 
-            val isForeground = LibraNotificationRuntimeState.isAppInForeground
-            val notifScreenOpen = isForeground && LibraNotificationRuntimeState.isNotificationsScreenOpen
-            val activeConvId = if (isForeground) LibraNotificationRuntimeState.activeDirectConversationId else null
-
-            selection.toDispatch.forEach { freshNotification ->
-                val suppress = shouldSuppressActiveNotification(
+            val unsuppressed = selection.toDispatch.filterNot { freshNotification ->
+                shouldSuppressActiveNotification(
                     notification = freshNotification,
                     isNotificationsScreenOpen = notifScreenOpen,
-                    activeDirectConversationId = activeConvId
+                    activeDirectConversationId = activeConvId,
+                    isMessagesScreenOpen = messagesTabOpen
                 )
-                if (!suppress) {
+            }
+
+            val (chatNotifications, otherNotifications) = unsuppressed.partition {
+                it.type == LibraNotificationTypes.MESSAGE || it.type == LibraNotificationTypes.GROUP_MESSAGE
+            }
+
+            otherNotifications.forEach { freshNotification ->
+                if (isForeground) {
+                    LibraNotificationRuntimeState.emitInAppBanner(freshNotification)
+                } else {
                     LibraNotificationHelper.dispatchSystemNotification(appContext, freshNotification)
-                    if (isForeground) {
-                        LibraNotificationRuntimeState.emitInAppBanner(freshNotification)
+                }
+            }
+
+            val groupedChat = chatNotifications.groupBy {
+                LibraNotificationHelper.conversationNotificationKey(it)
+            }
+            groupedChat.forEach { (convKey, items) ->
+                val sortedItems = items.sortedBy { it.createdAt }
+                val pendingIncoming = sortedItems.map { notif ->
+                    val senderDisplay = notif.actorName.ifBlank {
+                        notif.actorUsername.takeIf { it.isNotBlank() }?.let { "@$it" }
+                            ?: notif.title.ifBlank { "Libra" }
                     }
+                    PendingTrayMessage(
+                        id = notif.id,
+                        senderId = notif.actorId,
+                        senderName = senderDisplay,
+                        body = notif.body.ifBlank { "Yeni bir mesajın var." },
+                        timestampMs = notif.createdAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                    )
+                }
+                val stacked = store.appendChatTrayMessages(uid, convKey, pendingIncoming)
+                val latest = sortedItems.last()
+
+                if (isForeground) {
+                    val latestBody = latest.body.ifBlank { stacked.lastOrNull()?.body.orEmpty() }
+                    val bannerNotif = if (stacked.size > 1) {
+                        latest.copy(body = "${stacked.size} okunmamış mesaj: $latestBody")
+                    } else {
+                        latest
+                    }
+                    LibraNotificationRuntimeState.emitInAppBanner(bannerNotif)
+                } else {
+                    LibraNotificationHelper.dispatchGroupedChatNotification(
+                        context = appContext,
+                        convKey = convKey,
+                        messages = stacked,
+                        latestNotification = latest
+                    )
                 }
             }
         }
@@ -143,6 +220,9 @@ object NotificationSyncCoordinator {
                     child.key.orEmpty() to (child.getValue(Long::class.java) ?: 0L)
                 }
                 val conversations = convSnap.children.mapNotNull { child ->
+                    if (child.child("removedMember").getValue(Boolean::class.java) == true) {
+                        return@mapNotNull null
+                    }
                     val convId = child.key.orEmpty()
                     val otherUid = child.child("otherUserId").getValue(String::class.java).orEmpty()
                     val isGroup = child.child("isGroup").getValue(Boolean::class.java) ?: false

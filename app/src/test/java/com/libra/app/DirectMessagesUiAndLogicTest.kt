@@ -1,7 +1,17 @@
 package com.libra.app
 
+import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
+import com.libra.app.domain.model.GroupMemberRole
+import com.libra.app.domain.model.GroupPermissions
 import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.canAddGroupMembers
+import com.libra.app.domain.model.canEditGroupInfo
+import com.libra.app.domain.model.canManageGroupSettings
+import com.libra.app.domain.model.canSendInGroup
+import com.libra.app.domain.model.canSendMediaInGroup
+import com.libra.app.domain.model.resolveGroupMemberRole
+import com.libra.app.domain.model.resolveGroupOwnerId
 import com.libra.app.feature.messages.buildForwardSharedContent
 import com.libra.app.feature.messages.computeDirectMessageGrouping
 import com.libra.app.feature.messages.filterVisibleDirectMessages
@@ -201,5 +211,81 @@ class DirectMessagesUiAndLogicTest {
         assertTrue(lines[0].contains("Ece: Kitabı okudun mu?"))
         assertTrue(lines[1].contains("Ece: Libra sohbetinden fotoğraf"))
         assertTrue(lines[2].contains("Sen: Görüşürüz"))
+    }
+
+    @Test
+    fun resolveGroupOwnerId_andRoleHierarchy_distinguishPresidentAdminAndMember() {
+        val explicitConv = DirectConversation(
+            id = "grp_1",
+            isGroup = true,
+            ownerId = "uid_president",
+            adminIds = listOf("uid_admin"),
+            participantIds = listOf("uid_member", "uid_admin", "uid_president")
+        )
+        assertEquals("uid_president", resolveGroupOwnerId(explicitConv))
+        assertEquals(GroupMemberRole.PRESIDENT, resolveGroupMemberRole(explicitConv, "uid_president"))
+        assertEquals(GroupMemberRole.ADMIN, resolveGroupMemberRole(explicitConv, "uid_admin"))
+        assertEquals(GroupMemberRole.MEMBER, resolveGroupMemberRole(explicitConv, "uid_member"))
+
+        val legacyGroup = DirectConversation(
+            id = "grp_legacy",
+            isGroup = true,
+            ownerId = "",
+            adminIds = emptyList(),
+            participantIds = listOf("uid_other", "uid_creator_last")
+        )
+        assertEquals("uid_creator_last", resolveGroupOwnerId(legacyGroup))
+        assertEquals(GroupMemberRole.PRESIDENT, resolveGroupMemberRole(legacyGroup, "uid_creator_last"))
+
+        val dmConv = DirectConversation(id = "a_b", isGroup = false, ownerId = "a")
+        assertEquals("", resolveGroupOwnerId(dmConv))
+    }
+
+    @Test
+    fun groupPermissions_enforcesSettingsEditAddMessageAndMediaRulesByRole() {
+        val restrictedGroup = DirectConversation(
+            id = "grp_restricted",
+            isGroup = true,
+            ownerId = "pres",
+            adminIds = listOf("adm"),
+            participantIds = listOf("pres", "adm", "mem"),
+            groupPermissions = GroupPermissions(
+                onlyAdminsCanMessage = true,
+                membersCanAddOthers = false,
+                membersCanEditInfo = false,
+                membersCanSendMedia = false
+            )
+        )
+
+        // President & Admin bypass restrictions and can manage group settings
+        listOf("pres", "adm").forEach { managerUid ->
+            assertTrue(canManageGroupSettings(restrictedGroup, managerUid))
+            assertTrue(canEditGroupInfo(restrictedGroup, managerUid))
+            assertTrue(canAddGroupMembers(restrictedGroup, managerUid))
+            assertTrue(canSendInGroup(restrictedGroup, managerUid))
+            assertTrue(canSendMediaInGroup(restrictedGroup, managerUid))
+        }
+
+        // Regular member respects strict GroupPermissions
+        assertFalse(canManageGroupSettings(restrictedGroup, "mem"))
+        assertFalse(canEditGroupInfo(restrictedGroup, "mem"))
+        assertFalse(canAddGroupMembers(restrictedGroup, "mem"))
+        assertFalse(canSendInGroup(restrictedGroup, "mem"))
+        assertFalse(canSendMediaInGroup(restrictedGroup, "mem"))
+
+        // Text allowed + media disabled for regular members
+        val textOnlyGroup = restrictedGroup.copy(
+            groupPermissions = GroupPermissions(
+                onlyAdminsCanMessage = false,
+                membersCanAddOthers = true,
+                membersCanEditInfo = true,
+                membersCanSendMedia = false
+            )
+        )
+        assertTrue(canSendInGroup(textOnlyGroup, "mem"))
+        assertFalse(canSendMediaInGroup(textOnlyGroup, "mem"))
+        assertTrue(canAddGroupMembers(textOnlyGroup, "mem"))
+        assertTrue(canEditGroupInfo(textOnlyGroup, "mem"))
+        assertFalse(canManageGroupSettings(textOnlyGroup, "mem"))
     }
 }

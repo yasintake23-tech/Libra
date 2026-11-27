@@ -13,10 +13,17 @@ import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
+import com.libra.app.domain.model.GroupPermissions
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.UserProfile
+import com.libra.app.domain.model.canAddGroupMembers
+import com.libra.app.domain.model.canEditGroupInfo
+import com.libra.app.domain.model.canManageGroupSettings
+import com.libra.app.domain.model.canSendInGroup
+import com.libra.app.domain.model.canSendMediaInGroup
+import com.libra.app.domain.model.resolveGroupOwnerId
 import com.libra.app.domain.repository.ChatRepository
 import com.libra.app.domain.repository.NotificationRepository
 import com.libra.app.domain.repository.StorageRepository
@@ -339,6 +346,67 @@ class RealtimeChatRepositoryImpl(
     ): AppResult<Unit> =
         toggleReaction(ref("globalMessages/$messageId"), emoji)
 
+    private fun participantMap(ids: List<String>): Map<String, String> =
+        ids.filter { it.isNotBlank() }.distinct().associateWith { it }
+
+    private fun permissionsMap(p: GroupPermissions): Map<String, Any> = mapOf(
+        "onlyAdminsCanMessage" to p.onlyAdminsCanMessage,
+        "membersCanAddOthers" to p.membersCanAddOthers,
+        "membersCanEditInfo" to p.membersCanEditInfo,
+        "membersCanSendMedia" to p.membersCanSendMedia
+    )
+
+    private fun parseConversationSnapshot(uid: String, child: DataSnapshot): DirectConversation? {
+        val convId = child.key.orEmpty()
+        if (convId.isBlank()) return null
+        if (child.child("removedMember").getValue(Boolean::class.java) == true) return null
+
+        val otherUid = child.child("otherUserId").getValue(String::class.java).orEmpty()
+        val isGroup = child.child("isGroup").getValue(Boolean::class.java) ?: false
+        val participantIds = child.child("participantIds").children
+            .mapNotNull { it.getValue(String::class.java) ?: it.key }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        if (!isGroup && otherUid.isBlank()) return null
+        if (isGroup && participantIds.isNotEmpty() && uid !in participantIds) return null
+
+        val adminIds = child.child("adminIds").children
+            .mapNotNull { it.getValue(String::class.java) ?: it.key }
+            .filter { it.isNotBlank() }
+            .distinct()
+        val permNode = child.child("groupPermissions")
+        val groupPermissions = GroupPermissions(
+            onlyAdminsCanMessage = permNode.child("onlyAdminsCanMessage").getValue(Boolean::class.java) ?: false,
+            membersCanAddOthers = permNode.child("membersCanAddOthers").getValue(Boolean::class.java) ?: true,
+            membersCanEditInfo = permNode.child("membersCanEditInfo").getValue(Boolean::class.java) ?: false,
+            membersCanSendMedia = permNode.child("membersCanSendMedia").getValue(Boolean::class.java) ?: true
+        )
+
+        return DirectConversation(
+            id = convId,
+            participants = if (isGroup) participantIds else listOf(uid, otherUid).distinct(),
+            otherUserId = otherUid,
+            otherUserName = child.child("otherUserName").getValue(String::class.java).orEmpty(),
+            otherUserUsername = child.child("otherUserUsername").getValue(String::class.java).orEmpty(),
+            otherUserPhotoUrl = child.child("otherUserPhotoUrl").getValue(String::class.java).orEmpty(),
+            lastMessage = child.child("lastMessage").getValue(String::class.java).orEmpty(),
+            updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: 0L,
+            unreadCount = (child.child("unreadCount").getValue(Long::class.java) ?: 0L).toInt().coerceAtLeast(0),
+            isGroup = isGroup,
+            groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
+            groupDescription = child.child("groupDescription").getValue(String::class.java).orEmpty(),
+            groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty(),
+            participantIds = participantIds,
+            ownerId = child.child("ownerId").getValue(String::class.java).orEmpty(),
+            adminIds = adminIds,
+            groupPermissions = groupPermissions,
+            createdAt = child.child("createdAt").getValue(Long::class.java) ?: 0L,
+            peerLastReadAt = child.child("peerLastReadAt").getValue(Long::class.java) ?: 0L,
+            myLastReadAt = child.child("myLastReadAt").getValue(Long::class.java) ?: 0L
+        )
+    }
+
     override fun observeDirectConversations(uid: String): Flow<AppResult<List<DirectConversation>>> =
         callbackFlow {
             if (uid.isBlank()) {
@@ -360,47 +428,7 @@ class RealtimeChatRepositoryImpl(
             val listener = object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val items = snapshot.children.mapNotNull { child ->
-                        val otherUid = child.child("otherUserId")
-                            .getValue(String::class.java)
-                            .orEmpty()
-
-                        if (child.key.isNullOrBlank()) {
-                            return@mapNotNull null
-                        }
-
-                        val isGroup = child.child("isGroup").getValue(Boolean::class.java) ?: false
-                        val participantIds = child.child("participantIds").children
-                            .mapNotNull { it.getValue(String::class.java) }
-
-                        if (!isGroup && otherUid.isBlank()) {
-                            return@mapNotNull null
-                        }
-
-                        DirectConversation(
-                            id = child.key.orEmpty(),
-                            participants = if (isGroup) participantIds else listOf(uid, otherUid).distinct(),
-                            otherUserId = otherUid,
-                            otherUserName = child.child("otherUserName")
-                                .getValue(String::class.java).orEmpty(),
-                            otherUserUsername = child.child("otherUserUsername")
-                                .getValue(String::class.java).orEmpty(),
-                            otherUserPhotoUrl = child.child("otherUserPhotoUrl")
-                                .getValue(String::class.java).orEmpty(),
-                            lastMessage = child.child("lastMessage")
-                                .getValue(String::class.java).orEmpty(),
-                            updatedAt = child.child("updatedAt")
-                                .getValue(Long::class.java) ?: 0L,
-                            unreadCount = (
-                                child.child("unreadCount")
-                                    .getValue(Long::class.java) ?: 0L
-                                ).toInt().coerceAtLeast(0),
-                            isGroup = isGroup,
-                            groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
-                            groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty(),
-                            participantIds = participantIds,
-                            peerLastReadAt = child.child("peerLastReadAt").getValue(Long::class.java) ?: 0L,
-                            myLastReadAt = child.child("myLastReadAt").getValue(Long::class.java) ?: 0L
-                        )
+                        parseConversationSnapshot(uid, child)
                     }.sortedByDescending { it.updatedAt }
 
                     trySend(AppResult.Success(items))
@@ -433,14 +461,22 @@ class RealtimeChatRepositoryImpl(
         val conversationId = root.child("directMessages").push().key
             ?: return error("Grup oluşturulamadı.")
         val now = System.currentTimeMillis()
+        val defaultPerms = GroupPermissions()
+        val membersMap = participantMap(members)
+        val adminsMap = participantMap(listOf(owner.uid))
 
         val updates = mutableMapOf<String, Any>()
         members.forEach { memberUid ->
             updates["directConversations/${memberUid}/${conversationId}"] = mapOf(
                 "isGroup" to true,
                 "groupName" to cleanName,
+                "groupDescription" to "",
                 "groupPhotoUrl" to "",
-                "participantIds" to members,
+                "ownerId" to owner.uid,
+                "adminIds" to adminsMap,
+                "groupPermissions" to permissionsMap(defaultPerms),
+                "createdAt" to now,
+                "participantIds" to membersMap,
                 "lastMessage" to "",
                 "updatedAt" to now,
                 "unreadCount" to 0
@@ -455,7 +491,12 @@ class RealtimeChatRepositoryImpl(
                     participants = members,
                     isGroup = true,
                     groupName = cleanName,
-                    participantIds = members
+                    groupDescription = "",
+                    participantIds = members,
+                    ownerId = owner.uid,
+                    adminIds = listOf(owner.uid),
+                    groupPermissions = defaultPerms,
+                    createdAt = now
                 )
             )
         } catch (e: Exception) {
@@ -494,8 +535,19 @@ class RealtimeChatRepositoryImpl(
         if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Grup bulunamadı."))
 
         val memberSnapshot = ref("directConversations/${sender.uid}/${conversationId}")?.get()?.await()
-        if (memberSnapshot?.child("isGroup")?.getValue(Boolean::class.java) != true) {
+        if (memberSnapshot == null || memberSnapshot.child("isGroup").getValue(Boolean::class.java) != true) {
             return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+        }
+        val groupConv = parseConversationSnapshot(sender.uid, memberSnapshot)
+            ?: return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+        val members = groupConv.participantIds
+        if (sender.uid !in members) return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+
+        if (!canSendInGroup(groupConv, sender.uid)) {
+            return AppResult.Error(AppError.Auth("Bu grupta yalnızca grup yöneticileri mesaj gönderebilir."))
+        }
+        if (mediaUrl.isNotBlank() && !canSendMediaInGroup(groupConv, sender.uid)) {
+            return AppResult.Error(AppError.Auth("Bu grupta yalnızca yöneticiler medya paylaşabilir."))
         }
 
         val clean = text.trim()
@@ -506,9 +558,9 @@ class RealtimeChatRepositoryImpl(
         }
 
         val profile = profileOrFallback(sender.uid, sender.displayName.orEmpty(), sender.photoUrl?.toString().orEmpty())
-        val groupName = memberSnapshot.child("groupName").getValue(String::class.java).orEmpty().ifBlank { "Grup sohbeti" }
-        val members = memberSnapshot.child("participantIds").children.mapNotNull { it.getValue(String::class.java) }
-        if (sender.uid !in members) return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+        val groupName = groupConv.groupName.ifBlank { "Grup sohbeti" }
+        val needsMapMigration = !memberSnapshot.child("participantIds").hasChild(sender.uid)
+        val membersMap = if (needsMapMigration) participantMap(members) else null
 
         val root = database()?.reference
             ?: return error("Realtime Database yapılandırması bulunamadı.")
@@ -546,11 +598,17 @@ class RealtimeChatRepositoryImpl(
                 "directConversations/${sender.uid}/${conversationId}/updatedAt" to now,
                 "directConversations/${sender.uid}/${conversationId}/unreadCount" to 0
             )
+            if (membersMap != null) {
+                updates["directConversations/${sender.uid}/${conversationId}/participantIds"] = membersMap
+            }
             val recipients = members.filter { it != sender.uid }.distinct()
             recipients.forEach { memberUid ->
                 updates["directConversations/${memberUid}/${conversationId}/lastMessage"] = last
                 updates["directConversations/${memberUid}/${conversationId}/updatedAt"] = now
                 updates["directConversations/${memberUid}/${conversationId}/unreadCount"] = ServerValue.increment(1)
+                if (membersMap != null) {
+                    updates["directConversations/${memberUid}/${conversationId}/participantIds"] = membersMap
+                }
             }
             root.updateChildren(updates).await()
 
@@ -606,7 +664,8 @@ class RealtimeChatRepositoryImpl(
             close()
             return@callbackFlow
         }
-        if (isGroup && membership?.child("participantIds")?.children?.none { it.getValue(String::class.java) == uid } != false) {
+        val removedMember = membership?.child("removedMember")?.getValue(Boolean::class.java) == true
+        if (isGroup && (removedMember || membership?.child("participantIds")?.children?.none { (it.getValue(String::class.java) ?: it.key) == uid } != false)) {
             trySend(AppResult.Error(AppError.Auth("Bu grubu görüntüleme yetkin yok.")))
             close()
             return@callbackFlow
@@ -1022,8 +1081,9 @@ class RealtimeChatRepositoryImpl(
             val isGroup = snapshot.child("isGroup").getValue(Boolean::class.java) == true
             if (isGroup) {
                 val members = snapshot.child("participantIds").children
-                    .mapNotNull { it.getValue(String::class.java) }
+                    .mapNotNull { it.getValue(String::class.java) ?: it.key }
                     .filter { it.isNotBlank() && it != uid }
+                    .distinct()
                 members.forEach { memberUid ->
                     runCatching {
                         ref("directConversations/$memberUid/$conversationId/peerLastReadAt")
@@ -1044,6 +1104,7 @@ class RealtimeChatRepositoryImpl(
                 }
             }
 
+            runCatching { notificationRepository.markConversationNotificationsRead(uid, conversationId) }
             AppResult.Success(Unit)
         } catch (e: Exception) {
             // Read receipts are metadata. A permission/rule mismatch here must not
@@ -1054,6 +1115,285 @@ class RealtimeChatRepositoryImpl(
 
     override suspend fun hideDirectConversation(conversationId: String): AppResult<Unit> =
         clearDirectConversation(conversationId, removeFromInbox = true)
+
+    private suspend fun loadActiveGroupConversation(
+        conversationId: String,
+        uid: String
+    ): AppResult<DirectConversation> {
+        if (conversationId.isBlank()) return AppResult.Error(AppError.Validation("Grup bulunamadı."))
+        val snap = ref("directConversations/$uid/$conversationId")?.get()?.await()
+            ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val conv = parseConversationSnapshot(uid, snap)
+        if (conv == null || !conv.isGroup || uid !in conv.participantIds) {
+            return AppResult.Error(AppError.Auth("Bu gruba erişim yetkin yok."))
+        }
+        return AppResult.Success(conv)
+    }
+
+    override suspend fun updateGroupInfo(
+        conversationId: String,
+        name: String,
+        description: String
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        if (!canEditGroupInfo(conv, uid)) {
+            return AppResult.Error(AppError.Auth("Grup bilgilerini düzenleme yetkin yok."))
+        }
+        val cleanName = name.trim().take(60)
+        val cleanDesc = description.trim().take(300)
+        if (cleanName.isBlank()) {
+            return AppResult.Error(AppError.Validation("Grup adı boş olamaz."))
+        }
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val presidentUid = resolveGroupOwnerId(conv)
+        val membersMap = participantMap(conv.participantIds)
+        val updates = mutableMapOf<String, Any>()
+        conv.participantIds.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/groupName"] = cleanName
+            updates["directConversations/$memberUid/$conversationId/groupDescription"] = cleanDesc
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = membersMap
+            if (conv.ownerId.isBlank() && presidentUid.isNotBlank()) {
+                updates["directConversations/$memberUid/$conversationId/ownerId"] = presidentUid
+            }
+        }
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Grup bilgileri güncellenemedi.", e)
+        }
+    }
+
+    override suspend fun updateGroupPermissions(
+        conversationId: String,
+        permissions: GroupPermissions
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        if (!canManageGroupSettings(conv, uid)) {
+            return AppResult.Error(AppError.Auth("Grup izinlerini yalnızca grup başkanı veya yöneticiler değiştirebilir."))
+        }
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val presidentUid = resolveGroupOwnerId(conv)
+        val membersMap = participantMap(conv.participantIds)
+        val permPayload = permissionsMap(permissions)
+        val updates = mutableMapOf<String, Any>()
+        conv.participantIds.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/groupPermissions"] = permPayload
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = membersMap
+            if (conv.ownerId.isBlank() && presidentUid.isNotBlank()) {
+                updates["directConversations/$memberUid/$conversationId/ownerId"] = presidentUid
+            }
+        }
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Grup izinleri güncellenemedi.", e)
+        }
+    }
+
+    override suspend fun addGroupMembers(
+        conversationId: String,
+        userIds: List<String>
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        if (!canAddGroupMembers(conv, uid)) {
+            return AppResult.Error(AppError.Auth("Gruba kişi ekleme yetkin yok."))
+        }
+        val toAdd = userIds.map { it.trim() }
+            .filter { it.isNotBlank() && it !in conv.participantIds }
+            .distinct()
+        if (toAdd.isEmpty()) return AppResult.Success(Unit)
+
+        val updatedMembers = (conv.participantIds + toAdd).distinct()
+        if (updatedMembers.size > 50) {
+            return AppResult.Error(AppError.Validation("Bir grup en fazla 50 kişi olabilir."))
+        }
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val now = System.currentTimeMillis()
+        val presidentUid = resolveGroupOwnerId(conv)
+        val resolvedAdmins = (conv.adminIds + listOfNotNull(presidentUid.takeIf { it.isNotBlank() })).distinct()
+        val membersMap = participantMap(updatedMembers)
+        val adminsMap = participantMap(resolvedAdmins)
+        val permPayload = permissionsMap(conv.groupPermissions)
+
+        val updates = mutableMapOf<String, Any>()
+        conv.participantIds.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = membersMap
+            if (conv.ownerId.isBlank() && presidentUid.isNotBlank()) {
+                updates["directConversations/$memberUid/$conversationId/ownerId"] = presidentUid
+                updates["directConversations/$memberUid/$conversationId/adminIds"] = adminsMap
+            }
+        }
+        toAdd.forEach { newUid ->
+            updates["directConversations/$newUid/$conversationId"] = mapOf(
+                "isGroup" to true,
+                "groupName" to conv.groupName.ifBlank { "Grup sohbeti" },
+                "groupDescription" to conv.groupDescription,
+                "groupPhotoUrl" to conv.groupPhotoUrl,
+                "ownerId" to presidentUid,
+                "adminIds" to adminsMap,
+                "groupPermissions" to permPayload,
+                "createdAt" to conv.createdAt.takeIf { it > 0L } ?: now,
+                "participantIds" to membersMap,
+                "lastMessage" to conv.lastMessage,
+                "updatedAt" to now,
+                "unreadCount" to 0
+            )
+        }
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Kişiler gruba eklenemedi.", e)
+        }
+    }
+
+    override suspend fun removeGroupMember(
+        conversationId: String,
+        targetUid: String
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val cleanTarget = targetUid.trim()
+        if (cleanTarget.isBlank()) {
+            return AppResult.Error(AppError.Validation("Geçersiz üye."))
+        }
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        if (cleanTarget !in conv.participantIds) {
+            return AppResult.Success(Unit)
+        }
+
+        val presidentUid = resolveGroupOwnerId(conv)
+        val isSelfLeave = cleanTarget == uid
+        if (!isSelfLeave) {
+            if (!canManageGroupSettings(conv, uid)) {
+                return AppResult.Error(AppError.Auth("Üye çıkarma yetkin yok."))
+            }
+            if (cleanTarget == presidentUid) {
+                return AppResult.Error(AppError.Auth("Grup Başkanı gruptan çıkarılamaz."))
+            }
+            if (cleanTarget in conv.adminIds && uid != presidentUid) {
+                return AppResult.Error(AppError.Auth("Bir yöneticiyi yalnızca Grup Başkanı çıkarabilir."))
+            }
+        }
+
+        val remainingMembers = conv.participantIds.filter { it != cleanTarget }
+        val updatedAdmins = conv.adminIds.filter { it in remainingMembers }.toMutableList()
+        val nextPresidentUid = when {
+            remainingMembers.isEmpty() -> ""
+            presidentUid == cleanTarget -> {
+                updatedAdmins.firstOrNull() ?: remainingMembers.first()
+            }
+            else -> presidentUid
+        }
+        if (nextPresidentUid.isNotBlank() && nextPresidentUid !in updatedAdmins) {
+            updatedAdmins.add(0, nextPresidentUid)
+        }
+
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val now = System.currentTimeMillis()
+        val updates = linkedMapOf<String, Any?>()
+        val remainingMap = participantMap(remainingMembers)
+        val adminsMap = participantMap(updatedAdmins)
+
+        remainingMembers.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = remainingMap
+            updates["directConversations/$memberUid/$conversationId/ownerId"] = nextPresidentUid
+            updates["directConversations/$memberUid/$conversationId/adminIds"] = adminsMap
+        }
+
+        if (isSelfLeave) {
+            updates["directConversations/$uid/$conversationId"] = null
+        } else {
+            updates["directConversations/$cleanTarget/$conversationId"] = mapOf(
+                "isGroup" to true,
+                "groupName" to conv.groupName.ifBlank { "Grup sohbeti" },
+                "groupDescription" to conv.groupDescription,
+                "groupPhotoUrl" to conv.groupPhotoUrl,
+                "ownerId" to nextPresidentUid,
+                "adminIds" to emptyMap<String, String>(),
+                "groupPermissions" to permissionsMap(conv.groupPermissions),
+                "participantIds" to mapOf(uid to uid),
+                "removedMember" to true,
+                "lastMessage" to "",
+                "updatedAt" to now,
+                "unreadCount" to 0
+            )
+        }
+
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error(if (isSelfLeave) "Gruptan ayrılınamadı." else "Üye çıkarılamadı.", e)
+        }
+    }
+
+    override suspend fun setGroupMemberAdmin(
+        conversationId: String,
+        targetUid: String,
+        isAdmin: Boolean
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val cleanTarget = targetUid.trim()
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        val presidentUid = resolveGroupOwnerId(conv)
+        if (uid != presidentUid) {
+            return AppResult.Error(AppError.Auth("Yönetici atama yetkisi yalnızca Grup Başkanındadır."))
+        }
+        if (cleanTarget.isBlank() || cleanTarget !in conv.participantIds) {
+            return AppResult.Error(AppError.Validation("Kullanıcı bu grubun üyesi değil."))
+        }
+        if (cleanTarget == presidentUid) {
+            return AppResult.Error(AppError.Validation("Grup Başkanının yönetici yetkisi değiştirilemez."))
+        }
+
+        val updatedAdmins = conv.adminIds.toMutableSet()
+        updatedAdmins.add(presidentUid)
+        if (isAdmin) {
+            updatedAdmins.add(cleanTarget)
+        } else {
+            updatedAdmins.remove(cleanTarget)
+        }
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val membersMap = participantMap(conv.participantIds)
+        val adminsMap = participantMap(updatedAdmins.toList())
+        val updates = mutableMapOf<String, Any>()
+        conv.participantIds.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/ownerId"] = presidentUid
+            updates["directConversations/$memberUid/$conversationId/adminIds"] = adminsMap
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = membersMap
+        }
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Yönetici yetkisi güncellenemedi.", e)
+        }
+    }
 
     override fun observeServerMessages(
         serverId: String,

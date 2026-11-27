@@ -37,6 +37,7 @@ import com.libra.app.ui.animation.AppleSprings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -168,10 +169,6 @@ fun AppNavHost(
         }
     }
 
-    LaunchedEffect(showNotifications, activeDirectConversationId) {
-        LibraNotificationRuntimeState.isNotificationsScreenOpen = showNotifications
-        LibraNotificationRuntimeState.activeDirectConversationId = activeDirectConversationId
-    }
 
     DisposableEffect(lifecycleOwner, currentUser?.uid) {
         val observer = LifecycleEventObserver { _, event ->
@@ -275,6 +272,7 @@ fun AppNavHost(
     }
 
     fun handleNotificationNavigation(notification: AppNotification) {
+        val myUid = currentUser?.uid.orEmpty()
         if (!notification.read && notification.id.isNotBlank()) {
             scope.launch { ServiceLocator.notificationRepository.markRead(notification.id) }
         }
@@ -285,6 +283,20 @@ fun AppNavHost(
                 selectedBook = null
                 selectedPublicProfile = null
                 selectedTab = BottomNavTab.DM
+                val convId = notification.referenceId.ifBlank {
+                    if (myUid.isNotBlank() && notification.actorId.isNotBlank()) {
+                        listOf(myUid, notification.actorId).sorted().joinToString("_")
+                    } else ""
+                }
+                if (convId.isNotBlank()) {
+                    LibraNotificationRuntimeState.activeDirectConversationId = convId
+                    LibraNotificationHelper.cancelConversationNotification(context, myUid, convId)
+                    if (myUid.isNotBlank()) {
+                        scope.launch {
+                            ServiceLocator.notificationRepository.markConversationNotificationsRead(myUid, convId)
+                        }
+                    }
+                }
                 if (notification.actorId.isNotBlank()) {
                     scope.launch {
                         val user = (ServiceLocator.userRepository.getUserProfileFresh(notification.actorId) as? com.libra.app.core.result.AppResult.Success)?.data
@@ -306,6 +318,13 @@ fun AppNavHost(
                 selectedPublicProfile = null
                 selectedTab = BottomNavTab.DM
                 if (notification.referenceId.isNotBlank()) {
+                    LibraNotificationRuntimeState.activeDirectConversationId = notification.referenceId
+                    LibraNotificationHelper.cancelConversationNotification(context, myUid, notification.referenceId)
+                    if (myUid.isNotBlank()) {
+                        scope.launch {
+                            ServiceLocator.notificationRepository.markConversationNotificationsRead(myUid, notification.referenceId)
+                        }
+                    }
                     selectedDirectConversationId = notification.referenceId
                 }
             }
@@ -605,6 +624,22 @@ fun AppNavHost(
         isDmChatOpen ||
         (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
         (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
+
+    val isMessagesTabVisible = selectedTab == BottomNavTab.DM &&
+        !showCreateBook && createContentMode == null && readerBook == null &&
+        selectedBook == null && selectedWritingBook == null && selectedPublicProfile == null &&
+        !showNotifications && !showCommunityServers && !showGlobalChat && !showAdminPanel &&
+        !showProfileEdit && !showSettings
+
+    SideEffect {
+        LibraNotificationRuntimeState.isNotificationsScreenOpen = showNotifications
+        LibraNotificationRuntimeState.isMessagesTabOpen = isMessagesTabVisible
+        LibraNotificationRuntimeState.activeDirectConversationId = if (selectedTab == BottomNavTab.DM) {
+            activeDirectConversationId
+        } else {
+            null
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(

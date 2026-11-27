@@ -4,6 +4,7 @@ import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.DirectConversation
 import com.libra.app.domain.model.DirectMessage
 import com.libra.app.domain.model.GlobalChatMessage
+import com.libra.app.domain.model.GroupPermissions
 import com.libra.app.domain.model.ServerMessage
 import com.libra.app.domain.model.ReactionUser
 import com.libra.app.domain.model.SharedContent
@@ -51,6 +52,11 @@ interface ChatRepository {
     suspend fun createGroupConversation(name: String, participantIds: List<String>): AppResult<DirectConversation>
     suspend fun sendGroupMessage(conversationId: String, text: String, replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
     suspend fun sendGroupMediaMessage(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
+    suspend fun updateGroupInfo(conversationId: String, name: String, description: String): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun updateGroupPermissions(conversationId: String, permissions: GroupPermissions): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun addGroupMembers(conversationId: String, userIds: List<String>): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun removeGroupMember(conversationId: String, targetUid: String): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun setGroupMemberAdmin(conversationId: String, targetUid: String, isAdmin: Boolean): AppResult<Unit> = AppResult.Success(Unit)
 
     fun observeServerMessages(serverId: String, limit: Long = 100, channelId: String = ""): Flow<AppResult<List<ServerMessage>>>
     suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>

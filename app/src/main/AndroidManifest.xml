@@ -67,6 +67,7 @@
             <intent-filter>
                 <action android:name="com.libra.app.ACTION_NOTIF_INLINE_REPLY" />
                 <action android:name="com.libra.app.ACTION_NOTIF_MARK_READ" />
+                <action android:name="com.libra.app.ACTION_NOTIF_DISMISSED" />
             </intent-filter>
         </receiver>
 

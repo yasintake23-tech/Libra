@@ -28,4 +28,7 @@ interface NotificationRepository {
 
     suspend fun fetchUnreadNotifications(uid: String, limit: Long = 25): AppResult<List<AppNotification>> =
         AppResult.Success(emptyList())
+
+    suspend fun markConversationNotificationsRead(uid: String, conversationId: String): AppResult<Unit> =
+        AppResult.Success(Unit)
 }

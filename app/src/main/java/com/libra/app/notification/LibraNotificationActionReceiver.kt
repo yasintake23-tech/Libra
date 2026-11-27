@@ -23,7 +23,7 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val safeIntent = intent ?: return
         val action = safeIntent.action.orEmpty()
-        if (action != ACTION_INLINE_REPLY && action != ACTION_MARK_READ) return
+        if (action != ACTION_INLINE_REPLY && action != ACTION_MARK_READ && action != ACTION_DISMISSED) return
 
         val appContext = context.applicationContext
         val notificationId = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ID).orEmpty()
@@ -33,6 +33,7 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
         val title = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_TITLE).orEmpty()
         val incomingBody = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_BODY).orEmpty()
         val actorName = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_ACTOR_NAME).orEmpty()
+        val convKeyExtra = safeIntent.getStringExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_CONV_KEY).orEmpty()
         val requestCode = safeIntent.getIntExtra(LibraNotificationHelper.EXTRA_NOTIFICATION_REQUEST_CODE, 0)
 
         val replyText = if (action == ACTION_INLINE_REPLY) {
@@ -51,7 +52,9 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
                 LibraNotificationSyncManager.ensureFirebaseInitialized(appContext)
                 val currentUid = runCatching { FirebaseAuth.getInstance().currentUser?.uid }.getOrNull().orEmpty()
                 if (currentUid.isBlank()) {
-                    if (requestCode != 0) LibraNotificationHelper.cancelNotification(appContext, requestCode)
+                    if (requestCode != 0 && action != ACTION_DISMISSED) {
+                        LibraNotificationHelper.cancelNotification(appContext, requestCode)
+                    }
                     return@launch
                 }
 
@@ -64,13 +67,26 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
                     isDm && actorId.isNotBlank() -> listOf(currentUid, actorId).sorted().joinToString("_")
                     else -> ""
                 }
+                val trayKey = convKeyExtra.ifBlank { conversationId }
 
                 when (action) {
+                    ACTION_DISMISSED -> {
+                        if (trayKey.isNotBlank()) {
+                            NotificationPreferencesStore(appContext).clearChatTrayMessages(currentUid, trayKey)
+                        }
+                    }
+
                     ACTION_MARK_READ -> {
+                        if (trayKey.isNotBlank()) {
+                            NotificationPreferencesStore(appContext).clearChatTrayMessages(currentUid, trayKey)
+                        }
                         if (notificationId.isNotBlank()) {
                             runCatching { ServiceLocator.notificationRepository.markRead(notificationId) }
                         }
                         if (conversationId.isNotBlank()) {
+                            runCatching {
+                                ServiceLocator.notificationRepository.markConversationNotificationsRead(currentUid, conversationId)
+                            }
                             runCatching { ServiceLocator.chatRepository.markDirectConversationRead(conversationId) }
                         }
                         if (requestCode != 0) {
@@ -101,10 +117,16 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
                             else -> AppResult.Success(Unit)
                         }
 
+                        if (trayKey.isNotBlank()) {
+                            NotificationPreferencesStore(appContext).clearChatTrayMessages(currentUid, trayKey)
+                        }
                         if (notificationId.isNotBlank()) {
                             runCatching { ServiceLocator.notificationRepository.markRead(notificationId) }
                         }
                         if (conversationId.isNotBlank()) {
+                            runCatching {
+                                ServiceLocator.notificationRepository.markConversationNotificationsRead(currentUid, conversationId)
+                            }
                             runCatching { ServiceLocator.chatRepository.markDirectConversationRead(conversationId) }
                         }
 
@@ -131,5 +153,6 @@ class LibraNotificationActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_INLINE_REPLY = "com.libra.app.ACTION_NOTIF_INLINE_REPLY"
         const val ACTION_MARK_READ = "com.libra.app.ACTION_NOTIF_MARK_READ"
+        const val ACTION_DISMISSED = "com.libra.app.ACTION_NOTIF_DISMISSED"
     }
 }

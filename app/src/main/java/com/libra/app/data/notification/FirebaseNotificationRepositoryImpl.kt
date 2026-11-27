@@ -5,6 +5,7 @@ import com.google.firebase.firestore.Source
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
+import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.repository.NotificationRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -119,6 +120,29 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Bildirimler okunamadı.", e))
+        }
+    }
+
+    override suspend fun markConversationNotificationsRead(uid: String, conversationId: String): AppResult<Unit> {
+        if (uid.isBlank() || conversationId.isBlank()) return AppResult.Success(Unit)
+        return try {
+            val snapshot = ref.whereEqualTo("recipientId", uid).get().await()
+            val matchingUnreadDocs = snapshot.documents.filter { doc ->
+                if (doc.getBoolean("read") == true) return@filter false
+                val refId = doc.getString("referenceId").orEmpty()
+                val type = doc.getString("type").orEmpty()
+                val isChatType = type == LibraNotificationTypes.MESSAGE ||
+                    type == LibraNotificationTypes.GROUP_MESSAGE
+                isChatType && refId == conversationId
+            }
+            matchingUnreadDocs.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { doc -> batch.update(doc.reference, "read", true) }
+                batch.commit().await()
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sohbet bildirimleri okunamadı.", e))
         }
     }
 }
