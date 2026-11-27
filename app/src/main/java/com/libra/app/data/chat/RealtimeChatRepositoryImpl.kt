@@ -1249,7 +1249,7 @@ class RealtimeChatRepositoryImpl(
                 "ownerId" to presidentUid,
                 "adminIds" to adminsMap,
                 "groupPermissions" to permPayload,
-                "createdAt" to conv.createdAt.takeIf { it > 0L } ?: now,
+                "createdAt" to (conv.createdAt.takeIf { it > 0L } ?: now),
                 "participantIds" to membersMap,
                 "lastMessage" to conv.lastMessage,
                 "updatedAt" to now,
