@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.libra.app.ui.animation.appleBouncy
 import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 
@@ -42,7 +43,10 @@ fun UserAvatar(
     Box(
         modifier = modifier
             .size(size)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) Modifier.appleBouncy(pressedScale = 0.90f, onClick = onClick)
+                else Modifier
+            )
             .testTag("user_avatar")
     ) {
         Box(

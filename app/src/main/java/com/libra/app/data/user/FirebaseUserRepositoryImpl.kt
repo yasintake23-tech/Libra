@@ -1,6 +1,7 @@
 package com.libra.app.data.user
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Source
@@ -164,17 +165,42 @@ class FirebaseUserRepositoryImpl : UserRepository {
                 updatedAt = System.currentTimeMillis()
             )
 
-            when (val saved = createOrUpdateProfile(finalProfile)) {
-                is AppResult.Success -> saved
-                is AppResult.Error -> {
+            try {
+                // Normal path: update the auth-created placeholder profile.
+                // The repository rules already allow this transition.
+                usersRef.document(normalizedProfile.uid).set(finalProfile).await()
+                cache[normalizedProfile.uid] = finalProfile
+                AppResult.Success(finalProfile)
+            } catch (e: FirebaseFirestoreException) {
+                // Backward compatibility for devices hitting an older deployed
+                // ruleset that still rejects profileCompleted=false -> true
+                // updates. Owner delete/create is allowed by that ruleset.
+                if (e.code != FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                    throw e
+                }
+
+                usersRef.document(normalizedProfile.uid).delete().await()
+                try {
+                    usersRef.document(normalizedProfile.uid).set(finalProfile).await()
+                    cache[normalizedProfile.uid] = finalProfile
+                    AppResult.Success(finalProfile)
+                } catch (retryError: Exception) {
                     runCatching {
                         val current = usernameDoc.get(Source.SERVER).await()
                         if (current.getString("uid") == normalizedProfile.uid) {
                             usernameDoc.delete().await()
                         }
                     }
-                    saved
+                    throw retryError
                 }
+            } catch (e: Exception) {
+                runCatching {
+                    val current = usernameDoc.get(Source.SERVER).await()
+                    if (current.getString("uid") == normalizedProfile.uid) {
+                        usernameDoc.delete().await()
+                    }
+                }
+                throw e
             }
         } catch (e: UsernameTakenException) {
             AppResult.Error(AppError.Validation("Bu kullanıcı adı zaten kullanılıyor."))

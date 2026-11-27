@@ -1,39 +1,73 @@
 package com.libra.app.ui.navigation
 
+import android.Manifest
+import android.app.Activity
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.libra.app.ui.animation.AppleSprings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libra.app.core.state.UiState
 import com.libra.app.core.di.ServiceLocator
+import com.libra.app.domain.model.AppNotification
 import com.libra.app.domain.model.Book
+import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
+import com.libra.app.domain.model.AdminPermissionSet
+import com.libra.app.domain.model.countUnreadPrivateConversations
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
@@ -48,9 +82,18 @@ import com.libra.app.feature.home.CreateContentMode
 import com.libra.app.feature.home.CreateContentScreen
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
-import com.libra.app.feature.messages.DirectMessagesScreen
-import com.libra.app.feature.messages.GlobalChatScreen
 import com.libra.app.feature.messages.CommunityServersScreen
+import com.libra.app.feature.messages.CommunityServersViewModel
+import com.libra.app.feature.messages.DirectMessagesScreen
+import com.libra.app.feature.messages.DirectMessagesViewModel
+import com.libra.app.feature.messages.DmHubMode
+import com.libra.app.feature.messages.DmWorkspacePreferences
+import com.libra.app.feature.messages.GlobalChatScreen
+import com.libra.app.feature.messages.GlobalChatViewModel
+import com.libra.app.feature.messages.LibraMessagingTopChrome
+import com.libra.app.feature.messages.MessageInboxFilter
+import com.libra.app.feature.messages.PortalTransitionOverlay
+import com.libra.app.feature.messages.PortalTransitionRequest
 import com.libra.app.feature.notifications.NotificationsScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
@@ -58,10 +101,28 @@ import com.libra.app.feature.profile.ProfileSetupScreen
 import com.libra.app.feature.profile.ProfileEditScreen
 import com.libra.app.feature.profile.ProfileViewModel
 import com.libra.app.feature.settings.SettingsScreen
+import com.libra.app.feature.book.manage.BookManagementRootScreen
 import com.libra.app.feature.write.BookEditorScreen
 import com.libra.app.feature.write.WriteScreen
 import com.libra.app.feature.write.WriteViewModel
+import com.libra.app.feature.write.create.CreateBookScreen
+import com.libra.app.feature.reader.BookReaderScreen
+import com.libra.app.feature.book.BookDetailScreen
+import com.libra.app.notification.InAppNotificationBanner
+import com.libra.app.notification.LibraNotificationHelper
+import com.libra.app.notification.LibraNotificationJobService
+import com.libra.app.notification.LibraNotificationReceiver
+import com.libra.app.notification.LibraNotificationRuntimeState
+import com.libra.app.notification.LibraNotificationSyncManager
+import com.libra.app.notification.NotificationLaunchPayload
+import com.libra.app.notification.NotificationPermissionRationaleDialog
+import com.libra.app.notification.NotificationPreferencesStore
+import com.libra.app.notification.NotificationSyncCoordinator
 import com.libra.app.ui.components.LoadingView
+import com.libra.app.feature.update.AppUpdatePrompt
+import com.libra.app.feature.update.AppUpdateViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -69,7 +130,9 @@ fun AppNavHost(
     authViewModel: AuthViewModel = viewModel(),
     modifier: Modifier = Modifier,
     darkTheme: Boolean = true,
-    onDarkThemeChanged: (Boolean) -> Unit = {}
+    onDarkThemeChanged: (Boolean) -> Unit = {},
+    pendingNotificationLaunch: NotificationLaunchPayload? = null,
+    onNotificationLaunchConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -83,12 +146,115 @@ fun AppNavHost(
     var showAdminPanel by remember { mutableStateOf(false) }
     var showProfileEdit by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
-    var showCommunityServers by remember { mutableStateOf(false) }
+    val dmWorkspacePrefs = remember(context) { DmWorkspacePreferences(context) }
+    var dmHubMode by remember(dmWorkspacePrefs) { mutableStateOf(dmWorkspacePrefs.readHubMode()) }
+    var portalTransition by remember { mutableStateOf<PortalTransitionRequest?>(null) }
+    var portalNonce by remember { mutableIntStateOf(0) }
+    val dmInboxListState = rememberLazyListState()
+    val globalChatListState = rememberLazyListState()
+    val serverHubListState = rememberLazyListState()
+    var dmInboxFilter by remember { mutableStateOf(MessageInboxFilter.ALL) }
+    var dmSearchActive by remember { mutableStateOf(false) }
+    var dmSearchQuery by remember { mutableStateOf("") }
     var showNotifications by remember { mutableStateOf(false) }
+    var unreadNotificationCount by remember { mutableStateOf(0) }
+    var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
     var selectedBook by remember { mutableStateOf<Book?>(null) }
+    var readerBook by remember { mutableStateOf<Book?>(null) }
+    var readerChapterId by remember { mutableStateOf<String?>(null) }
     var selectedWritingBook by remember { mutableStateOf<Book?>(null) }
+    var showCreateBook by remember { mutableStateOf(false) }
     var selectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
     var selectedDirectUser by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    var selectedDirectConversationId by remember { mutableStateOf<String?>(null) }
+    var activeDirectConversationId by remember { mutableStateOf<String?>(null) }
+    var activeInAppBanner by remember { mutableStateOf<AppNotification?>(null) }
+    var announcementNotification by remember { mutableStateOf<AppNotification?>(null) }
+    var showNotificationRationale by remember { mutableStateOf(false) }
+    var showBatteryOptPrompt by remember { mutableStateOf(false) }
+
+    val notificationStore = remember(context) { NotificationPreferencesStore(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val notificationPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationStore.markPermissionPrompted()
+        val uid = currentUser?.uid.orEmpty()
+        if ((granted || LibraNotificationHelper.hasNotificationPermission(context)) && uid.isNotBlank()) {
+            LibraNotificationSyncManager.syncRegistrationState(
+                context = context,
+                uid = uid,
+                allowStartForegroundService = true
+            )
+            if (!LibraNotificationHelper.isIgnoringBatteryOptimizations(context) && !notificationStore.wasBatteryPrompted()) {
+                notificationStore.markBatteryPrompted()
+                showBatteryOptPrompt = true
+            }
+        }
+    }
+
+
+    DisposableEffect(lifecycleOwner, currentUser?.uid) {
+        val observer = LifecycleEventObserver { _, event ->
+            val uid = currentUser?.uid.orEmpty()
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    LibraNotificationRuntimeState.isAppInForeground = true
+                    if (uid.isNotBlank()) {
+                        LibraNotificationSyncManager.syncRegistrationState(
+                            context = context,
+                            uid = uid,
+                            allowStartForegroundService = true
+                        )
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    LibraNotificationRuntimeState.isAppInForeground = false
+                    if (uid.isNotBlank() &&
+                        NotificationPreferencesStore(context).readPreferences().masterEnabled &&
+                        LibraNotificationHelper.hasNotificationPermission(context)
+                    ) {
+                        LibraNotificationJobService.schedulePeriodicSync(context)
+                        LibraNotificationJobService.scheduleImmediateCheck(context)
+                        LibraNotificationReceiver.scheduleBackupAlarm(context)
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            LibraNotificationRuntimeState.isAppInForeground = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        LibraNotificationHelper.ensureChannels(context)
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !LibraNotificationHelper.hasNotificationPermission(context) &&
+            !notificationStore.wasPermissionPrompted()
+        ) {
+            delay(350L)
+            notificationStore.markPermissionPrompted()
+            val activity = context as? Activity
+            if (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)) {
+                showNotificationRationale = true
+            } else {
+                notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else if (
+            LibraNotificationHelper.hasNotificationPermission(context) &&
+            !LibraNotificationHelper.isIgnoringBatteryOptimizations(context) &&
+            !notificationStore.wasBatteryPrompted()
+        ) {
+            delay(500L)
+            notificationStore.markBatteryPrompted()
+            showBatteryOptPrompt = true
+        }
+    }
+
     fun openPublicProfile(uid: String) {
         if (uid.isBlank()) return
         scope.launch {
@@ -110,6 +276,294 @@ fun AppNavHost(
     val friendsVm: FriendsViewModel = viewModel()
     val friendsState by friendsVm.uiState.collectAsState()
     val writeVm: WriteViewModel = viewModel()
+    val homeVm: HomeViewModel = viewModel()
+    val libraryVm: LibraryViewModel = viewModel()
+    val profileVm: ProfileViewModel = viewModel()
+    val directMessagesVm: DirectMessagesViewModel = viewModel()
+    val globalChatVm: GlobalChatViewModel = viewModel()
+    val serversVm: CommunityServersViewModel = viewModel()
+    val updateVm: AppUpdateViewModel = viewModel()
+    val updateState by updateVm.uiState.collectAsState()
+
+    val dmConversations by directMessagesVm.conversations.collectAsState()
+    val unreadPrivateChatCount = remember(dmConversations) {
+        countUnreadPrivateConversations(dmConversations)
+    }
+    val activeServerChannelId by serversVm.selectedChannelId.collectAsState()
+
+    LaunchedEffect(currentUser?.uid) {
+        if (!currentUser?.uid.isNullOrBlank()) {
+            directMessagesVm.refreshConversations()
+            globalChatVm.refresh()
+            serversVm.refreshServers()
+        }
+    }
+
+    fun switchDmHubModeImmediately(mode: DmHubMode) {
+        dmSearchActive = false
+        dmSearchQuery = ""
+        dmHubMode = mode
+        dmWorkspacePrefs.saveHubMode(mode)
+    }
+
+    fun launchPortalTransition(targetMode: DmHubMode, originInRoot: Offset) {
+        if (dmHubMode == targetMode && portalTransition == null) return
+        if (portalTransition?.targetMode == targetMode) return
+        dmSearchActive = false
+        dmSearchQuery = ""
+        val originMode = dmHubMode
+        portalNonce++
+        portalTransition = PortalTransitionRequest(
+            fromMode = originMode,
+            targetMode = targetMode,
+            originInRoot = originInRoot,
+            nonce = portalNonce
+        )
+    }
+
+    fun closeNavigationOverlays() {
+        showNotifications = false
+        showSettings = false
+        showAdminPanel = false
+        showProfileEdit = false
+        showGlobalChat = false
+        showCreateBook = false
+        createContentMode = null
+        selectedWritingBook = null
+        readerBook = null
+    }
+
+    fun handleNotificationNavigation(notification: AppNotification) {
+        val myUid = currentUser?.uid.orEmpty()
+        if (!notification.read && notification.id.isNotBlank()) {
+            scope.launch { ServiceLocator.notificationRepository.markRead(notification.id) }
+        }
+        activeInAppBanner = null
+        when (notification.type.uppercase()) {
+            LibraNotificationTypes.MESSAGE -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.MESSAGES)
+                selectedTab = BottomNavTab.DM
+                val convId = notification.referenceId.ifBlank {
+                    if (myUid.isNotBlank() && notification.actorId.isNotBlank()) {
+                        listOf(myUid, notification.actorId).sorted().joinToString("_")
+                    } else ""
+                }
+                if (convId.isNotBlank()) {
+                    LibraNotificationRuntimeState.activeDirectConversationId = convId
+                    LibraNotificationHelper.cancelConversationNotification(context, myUid, convId)
+                    if (myUid.isNotBlank()) {
+                        scope.launch {
+                            ServiceLocator.notificationRepository.markConversationNotificationsRead(myUid, convId)
+                        }
+                    }
+                }
+                if (notification.actorId.isNotBlank()) {
+                    scope.launch {
+                        val user = (ServiceLocator.userRepository.getUserProfileFresh(notification.actorId) as? com.libra.app.core.result.AppResult.Success)?.data
+                            ?: com.libra.app.domain.model.UserProfile(
+                                uid = notification.actorId,
+                                displayName = notification.actorName.ifBlank { "Libra Kullanıcısı" },
+                                username = notification.actorUsername,
+                                profileImageUrl = notification.actorPhotoUrl
+                            )
+                        selectedDirectUser = user
+                    }
+                } else if (notification.referenceId.isNotBlank()) {
+                    selectedDirectConversationId = notification.referenceId
+                }
+            }
+            LibraNotificationTypes.GROUP_MESSAGE -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.MESSAGES)
+                selectedTab = BottomNavTab.DM
+                if (notification.referenceId.isNotBlank()) {
+                    LibraNotificationRuntimeState.activeDirectConversationId = notification.referenceId
+                    LibraNotificationHelper.cancelConversationNotification(context, myUid, notification.referenceId)
+                    if (myUid.isNotBlank()) {
+                        scope.launch {
+                            ServiceLocator.notificationRepository.markConversationNotificationsRead(myUid, notification.referenceId)
+                        }
+                    }
+                    selectedDirectConversationId = notification.referenceId
+                }
+            }
+            LibraNotificationTypes.LIKE,
+            LibraNotificationTypes.COMMENT,
+            LibraNotificationTypes.COMMENT_REPLY -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                if (notification.referenceId.isNotBlank()) {
+                    homeVm.ensurePostVisible(notification.referenceId)
+                    notificationPostTargetId = notification.referenceId
+                }
+                selectedTab = BottomNavTab.HOME
+            }
+            LibraNotificationTypes.BOOK_LIKE,
+            LibraNotificationTypes.BOOK_COMMENT,
+            LibraNotificationTypes.BOOK_COMMENT_REPLY -> {
+                if (notification.referenceId.isNotBlank()) {
+                    scope.launch {
+                        val res = ServiceLocator.bookRepository.getBookById(notification.referenceId).first()
+                        val targetBook = (res as? com.libra.app.core.result.AppResult.Success)?.data
+                        if (targetBook != null) {
+                            closeNavigationOverlays()
+                            selectedPublicProfile = null
+                            selectedBook = targetBook
+                        } else {
+                            Toast.makeText(context, "Kitap bulunamadı.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            LibraNotificationTypes.FOLLOW,
+            LibraNotificationTypes.STORY_LIKE -> {
+                closeNavigationOverlays()
+                if (notification.actorId.isNotBlank()) {
+                    openPublicProfile(notification.actorId)
+                }
+            }
+            LibraNotificationTypes.SERVER_MENTION -> {
+                closeNavigationOverlays()
+                selectedBook = null
+                selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.SERVERS)
+                selectedTab = BottomNavTab.DM
+            }
+            LibraNotificationTypes.ADMIN_BROADCAST,
+            LibraNotificationTypes.ADMIN_FEEDBACK -> {
+                showNotifications = false
+                announcementNotification = notification
+            }
+            else -> {
+                showNotifications = true
+            }
+        }
+    }
+
+    // Keep the update prompt above all authentication/profile early returns.
+    // Release metadata is public, so this works for signed-out and incomplete profiles too.
+    updateState.release?.let { release ->
+        AppUpdatePrompt(
+            release = release,
+            progress = updateState.progress,
+            downloading = updateState.downloading,
+            error = updateState.error,
+            forceUpdate = release.forceUpdate,
+            onDownload = { updateVm.download(context) },
+            onDismiss = updateVm::dismissUpdate,
+            onClearError = updateVm::clearError,
+            downloadedFile = updateState.downloadedFile
+        )
+    }
+
+    if (showNotificationRationale) {
+        NotificationPermissionRationaleDialog(
+            onAllowClick = {
+                showNotificationRationale = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            },
+            onDismiss = { showNotificationRationale = false }
+        )
+    }
+
+    if (showBatteryOptPrompt) {
+        AlertDialog(
+            onDismissRequest = { showBatteryOptPrompt = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "Kapalıyken Mesaj Bildirimleri",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Uygulama tamamen kapalıyken Android/Samsung pil tasarrufunun mesaj bildirimlerini durdurmaması için pil iznini 'Kısıtlanmamış' yapabilirsin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBatteryOptPrompt = false
+                        LibraNotificationHelper.openBatteryOptimizationSettings(context)
+                    }
+                ) {
+                    Text("İzin Ver")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatteryOptPrompt = false }) {
+                    Text("Şimdi Değil")
+                }
+            }
+        )
+    }
+
+    // Update checks must run independently of authentication/profile setup.
+    // This lets a fresh install see a mandatory/new release before login or registration.
+    LaunchedEffect(currentUser?.uid) {
+        updateVm.checkForUpdate()
+    }
+
+    LaunchedEffect(activeInAppBanner?.id) {
+        if (activeInAppBanner != null) {
+            delay(4500L)
+            activeInAppBanner = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        LibraNotificationRuntimeState.inAppBannerEvents.collect { fresh ->
+            activeInAppBanner = fresh
+        }
+    }
+
+    val runtimeUnreadCount by LibraNotificationRuntimeState.unreadCount.collectAsState()
+    LaunchedEffect(runtimeUnreadCount) {
+        unreadNotificationCount = runtimeUnreadCount
+    }
+
+    LaunchedEffect(currentUser?.uid) {
+        val uid = currentUser?.uid.orEmpty()
+        if (uid.isBlank()) {
+            unreadNotificationCount = 0
+            LibraNotificationRuntimeState.updateUnreadCount(0)
+            LibraNotificationSyncManager.stopAll(context)
+            return@LaunchedEffect
+        }
+
+        LibraNotificationSyncManager.syncRegistrationState(
+            context = context,
+            uid = uid,
+            allowStartForegroundService = true
+        )
+        ServiceLocator.notificationRepository.observeNotifications(uid, limit = 120).collect { result ->
+            when (result) {
+                is com.libra.app.core.result.AppResult.Success -> {
+                    val dismissed = NotificationPreferencesStore(context).getDismissedNotificationIds(uid)
+                    val list = if (dismissed.isEmpty()) result.data else result.data.filterNot { it.id in dismissed }
+                    unreadNotificationCount = list.count { !it.read }
+                    NotificationSyncCoordinator.processIncomingNotifications(
+                        context = context,
+                        uid = uid,
+                        notifications = list,
+                        updateUnreadBadgeCount = true
+                    )
+                }
+                is com.libra.app.core.result.AppResult.Error -> Unit
+            }
+        }
+    }
 
     LaunchedEffect(currentUser?.uid, selectedTab) {
         if (selectedTab == BottomNavTab.DISCOVER && currentUser?.uid?.isNotBlank() == true) {
@@ -127,19 +581,10 @@ fun AppNavHost(
                         GoogleAuthHelper.launchGoogleSignIn(
                             context = context,
                             onSuccess = { token, name, email, photo ->
-                                authViewModel.signInWithGoogle(
-                                    token,
-                                    name,
-                                    email,
-                                    photo
-                                )
+                                authViewModel.signInWithGoogle(token, name, email, photo)
                             },
                             onError = {
-                                Toast.makeText(
-                                    context,
-                                    it,
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(context, it, Toast.LENGTH_LONG).show()
                             }
                         )
                     }
@@ -152,393 +597,732 @@ fun AppNavHost(
     }
 
     val profile = currentUser
-
     if (profile == null) {
         LoadingView(message = "Profil hazırlanıyor…")
         return
     }
 
-    createContentMode?.let { mode ->
-        val vm: HomeViewModel = viewModel()
-        CreateContentScreen(
-            mode = mode,
-            user = profile,
-            isPosting = vm.isPosting.collectAsState().value,
-            error = vm.postError.collectAsState().value,
-            onPublishPost = { title, text, tags, mediaUrl, mediaType ->
-                vm.createRichPost(
-                    title = title,
-                    text = text,
-                    tags = tags,
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
-                    onComplete = { success ->
-                        if (success && mode == CreateContentMode.POST) {
-                            createContentMode = null
-                            selectedTab = BottomNavTab.HOME
-                        }
-                    }
-                )
-            },
-            onPublishStory = { text, mediaUrl, mediaType ->
-                vm.createStory(
-                    text = text,
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
-                    onComplete = { success ->
-                        if (success) {
-                            createContentMode = null
-                            selectedTab = BottomNavTab.HOME
-                        }
-                    }
-                )
-            },
-            onBack = { createContentMode = null },
-            onClearError = vm::clearPostError,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    selectedWritingBook?.let { book ->
-        val chapters by writeVm.editorChapters.collectAsState()
-        val isSaving by writeVm.editorSaving.collectAsState()
-        val editorError by writeVm.editorError.collectAsState()
-
-        BookEditorScreen(
-            book = book,
-            chapters = chapters,
-            isSaving = isSaving,
-            error = editorError,
-            onLoadChapters = writeVm::loadChapters,
-            onSaveBook = writeVm::saveBook,
-            onSaveChapter = writeVm::saveChapter,
-            onPublish = writeVm::publishBook,
-            onClearError = writeVm::clearEditorError,
-            onBack = { selectedWritingBook = null },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    selectedPublicProfile?.let { publicProfile ->
-        PublicProfileScreen(
-            profile = publicProfile,
-            isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
-            onBack = { selectedPublicProfile = null },
-            onFollow = { friendsVm.toggleFollowUser(publicProfile) },
-            onMessage = {
-                selectedPublicProfile = null
-                selectedDirectUser = publicProfile
-                selectedTab = BottomNavTab.DM
-            },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showNotifications) {
-        NotificationsScreen(
-            onBack = { showNotifications = false },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showCommunityServers) {
-        CommunityServersScreen(
-            onBack = { showCommunityServers = false },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showGlobalChat) {
-        GlobalChatScreen(
-            onBack = { showGlobalChat = false },
-            onOpenProfile = ::openPublicProfile,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showAdminPanel) {
-        if (profile.uid == LIBRA_ADMIN_UID) {
-            AdminPanelScreen(
-                onBack = { showAdminPanel = false },
-                modifier = modifier.fillMaxSize()
-            )
-        } else {
-            showAdminPanel = false
-        }
-        return
-    }
-
-    if (showProfileEdit) {
-        ProfileEditScreen(
-            profile = profile,
-            onSaved = {
-                showProfileEdit = false
-                authViewModel.checkSession()
-            },
-            onBack = { showProfileEdit = false },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (showSettings) {
-        SettingsScreen(
-            profile = profile,
-            darkTheme = darkTheme,
-            onDarkThemeChanged = onDarkThemeChanged,
-            onEditProfile = { showProfileEdit = true },
-            onSignOut = {
-                showSettings = false
-                authViewModel.signOut()
-                selectedTab = BottomNavTab.HOME
-            },
-            onBack = { showSettings = false },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    if (!profile.profileCompleted) {
-        ProfileSetupScreen(
-            profile = profile,
-            onCompleted = authViewModel::checkSession,
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
-
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
-        bottomBar = {
-            LibraBottomBar(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it }
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier.fillMaxSize()
-    ) { paddingValues ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when (selectedTab) {
-                BottomNavTab.HOME -> {
-                    val vm: HomeViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
-
-                    HomeScreen(
-                        state,
-                        { selectedBook = it },
-                        { selectedTab = BottomNavTab.WRITE },
-                        { selectedTab = BottomNavTab.LIBRARY },
-                        { selectedTab = BottomNavTab.PROFILE },
-                        { selectedTab = BottomNavTab.DISCOVER },
-                        { showCommunityServers = true },
-                        { showNotifications = true },
-                        vm::loadHomeData,
-                        onCreatePost = vm::createPost,
-                        onOpenCreatePost = { createContentMode = CreateContentMode.POST },
-                        onOpenCreateStory = { createContentMode = CreateContentMode.STORY },
-                        onToggleLike = vm::toggleLike,
-                        onToggleSave = vm::toggleSave,
-                        onDeletePost = vm::deletePost,
-                        onOpenComments = vm::openComments,
-                        comments = vm.comments.collectAsState().value,
-                        onAddComment = vm::addComment,
-                        onDeleteComment = vm::deleteComment,
-                        isCommenting = vm.isCommenting.collectAsState().value,
-                        commentError = vm.commentError.collectAsState().value,
-                        onClearCommentError = vm::clearCommentError,
-                        onCloseComments = vm::closeComments,
-                        isPosting = vm.isPosting.collectAsState().value,
-                        postError = vm.postError.collectAsState().value,
-                        onClearPostError = vm::clearPostError,
-                        onOpenProfile = ::openPublicProfile,
-                        onStoryReply = { story ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        result.data?.let {
-                                            selectedDirectUser = it
-                                            selectedTab = BottomNavTab.DM
-                                            scope.launch {
-                                                val shared = SharedContent(
-                                                    type = "story",
-                                                    id = story.id,
-                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
-                                                    text = story.text,
-                                                    authorId = story.authorId,
-                                                    authorName = story.authorName,
-                                                    mediaUrl = story.mediaUrl,
-                                                    url = sharedContentUrl("story", story.id)
-                                                )
-                                                ServiceLocator.chatRepository.sendDirectMessage(
-                                                    recipientId = story.authorId,
-                                                    text = "Hikâyenden bahsetti.",
-                                                    sharedContent = shared
-                                                )
-                                            }
-                                        }
-                                    }
-                                    is com.libra.app.core.result.AppResult.Error -> {
-                                        Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        },
-                        onStoryLike = vm::toggleStoryLike,
-                        onStoriesRefresh = vm::refreshStories
-                    )
-                }
-
-                BottomNavTab.DISCOVER -> {
-                    FriendsScreen(
-                        friendsState,
-                        friendsVm::updateSearchQuery,
-                        { user ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        if (result.data != null) {
-                                            selectedPublicProfile = result.data
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Bu kullanıcı artık mevcut değil.",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                    is com.libra.app.core.result.AppResult.Error -> {
-                                        Toast.makeText(
-                                            context,
-                                            "Kullanıcı profili yenilenemedi.",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                            }
-                        },
-                        { user ->
-                            scope.launch {
-                                when (val result = ServiceLocator.userRepository.getUserProfileFresh(user.uid)) {
-                                    is com.libra.app.core.result.AppResult.Success -> {
-                                        if (result.data != null) selectedPublicProfile = result.data
-                                    }
-                                    is com.libra.app.core.result.AppResult.Error -> {
-                                        Toast.makeText(context, "Kullanıcı profili yenilenemedi.", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        },
-                        friendsVm::loadSocialData
-                    )
-                }
-
-                BottomNavTab.WRITE -> {
-                    val state by writeVm.uiState.collectAsState()
-
-                    WriteScreen(
-                        state,
-                        writeVm::createNewBook,
-                        { selectedWritingBook = it },
-                        writeVm::loadMyBooks
-                    )
-                }
-
-                BottomNavTab.DM -> {
-                    DirectMessagesScreen(
-                        onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
-                        onGlobalChatClick = {
-                            showGlobalChat = true
-                        },
-                        initialUser = selectedDirectUser,
-                        onInitialUserConsumed = { selectedDirectUser = null },
-                        onOpenProfile = ::openPublicProfile,
-                        onServersClick = {
-                            showCommunityServers = true
-                        }
-                    )
-                }
-
-                BottomNavTab.LIBRARY -> {
-                    val vm: LibraryViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
-
-                    LibraryScreen(
-                        state,
-                        vm::loadShelf,
-                        vm::updateSearchQuery,
-                        { selectedBook = it },
-                        { selectedTab = BottomNavTab.WRITE },
-                        { vm.loadShelf(ShelfType.READING) }
-                    )
-                }
-
-                BottomNavTab.PROFILE -> {
-                    val vm: ProfileViewModel = viewModel()
-                    val state by vm.uiState.collectAsState()
-
-                    ProfileScreen(
-                        state,
-                        {
-                            authViewModel.signOut()
-                            selectedTab = BottomNavTab.HOME
-                        },
-                        vm::loadProfile,
-                        onSettingsClick = { showSettings = true },
-                        onAdminClick = if (profile.uid == LIBRA_ADMIN_UID) { { showAdminPanel = true } } else null
-                    )
-                }
+    // The app uses state-based navigation, so Android's system back button
+    // must unwind those states explicitly instead of finishing the Activity.
+    BackHandler {
+        when {
+            showProfileEdit -> showProfileEdit = false
+            showSettings -> showSettings = false
+            showAdminPanel -> showAdminPanel = false
+            createContentMode != null -> createContentMode = null
+            showCreateBook -> showCreateBook = false
+            readerBook != null -> readerBook = null
+            selectedBook != null -> selectedBook = null
+            selectedWritingBook != null -> selectedWritingBook = null
+            selectedPublicProfile != null -> selectedPublicProfile = null
+            showGlobalChat -> showGlobalChat = false
+            showNotifications -> showNotifications = false
+            selectedDirectUser != null -> selectedDirectUser = null
+            selectedTab == BottomNavTab.DM && dmSearchActive -> {
+                dmSearchActive = false
+                dmSearchQuery = ""
+            }
+            selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
+            else -> {
+                // No in-app screen is open. Let Android finish the Activity.
             }
         }
     }
 
-    selectedBook?.let { book ->
-        AlertDialog(
-            onDismissRequest = { selectedBook = null },
-            title = {
-                Text(
-                    book.title,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold
-                    )
-                )
+    var hasAdminAccess by remember(profile.uid) { mutableStateOf(profile.uid == LIBRA_ADMIN_UID) }
+    var adminPermissions by remember(profile.uid) { mutableStateOf(AdminPermissionSet()) }
+    LaunchedEffect(profile.uid) {
+        if (profile.uid == LIBRA_ADMIN_UID) {
+            hasAdminAccess = true
+            adminPermissions = AdminPermissionSet(manageMembers = true, manageBans = true, editProfiles = true, manageBooks = true, managePosts = true, manageStories = true, manageServers = true, manageGlobalChat = true, manageAdminRoles = true, manageCosmetics = true, sendFeedback = true, manageUpdates = true, manageNotifications = true)
+        } else {
+            val role = (ServiceLocator.adminRepository.getAdminRole(profile.uid) as? com.libra.app.core.result.AppResult.Success)?.data
+            hasAdminAccess = role != null
+            adminPermissions = role?.permissions ?: AdminPermissionSet()
+        }
+    }
+
+    if (!profile.profileCompleted) {
+        ProfileSetupScreen(profile = profile, onCompleted = authViewModel::checkSession, modifier = modifier.fillMaxSize())
+        return
+    }
+
+    LaunchedEffect(profile.uid, pendingNotificationLaunch) {
+        val payload = pendingNotificationLaunch ?: return@LaunchedEffect
+        handleNotificationNavigation(
+            AppNotification(
+                id = payload.notificationId,
+                recipientId = profile.uid,
+                actorId = payload.actorId,
+                type = payload.type,
+                title = payload.title,
+                body = payload.body,
+                referenceId = payload.referenceId
+            )
+        )
+        onNotificationLaunchConsumed()
+    }
+
+    var lastSelectedBook by remember { mutableStateOf<Book?>(null) }
+    if (selectedBook != null) lastSelectedBook = selectedBook
+
+    var lastReaderBook by remember { mutableStateOf<Book?>(null) }
+    var lastReaderChapterId by remember { mutableStateOf<String?>(null) }
+    if (readerBook != null) {
+        lastReaderBook = readerBook
+        lastReaderChapterId = readerChapterId
+    }
+
+    var lastSelectedWritingBook by remember { mutableStateOf<Book?>(null) }
+    if (selectedWritingBook != null) lastSelectedWritingBook = selectedWritingBook
+
+    var lastCreateContentMode by remember { mutableStateOf<CreateContentMode?>(null) }
+    if (createContentMode != null) lastCreateContentMode = createContentMode
+
+    var lastSelectedPublicProfile by remember { mutableStateOf<com.libra.app.domain.model.UserProfile?>(null) }
+    if (selectedPublicProfile != null) lastSelectedPublicProfile = selectedPublicProfile
+
+    var hideHomeBottomBar by remember { mutableStateOf(false) }
+    var fullScreenHome by remember { mutableStateOf(false) }
+    var hideProfileBottomBar by remember { mutableStateOf(false) }
+    var fullScreenProfile by remember { mutableStateOf(false) }
+
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val isDmChatOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.MESSAGES &&
+        !activeDirectConversationId.isNullOrBlank()
+    val isServerChannelOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.SERVERS &&
+        !activeServerChannelId.isNullOrBlank()
+    val isGlobalChatImeOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.GLOBAL_CHAT &&
+        imeBottomPx > 0
+
+    val isImmersiveTabActive = (selectedTab == BottomNavTab.HOME && fullScreenHome) ||
+        (selectedTab == BottomNavTab.PROFILE && fullScreenProfile) ||
+        isDmChatOpen ||
+        isServerChannelOpen
+
+    val isAnyOverlayActive = showCreateBook || createContentMode != null || readerBook != null ||
+        selectedBook != null || selectedWritingBook != null || selectedPublicProfile != null ||
+        showNotifications || showGlobalChat || showAdminPanel ||
+        showProfileEdit || showSettings ||
+        isDmChatOpen ||
+        isServerChannelOpen ||
+        isGlobalChatImeOpen ||
+        (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
+        (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
+
+    val isMessagesTabVisible = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.MESSAGES &&
+        !showCreateBook && createContentMode == null && readerBook == null &&
+        selectedBook == null && selectedWritingBook == null && selectedPublicProfile == null &&
+        !showNotifications && !showGlobalChat && !showAdminPanel &&
+        !showProfileEdit && !showSettings
+
+    SideEffect {
+        LibraNotificationRuntimeState.isNotificationsScreenOpen = showNotifications
+        LibraNotificationRuntimeState.isMessagesTabOpen = isMessagesTabVisible
+        LibraNotificationRuntimeState.activeDirectConversationId = if (
+            selectedTab == BottomNavTab.DM && dmHubMode == DmHubMode.MESSAGES
+        ) {
+            activeDirectConversationId
+        } else {
+            null
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            contentWindowInsets = if (isImmersiveTabActive) {
+                WindowInsets(0, 0, 0, 0)
+            } else {
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)
             },
-            text = {
-                Column {
-                    Text(
-                        "Yazar: " + book.authorName,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
+            bottomBar = {
+                if (!isAnyOverlayActive) {
+                    LibraBottomBar(
+                        selectedTab = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        dmUnreadPrivateCount = unreadPrivateChatCount,
+                        isServerModeActive = dmHubMode == DmHubMode.SERVERS,
+                        dmHubMode = dmHubMode
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        book.category.displayName,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        book.description.ifBlank {
-                            "Bu kitap için henüz açıklama eklenmedi."
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.background,
+            modifier = Modifier.fillMaxSize()
+        ) { paddingValues ->
+            Box(Modifier.fillMaxSize().padding(paddingValues)) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        val forward = targetState.ordinal > initialState.ordinal
+                        val slideOffset = { size: Int -> (size * 0.16f).toInt() }
+                        if (forward) {
+                            (slideInHorizontally(animationSpec = AppleSprings.snappy(), initialOffsetX = slideOffset) +
+                                fadeIn(animationSpec = AppleSprings.snappy()))
+                                .togetherWith(
+                                    slideOutHorizontally(animationSpec = AppleSprings.snappy(), targetOffsetX = { -slideOffset(it) }) +
+                                        fadeOut(animationSpec = AppleSprings.snappy())
+                                )
+                        } else {
+                            (slideInHorizontally(animationSpec = AppleSprings.snappy(), initialOffsetX = { -slideOffset(it) }) +
+                                fadeIn(animationSpec = AppleSprings.snappy()))
+                                .togetherWith(
+                                    slideOutHorizontally(animationSpec = AppleSprings.snappy(), targetOffsetX = slideOffset) +
+                                        fadeOut(animationSpec = AppleSprings.snappy())
+                                )
                         }
+                    },
+                    label = "tab_navigation_animation"
+                ) { tab ->
+                    when (tab) {
+                        BottomNavTab.HOME -> {
+                            val state by homeVm.uiState.collectAsState()
+                            HomeScreen(
+                                state,
+                                { selectedBook = it },
+                                { selectedTab = BottomNavTab.WRITE },
+                                { selectedTab = BottomNavTab.LIBRARY },
+                                { selectedTab = BottomNavTab.PROFILE },
+                                { selectedTab = BottomNavTab.DISCOVER },
+                                {
+                                    switchDmHubModeImmediately(DmHubMode.SERVERS)
+                                    selectedTab = BottomNavTab.DM
+                                },
+                                { showNotifications = true },
+                                unreadNotificationCount,
+                                homeVm::loadHomeData,
+                                onCreatePost = homeVm::createPost,
+                                onOpenCreatePost = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                                onOpenCreateStory = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                                canComment = profile.moderation.canComment,
+                                onToggleLike = homeVm::toggleLike, onToggleSave = homeVm::toggleSave,
+                                onDeletePost = homeVm::deletePost, onOpenComments = homeVm::openComments,
+                                comments = homeVm.comments.collectAsState().value,
+                                isLoadingComments = homeVm.isLoadingComments.collectAsState().value,
+                                onAddComment = homeVm::addComment,
+                                onDeleteComment = homeVm::deleteComment, isCommenting = homeVm.isCommenting.collectAsState().value,
+                                commentError = homeVm.commentError.collectAsState().value, onClearCommentError = homeVm::clearCommentError,
+                                onCloseComments = homeVm::closeComments, isPosting = homeVm.isPosting.collectAsState().value,
+                                postError = homeVm.postError.collectAsState().value, onClearPostError = homeVm::clearPostError,
+                                onOpenProfile = ::openPublicProfile,
+                                onCreateBookClick = { showCreateBook = true },
+                                onStartReading = { book ->
+                                    selectedBook = book
+                                    readerBook = book
+                                },
+                                onShareBook = { book ->
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, book.title)
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "${book.title} - ${book.authorName} Libra'da!\nhttps://libra.app/book/${book.id}")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Kitabı Paylaş"))
+                                },
+                                initialCommentPostId = notificationPostTargetId,
+                                onInitialCommentPostConsumed = { notificationPostTargetId = null },
+                                onRefreshPosts = homeVm::refreshHome,
+                                onLoadMorePosts = homeVm::loadMorePosts,
+                                onHideBottomBarChanged = { hideHomeBottomBar = it },
+                                onFullScreenChanged = { fullScreenHome = it },
+                                onStoryReply = { story ->
+                                    scope.launch {
+                                        when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
+                                            is com.libra.app.core.result.AppResult.Success -> result.data?.let {
+                                                selectedDirectUser = it
+                                                switchDmHubModeImmediately(DmHubMode.MESSAGES)
+                                                selectedTab = BottomNavTab.DM
+                                                val shared = SharedContent(
+                                                    type = "story", id = story.id,
+                                                    title = if (story.text.isBlank()) "Hikâye" else story.text.take(80),
+                                                    text = story.text, authorId = story.authorId, authorName = story.authorName,
+                                                    mediaUrl = story.mediaUrl, url = sharedContentUrl("story", story.id)
+                                                )
+                                                ServiceLocator.chatRepository.sendDirectMessage(
+                                                    recipientId = story.authorId, text = "Hikâyenden bahsetti.", sharedContent = shared
+                                                )
+                                            }
+                                            is com.libra.app.core.result.AppResult.Error ->
+                                                Toast.makeText(context, "Hikâye sahibi bulunamadı.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                onStoryLike = homeVm::toggleStoryLike, onStoriesRefresh = homeVm::refreshStories
+                            )
+                        }
+                        BottomNavTab.DISCOVER -> FriendsScreen(
+                            uiState = friendsState,
+                            onSearchChanged = friendsVm::updateSearchQuery,
+                            onFollowUser = { user -> friendsVm.toggleFollowUser(user) },
+                            onUserClick = { user -> openPublicProfile(user.uid) },
+                            onRetry = friendsVm::loadSocialData
+                        )
+                        BottomNavTab.WRITE -> {
+                            val state by writeVm.uiState.collectAsState()
+                            WriteScreen(
+                                uiState = state,
+                                onCreateBookClick = { showCreateBook = true },
+                                onBookClick = { selectedWritingBook = it },
+                                onRetry = writeVm::loadMyBooks
+                            )
+                        }
+                        BottomNavTab.DM -> {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (!isDmChatOpen && !isServerChannelOpen) {
+                                    LibraMessagingTopChrome(
+                                        activeMode = dmHubMode,
+                                        currentUser = profile,
+                                        unreadNotificationCount = unreadNotificationCount,
+                                        searchActive = dmSearchActive,
+                                        searchQuery = dmSearchQuery,
+                                        searchPlaceholder = when (dmHubMode) {
+                                            DmHubMode.MESSAGES -> "Sohbet veya kişi ara…"
+                                            DmHubMode.GLOBAL_CHAT -> "Genel Sohbet'te ara…"
+                                            DmHubMode.SERVERS -> "Sunucu veya kanal ara…"
+                                        },
+                                        onToggleSearch = {
+                                            if (dmSearchActive) {
+                                                dmSearchActive = false
+                                                dmSearchQuery = ""
+                                            } else {
+                                                dmSearchActive = true
+                                            }
+                                        },
+                                        onSearchQueryChange = { dmSearchQuery = it },
+                                        onNotificationsClick = { showNotifications = true },
+                                        onProfileClick = { selectedTab = BottomNavTab.PROFILE },
+                                        onSelectMode = { targetMode, origin ->
+                                            launchPortalTransition(targetMode, origin)
+                                        }
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                ) {
+                                    when (dmHubMode) {
+                                        DmHubMode.MESSAGES -> DirectMessagesScreen(
+                                            onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                                            onGlobalChatClick = { launchPortalTransition(DmHubMode.GLOBAL_CHAT, Offset.Zero) },
+                                            onServersClick = { launchPortalTransition(DmHubMode.SERVERS, Offset.Zero) },
+                                            onSwitchToServers = { origin -> launchPortalTransition(DmHubMode.SERVERS, origin) },
+                                            initialUser = selectedDirectUser,
+                                            onInitialUserConsumed = { selectedDirectUser = null },
+                                            initialConversationId = selectedDirectConversationId,
+                                            onInitialConversationConsumed = { selectedDirectConversationId = null },
+                                            onActiveConversationChanged = { activeDirectConversationId = it },
+                                            onOpenProfile = ::openPublicProfile,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            inboxFilter = dmInboxFilter,
+                                            onInboxFilterChange = { dmInboxFilter = it },
+                                            inboxListState = dmInboxListState,
+                                            canMessage = profile.moderation.canMessage,
+                                            viewModel = directMessagesVm
+                                        )
+                                        DmHubMode.GLOBAL_CHAT -> GlobalChatScreen(
+                                            onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
+                                            viewModel = globalChatVm,
+                                            onOpenProfile = ::openPublicProfile,
+                                            canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                                            isAdminModerator = hasAdminAccess && adminPermissions.manageGlobalChat,
+                                            embeddedInHub = true,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            listState = globalChatListState,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        DmHubMode.SERVERS -> CommunityServersScreen(
+                                            onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
+                                            onSwitchToMessages = { origin -> launchPortalTransition(DmHubMode.MESSAGES, origin) },
+                                            unreadPrivateCount = unreadPrivateChatCount,
+                                            onOpenProfile = ::openPublicProfile,
+                                            embeddedInHub = true,
+                                            externalSearchQuery = if (dmSearchActive) dmSearchQuery else "",
+                                            hubListState = serverHubListState,
+                                            viewModel = serversVm,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        BottomNavTab.LIBRARY -> {
+                            val state by libraryVm.uiState.collectAsState()
+                            LibraryScreen(
+                                uiState = state,
+                                onTabSelected = libraryVm::selectShelf,
+                                onSearchChanged = libraryVm::updateSearchQuery,
+                                onBookClick = { book, shelf ->
+                                    if (shelf == ShelfType.MY_WRITINGS) {
+                                        selectedWritingBook = book
+                                    } else {
+                                        selectedBook = book
+                                    }
+                                },
+                                onNavigateToWrite = { selectedTab = BottomNavTab.WRITE },
+                                onCreateBookClick = { showCreateBook = true },
+                                onRetry = libraryVm::retryCurrentShelf,
+                                onStartReading = { book ->
+                                    selectedBook = book
+                                    readerBook = book
+                                },
+                                onRemoveFromShelf = libraryVm::removeFromShelf,
+                                onAddToSaved = { book -> libraryVm.addToShelf(book, ShelfType.SAVED) },
+                                onNavigateToDiscover = { selectedTab = BottomNavTab.DISCOVER }
+                            )
+                        }
+                        BottomNavTab.PROFILE -> {
+                            val state by profileVm.uiState.collectAsState()
+                            val contentState by profileVm.contentState.collectAsState()
+                            ProfileScreen(
+                                uiState = state,
+                                onSignOutClick = { authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                                onRetry = profileVm::loadProfile,
+                                onSettingsClick = { showSettings = true },
+                                onEditProfileClick = { showProfileEdit = true },
+                                onCreatePostClick = { if (profile.moderation.canPost) createContentMode = CreateContentMode.POST },
+                                onCreateStoryClick = { if (profile.moderation.canStory) createContentMode = CreateContentMode.STORY },
+                                onCreateBookClick = { showCreateBook = true },
+                                onOpenBook = { book -> selectedBook = book },
+                                onManageBook = { book -> selectedWritingBook = book },
+                                onMyBooksClick = { selectedTab = BottomNavTab.LIBRARY },
+                                onOpenProfile = ::openPublicProfile,
+                                contentState = contentState,
+                                onRefresh = profileVm::refreshProfile,
+                                onTogglePostLike = profileVm::togglePostLike,
+                                onTogglePostSave = profileVm::togglePostSave,
+                                onDeletePost = profileVm::deletePost,
+                                onToggleStoryLike = profileVm::toggleStoryLike,
+                                onHideBottomBarChanged = { hideProfileBottomBar = it },
+                                onFullScreenChanged = { fullScreenProfile = it }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Animated Modal Presentation Overlays (Apple Sheet / Full-Screen Spring Physics) ---
+        AnimatedVisibility(
+            visible = showNotifications,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                NotificationsScreen(
+                    onBack = { showNotifications = false },
+                    onOpenProfile = ::openPublicProfile,
+                    onOpenNotification = ::handleNotificationNavigation,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showGlobalChat,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                GlobalChatScreen(
+                    onBack = { showGlobalChat = false },
+                    onOpenProfile = ::openPublicProfile,
+                    canMessage = profile.moderation.canMessage && profile.moderation.canMessageInServer,
+                    isAdminModerator = hasAdminAccess && adminPermissions.manageGlobalChat,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedPublicProfile != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedPublicProfile?.let { publicProfile ->
+                    PublicProfileScreen(
+                        profile = publicProfile,
+                        isFollowing = friendsState.dataOrNull?.followingIds?.contains(publicProfile.uid) == true,
+                        onBack = { selectedPublicProfile = null },
+                        onFollow = { friendsVm.toggleFollowUser(publicProfile) },
+                        onMessage = {
+                            selectedPublicProfile = null
+                            selectedDirectUser = publicProfile
+                            switchDmHubModeImmediately(DmHubMode.MESSAGES)
+                            selectedTab = BottomNavTab.DM
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        onOpenBook = { book -> selectedBook = book },
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedBook = null }) {
-                    Text("Kapat")
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedWritingBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedWritingBook?.let { book ->
+                    BookManagementRootScreen(
+                        book = book,
+                        onBack = {
+                            selectedWritingBook = null
+                            writeVm.loadMyBooks()
+                        },
+                        onPreviewBook = { target ->
+                            selectedBook = target
+                        },
+                        onDeleteBook = { target ->
+                            writeVm.deleteBook(target.id)
+                            selectedWritingBook = null
+                        },
+                        onOpenProfile = ::openPublicProfile,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedBook != null && readerBook == null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastSelectedBook?.let { book ->
+                    BookDetailScreen(
+                        book = book,
+                        userId = profile.uid,
+                        onBack = { selectedBook = null },
+                        onRead = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter?.id
+                        },
+                        onOpenChapter = { selected, chapter ->
+                            readerBook = selected
+                            readerChapterId = chapter.id
+                        },
+                        onOpenAuthor = { authorUid ->
+                            selectedBook = null
+                            openPublicProfile(authorUid)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = readerBook != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastReaderBook?.let { book ->
+                    BookReaderScreen(
+                        book = book,
+                        userId = profile.uid,
+                        initialChapterId = lastReaderChapterId,
+                        onBack = {
+                            readerBook = null
+                            readerChapterId = null
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showCreateBook,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                CreateBookScreen(
+                    onBack = { showCreateBook = false },
+                    onBookCreated = { newBook ->
+                        showCreateBook = false
+                        selectedWritingBook = newBook
+                        writeVm.loadMyBooks()
+                        homeVm.loadHomeData()
+                        libraryVm.retryCurrentShelf()
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = createContentMode != null,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                lastCreateContentMode?.let { mode ->
+                    CreateContentScreen(
+                        mode = mode,
+                        user = profile,
+                        isPosting = homeVm.isPosting.collectAsState().value,
+                        error = homeVm.postError.collectAsState().value,
+                        onPublishPost = { title, text, tags, mediaUrl, mediaType ->
+                            homeVm.createRichPost(title, text, tags, mediaUrl, mediaType) { success ->
+                                if (success && mode == CreateContentMode.POST) {
+                                    createContentMode = null
+                                    profileVm.refreshProfile()
+                                    if (selectedTab != BottomNavTab.PROFILE) {
+                                        selectedTab = BottomNavTab.HOME
+                                    }
+                                }
+                            }
+                        },
+                        onPublishStory = { text, mediaUrl, mediaType ->
+                            homeVm.createStory(text, mediaUrl, mediaType) { success ->
+                                if (success) {
+                                    createContentMode = null
+                                    profileVm.refreshProfile()
+                                    if (selectedTab != BottomNavTab.PROFILE) {
+                                        selectedTab = BottomNavTab.HOME
+                                    }
+                                }
+                            }
+                        },
+                        onBack = { createContentMode = null },
+                        onClearError = homeVm::clearPostError,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showAdminPanel && hasAdminAccess,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                AdminPanelScreen(
+                    onBack = { showAdminPanel = false },
+                    permissions = adminPermissions,
+                    onOpenProfile = ::openPublicProfile,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showSettings && !showProfileEdit,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                SettingsScreen(
+                    profile = profile,
+                    darkTheme = darkTheme,
+                    onDarkThemeChanged = onDarkThemeChanged,
+                    onEditProfile = { showProfileEdit = true },
+                    onSignOut = { showSettings = false; authViewModel.signOut(); selectedTab = BottomNavTab.HOME },
+                    onBack = { showSettings = false },
+                    hasAdminAccess = hasAdminAccess,
+                    onOpenAdminPanel = { showSettings = false; showAdminPanel = true },
+                    onOpenWriteStudio = { showSettings = false; selectedTab = BottomNavTab.WRITE },
+                    onOpenLibrary = { showSettings = false; selectedTab = BottomNavTab.LIBRARY },
+                    onOpenServers = {
+                        showSettings = false
+                        switchDmHubModeImmediately(DmHubMode.SERVERS)
+                        selectedTab = BottomNavTab.DM
+                    },
+                    onOpenNotifications = { showSettings = false; showNotifications = true },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showProfileEdit,
+            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                ProfileEditScreen(
+                    profile = profile,
+                    onSaved = {
+                        showProfileEdit = false
+                        authViewModel.checkSession()
+                        profileVm.refreshProfile()
+                    },
+                    onBack = { showProfileEdit = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        InAppNotificationBanner(
+            notification = activeInAppBanner,
+            onOpen = ::handleNotificationNavigation,
+            onDismiss = { activeInAppBanner = null },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+
+        announcementNotification?.let { announcement ->
+            AlertDialog(
+                onDismissRequest = { announcementNotification = null },
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = {
+                    Text(
+                        text = announcement.title.ifBlank { "Libra Duyurusu" },
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = announcement.body,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (announcement.actorName.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = "Gönderen: ${announcement.actorName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { announcementNotification = null }) {
+                        Text("Tamam")
+                    }
+                }
+            )
+        }
+
+        PortalTransitionOverlay(
+            request = portalTransition,
+            onMidpointSwap = { targetMode ->
+                switchDmHubModeImmediately(targetMode)
+            },
+            onCompleted = {
+                portalTransition = null
             }
         )
     }

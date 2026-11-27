@@ -8,5 +8,6 @@ data class PostComment(
     val authorUsername: String = "",
     val authorPhotoUrl: String = "",
     val text: String = "",
+    val parentCommentId: String = "",
     val createdAt: Long = 0L
 )

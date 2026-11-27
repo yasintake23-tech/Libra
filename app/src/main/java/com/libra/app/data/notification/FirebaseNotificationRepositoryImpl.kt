@@ -1,9 +1,11 @@
 package com.libra.app.data.notification
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.libra.app.core.result.AppError
 import com.libra.app.core.result.AppResult
 import com.libra.app.domain.model.AppNotification
+import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.repository.NotificationRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -20,17 +22,22 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
             close()
             return@callbackFlow
         }
+        val safeLimit = limit.coerceIn(1L, 300L).toInt()
+        // Query without an unordered Firestore limit so newer notifications
+        // never get dropped behind older read documents when no composite index exists.
         val registration = ref.whereEqualTo("recipientId", uid)
-            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     trySend(AppResult.Error(AppError.Database("Bildirimler yüklenemedi.", error)))
                     return@addSnapshotListener
                 }
-                val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
-                }
-                trySend(AppResult.Success(list.sortedByDescending { it.createdAt }))
+                val list = snapshot?.documents.orEmpty()
+                    .mapNotNull { doc ->
+                        runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
+                    }
+                    .sortedByDescending { it.createdAt }
+                    .take(safeLimit)
+                trySend(AppResult.Success(list))
             }
         awaitClose { registration.remove() }
     }
@@ -47,6 +54,49 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
         }
     }
 
+    override suspend fun createBatch(notifications: List<AppNotification>): AppResult<Int> {
+        val valid = notifications.filter { it.recipientId.isNotBlank() && it.actorId.isNotBlank() }
+        if (valid.isEmpty()) return AppResult.Success(0)
+        return try {
+            var delivered = 0
+            valid.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { item ->
+                    val doc = ref.document()
+                    batch.set(doc, item.copy(id = doc.id))
+                }
+                batch.commit().await()
+                delivered += chunk.size
+            }
+            AppResult.Success(delivered)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Toplu bildirim gönderilemedi.", e))
+        }
+    }
+
+    override suspend fun fetchUnreadNotifications(uid: String, limit: Long): AppResult<List<AppNotification>> {
+        if (uid.isBlank()) return AppResult.Success(emptyList())
+        val safeLimit = limit.coerceIn(1L, 150L).toInt()
+        return try {
+            val query = ref.whereEqualTo("recipientId", uid)
+            val snapshot = try {
+                query.get(Source.SERVER).await()
+            } catch (_: Exception) {
+                query.get().await()
+            }
+            val unread = snapshot.documents
+                .mapNotNull { doc ->
+                    runCatching { doc.toObject(AppNotification::class.java)?.copy(id = doc.id) }.getOrNull()
+                }
+                .filter { !it.read }
+                .sortedByDescending { it.createdAt }
+                .take(safeLimit)
+            AppResult.Success(unread)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Okunmamış bildirimler alınamadı.", e))
+        }
+    }
+
     override suspend fun markRead(notificationId: String): AppResult<Unit> {
         if (notificationId.isBlank()) return AppResult.Error(AppError.Validation("Geçersiz bildirim."))
         return try {
@@ -60,15 +110,89 @@ class FirebaseNotificationRepositoryImpl : NotificationRepository {
     override suspend fun markAllRead(uid: String): AppResult<Unit> {
         if (uid.isBlank()) return AppResult.Error(AppError.Auth("Giriş yapmalısın."))
         return try {
-            val snapshot = ref.whereEqualTo("recipientId", uid).limit(100).get().await()
-            val batch = firestore.batch()
-            snapshot.documents.filter { it.getBoolean("read") != true }.forEach {
-                batch.update(it.reference, "read", true)
+            val snapshot = ref.whereEqualTo("recipientId", uid).get().await()
+            val unreadDocs = snapshot.documents.filter { it.getBoolean("read") != true }
+            unreadDocs.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { doc -> batch.update(doc.reference, "read", true) }
+                batch.commit().await()
             }
-            batch.commit().await()
             AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Error(AppError.Database("Bildirimler okunamadı.", e))
+        }
+    }
+
+    override suspend fun markNotificationsRead(notificationIds: List<String>): AppResult<Int> {
+        val validIds = notificationIds.filter { it.isNotBlank() && !it.startsWith("rtdb_") }.distinct()
+        if (validIds.isEmpty()) return AppResult.Success(0)
+        return try {
+            var marked = 0
+            validIds.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { id -> batch.update(ref.document(id), "read", true) }
+                batch.commit().await()
+                marked += chunk.size
+            }
+            AppResult.Success(marked)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Seçilen bildirimler okunamadı.", e))
+        }
+    }
+
+    override suspend fun deleteNotification(notificationId: String): AppResult<Unit> {
+        return when (val res = deleteNotifications(listOf(notificationId))) {
+            is AppResult.Success -> AppResult.Success(Unit)
+            is AppResult.Error -> res
+        }
+    }
+
+    override suspend fun deleteNotifications(notificationIds: List<String>): AppResult<Int> {
+        val validIds = notificationIds.filter { it.isNotBlank() && !it.startsWith("rtdb_") }.distinct()
+        if (validIds.isEmpty()) return AppResult.Success(0)
+        return try {
+            var deleted = 0
+            validIds.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { id -> batch.delete(ref.document(id)) }
+                batch.commit().await()
+                deleted += chunk.size
+            }
+            AppResult.Success(deleted)
+        } catch (e: Exception) {
+            // If Firestore delete rules haven't been deployed yet, still mark them read on Firestore
+            // so unread badges stay zeroed while the client stores local dismissal.
+            runCatching {
+                validIds.chunked(400).forEach { chunk ->
+                    val batch = firestore.batch()
+                    chunk.forEach { id -> batch.update(ref.document(id), "read", true) }
+                    batch.commit().await()
+                }
+            }
+            AppResult.Error(AppError.Database("Bildirimler sunucudan kaldırılamadı.", e))
+        }
+    }
+
+    override suspend fun markConversationNotificationsRead(uid: String, conversationId: String): AppResult<Unit> {
+        if (uid.isBlank() || conversationId.isBlank()) return AppResult.Success(Unit)
+        return try {
+            val snapshot = ref.whereEqualTo("recipientId", uid).get().await()
+            val matchingUnreadDocs = snapshot.documents.filter { doc ->
+                if (doc.getBoolean("read") == true) return@filter false
+                val refId = doc.getString("referenceId").orEmpty()
+                val type = doc.getString("type").orEmpty()
+                val isChatType = type == LibraNotificationTypes.MESSAGE ||
+                    type == LibraNotificationTypes.GROUP_MESSAGE
+                isChatType && refId == conversationId
+            }
+            matchingUnreadDocs.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { doc -> batch.update(doc.reference, "read", true) }
+                batch.commit().await()
+            }
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Error(AppError.Database("Sohbet bildirimleri okunamadı.", e))
         }
     }
 }

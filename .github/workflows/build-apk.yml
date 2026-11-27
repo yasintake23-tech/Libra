@@ -21,6 +21,8 @@ env:
   JAVA_VERSION: '21'
   GRADLE_VERSION: '9.3.1'
   EXPECTED_LIBRA_SHA1: 'f322c7e4a951958d463972db788399aef1b8764f'
+  LIBRA_RELEASE_ID: rel_${{ github.run_id }}
+  LIBRA_VERSION_CODE: '${{ github.run_number }}'
 
 jobs:
   build-apk:
@@ -143,6 +145,15 @@ jobs:
           set -euo pipefail
           npx --yes firebase-tools@latest deploy --only database --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
 
+      - name: Deploy Firestore rules when Firebase token is configured
+        shell: bash
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        if: ${{ env.FIREBASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest deploy --only firestore:rules --project libra-3bfb9 --token "$FIREBASE_TOKEN" --non-interactive
+
       - name: Verify backend architecture
         shell: bash
         run: |
@@ -226,11 +237,21 @@ jobs:
           PACKAGE_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
           VERSION_NAME=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionName='\\([^']*\\)'.*/\\1/p")
           VERSION_CODE=$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p")
+          RELEASE_ID=$("$AAPT" dump xmltree "$APK_PATH" AndroidManifest.xml 2>/dev/null | awk '
+            /E: meta-data/ { in_meta=1; next }
+            in_meta && /A: android:name/ && /com.libra.app.RELEASE_ID/ { found=1; next }
+            found && /A: android:value/ {
+              match($0, /"(rel_[^"]+)"/, m)
+              if (m[1] != "") { print m[1]; exit }
+            }
+            /E: / && !/E: meta-data/ { in_meta=0; found=0 }
+          ' | head -n1)
           [[ -n "$PACKAGE_NAME" ]] || { echo "::error::APK package name okunamadı."; exit 1; }
           [[ -n "$VERSION_NAME" && -n "$VERSION_CODE" ]] || { echo "::error::APK version bilgisi okunamadı."; exit 1; }
+          [[ "$RELEASE_ID" == rel_* ]] || { echo "::error::APK içine release ID yazılmamış: '$RELEASE_ID'"; exit 1; }
 
           mkdir -p artifacts
-          cp "$APK_PATH" "artifacts/Libra-debug-$GITHUB_RUN_NUMBER.apk"
+          cp "$APK_PATH" "artifacts/Libra-debug-$RELEASE_ID.apk"
 
           cat > artifacts/build-info.txt <<EOF
           Libra Android Build
@@ -254,7 +275,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Libra-APK-${{ github.run_number }}
-          path: artifacts/Libra-debug-${{ github.run_number }}.apk
+          path: artifacts/Libra-debug-rel_*.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
