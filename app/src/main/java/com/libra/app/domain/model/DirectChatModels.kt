@@ -21,6 +21,7 @@ data class DirectConversation(
     val groupName: String = "",
     val groupDescription: String = "",
     val groupPhotoUrl: String = "",
+    val groupBannerUrl: String = "",
     val participantIds: List<String> = emptyList(),
     val ownerId: String = "",
     val adminIds: List<String> = emptyList(),
@@ -29,6 +30,13 @@ data class DirectConversation(
     val peerLastReadAt: Long = 0L,
     val myLastReadAt: Long = 0L
 )
+
+/**
+ * Counts distinct private (1-to-1) conversations that currently have at least one unread message.
+ * Example: 10 unread messages from 1 friend -> 1; 50 unread messages across 3 friends -> 3.
+ */
+fun countUnreadPrivateConversations(conversations: List<DirectConversation>): Int =
+    conversations.count { !it.isGroup && it.unreadCount > 0 }
 
 enum class GroupMemberRole(val label: String) {
     PRESIDENT("Grup Başkanı"),

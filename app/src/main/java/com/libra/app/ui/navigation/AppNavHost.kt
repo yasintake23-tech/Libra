@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -40,12 +41,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +65,7 @@ import com.libra.app.domain.model.LibraNotificationTypes
 import com.libra.app.domain.model.ShelfType
 import com.libra.app.domain.model.SharedContent
 import com.libra.app.domain.model.AdminPermissionSet
+import com.libra.app.domain.model.countUnreadPrivateConversations
 import com.libra.app.feature.share.sharedContentUrl
 import com.libra.app.feature.admin.AdminPanelScreen
 import com.libra.app.feature.auth.AuthViewModel
@@ -76,9 +80,15 @@ import com.libra.app.feature.home.CreateContentMode
 import com.libra.app.feature.home.CreateContentScreen
 import com.libra.app.feature.library.LibraryScreen
 import com.libra.app.feature.library.LibraryViewModel
-import com.libra.app.feature.messages.DirectMessagesScreen
-import com.libra.app.feature.messages.GlobalChatScreen
 import com.libra.app.feature.messages.CommunityServersScreen
+import com.libra.app.feature.messages.CommunityServersViewModel
+import com.libra.app.feature.messages.DirectMessagesScreen
+import com.libra.app.feature.messages.DirectMessagesViewModel
+import com.libra.app.feature.messages.DmHubMode
+import com.libra.app.feature.messages.DmWorkspacePreferences
+import com.libra.app.feature.messages.GlobalChatScreen
+import com.libra.app.feature.messages.PortalTransitionOverlay
+import com.libra.app.feature.messages.PortalTransitionRequest
 import com.libra.app.feature.notifications.NotificationsScreen
 import com.libra.app.feature.profile.ProfileScreen
 import com.libra.app.feature.profile.PublicProfileScreen
@@ -131,7 +141,12 @@ fun AppNavHost(
     var showAdminPanel by remember { mutableStateOf(false) }
     var showProfileEdit by remember { mutableStateOf(false) }
     var showGlobalChat by remember { mutableStateOf(false) }
-    var showCommunityServers by remember { mutableStateOf(false) }
+    val dmWorkspacePrefs = remember(context) { DmWorkspacePreferences(context) }
+    var dmHubMode by remember(dmWorkspacePrefs) { mutableStateOf(dmWorkspacePrefs.readHubMode()) }
+    var portalTransition by remember { mutableStateOf<PortalTransitionRequest?>(null) }
+    var portalNonce by remember { mutableIntStateOf(0) }
+    val dmInboxListState = rememberLazyListState()
+    val serverHubListState = rememberLazyListState()
     var showNotifications by remember { mutableStateOf(false) }
     var unreadNotificationCount by remember { mutableStateOf(0) }
     var notificationPostTargetId by remember { mutableStateOf<String?>(null) }
@@ -255,8 +270,38 @@ fun AppNavHost(
     val homeVm: HomeViewModel = viewModel()
     val libraryVm: LibraryViewModel = viewModel()
     val profileVm: ProfileViewModel = viewModel()
+    val directMessagesVm: DirectMessagesViewModel = viewModel()
+    val serversVm: CommunityServersViewModel = viewModel()
     val updateVm: AppUpdateViewModel = viewModel()
     val updateState by updateVm.uiState.collectAsState()
+
+    val dmConversations by directMessagesVm.conversations.collectAsState()
+    val unreadPrivateChatCount = remember(dmConversations) {
+        countUnreadPrivateConversations(dmConversations)
+    }
+    val activeServerChannelId by serversVm.selectedChannelId.collectAsState()
+
+    LaunchedEffect(currentUser?.uid) {
+        if (!currentUser?.uid.isNullOrBlank()) {
+            directMessagesVm.refreshConversations()
+            serversVm.refreshServers()
+        }
+    }
+
+    fun switchDmHubModeImmediately(mode: DmHubMode) {
+        dmHubMode = mode
+        dmWorkspacePrefs.saveHubMode(mode)
+    }
+
+    fun launchPortalTransition(targetMode: DmHubMode, originInRoot: Offset) {
+        if (portalTransition != null || dmHubMode == targetMode) return
+        portalNonce++
+        portalTransition = PortalTransitionRequest(
+            targetMode = targetMode,
+            originInRoot = originInRoot,
+            nonce = portalNonce
+        )
+    }
 
     fun closeNavigationOverlays() {
         showNotifications = false
@@ -264,7 +309,6 @@ fun AppNavHost(
         showAdminPanel = false
         showProfileEdit = false
         showGlobalChat = false
-        showCommunityServers = false
         showCreateBook = false
         createContentMode = null
         selectedWritingBook = null
@@ -282,6 +326,7 @@ fun AppNavHost(
                 closeNavigationOverlays()
                 selectedBook = null
                 selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.MESSAGES)
                 selectedTab = BottomNavTab.DM
                 val convId = notification.referenceId.ifBlank {
                     if (myUid.isNotBlank() && notification.actorId.isNotBlank()) {
@@ -316,6 +361,7 @@ fun AppNavHost(
                 closeNavigationOverlays()
                 selectedBook = null
                 selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.MESSAGES)
                 selectedTab = BottomNavTab.DM
                 if (notification.referenceId.isNotBlank()) {
                     LibraNotificationRuntimeState.activeDirectConversationId = notification.referenceId
@@ -366,7 +412,10 @@ fun AppNavHost(
             }
             LibraNotificationTypes.SERVER_MENTION -> {
                 closeNavigationOverlays()
-                showCommunityServers = true
+                selectedBook = null
+                selectedPublicProfile = null
+                switchDmHubModeImmediately(DmHubMode.SERVERS)
+                selectedTab = BottomNavTab.DM
             }
             LibraNotificationTypes.ADMIN_BROADCAST,
             LibraNotificationTypes.ADMIN_FEEDBACK -> {
@@ -543,7 +592,6 @@ fun AppNavHost(
             selectedWritingBook != null -> selectedWritingBook = null
             selectedPublicProfile != null -> selectedPublicProfile = null
             showGlobalChat -> showGlobalChat = false
-            showCommunityServers -> showCommunityServers = false
             showNotifications -> showNotifications = false
             selectedDirectUser != null -> selectedDirectUser = null
             selectedTab != BottomNavTab.HOME -> selectedTab = BottomNavTab.HOME
@@ -611,30 +659,40 @@ fun AppNavHost(
     var hideProfileBottomBar by remember { mutableStateOf(false) }
     var fullScreenProfile by remember { mutableStateOf(false) }
 
-    val isDmChatOpen = selectedTab == BottomNavTab.DM && !activeDirectConversationId.isNullOrBlank()
+    val isDmChatOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.MESSAGES &&
+        !activeDirectConversationId.isNullOrBlank()
+    val isServerChannelOpen = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.SERVERS &&
+        !activeServerChannelId.isNullOrBlank()
 
     val isImmersiveTabActive = (selectedTab == BottomNavTab.HOME && fullScreenHome) ||
         (selectedTab == BottomNavTab.PROFILE && fullScreenProfile) ||
-        isDmChatOpen
+        isDmChatOpen ||
+        isServerChannelOpen
 
     val isAnyOverlayActive = showCreateBook || createContentMode != null || readerBook != null ||
         selectedBook != null || selectedWritingBook != null || selectedPublicProfile != null ||
-        showNotifications || showCommunityServers || showGlobalChat || showAdminPanel ||
+        showNotifications || showGlobalChat || showAdminPanel ||
         showProfileEdit || showSettings ||
         isDmChatOpen ||
+        isServerChannelOpen ||
         (selectedTab == BottomNavTab.HOME && hideHomeBottomBar) ||
         (selectedTab == BottomNavTab.PROFILE && hideProfileBottomBar)
 
     val isMessagesTabVisible = selectedTab == BottomNavTab.DM &&
+        dmHubMode == DmHubMode.MESSAGES &&
         !showCreateBook && createContentMode == null && readerBook == null &&
         selectedBook == null && selectedWritingBook == null && selectedPublicProfile == null &&
-        !showNotifications && !showCommunityServers && !showGlobalChat && !showAdminPanel &&
+        !showNotifications && !showGlobalChat && !showAdminPanel &&
         !showProfileEdit && !showSettings
 
     SideEffect {
         LibraNotificationRuntimeState.isNotificationsScreenOpen = showNotifications
         LibraNotificationRuntimeState.isMessagesTabOpen = isMessagesTabVisible
-        LibraNotificationRuntimeState.activeDirectConversationId = if (selectedTab == BottomNavTab.DM) {
+        LibraNotificationRuntimeState.activeDirectConversationId = if (
+            selectedTab == BottomNavTab.DM && dmHubMode == DmHubMode.MESSAGES
+        ) {
             activeDirectConversationId
         } else {
             null
@@ -650,7 +708,12 @@ fun AppNavHost(
             },
             bottomBar = {
                 if (!isAnyOverlayActive) {
-                    LibraBottomBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+                    LibraBottomBar(
+                        selectedTab = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        dmUnreadPrivateCount = unreadPrivateChatCount,
+                        isServerModeActive = dmHubMode == DmHubMode.SERVERS
+                    )
                 }
             },
             containerColor = MaterialTheme.colorScheme.background,
@@ -690,7 +753,10 @@ fun AppNavHost(
                                 { selectedTab = BottomNavTab.LIBRARY },
                                 { selectedTab = BottomNavTab.PROFILE },
                                 { selectedTab = BottomNavTab.DISCOVER },
-                                { showCommunityServers = true },
+                                {
+                                    switchDmHubModeImmediately(DmHubMode.SERVERS)
+                                    selectedTab = BottomNavTab.DM
+                                },
                                 { showNotifications = true },
                                 unreadNotificationCount,
                                 homeVm::loadHomeData,
@@ -732,6 +798,7 @@ fun AppNavHost(
                                         when (val result = ServiceLocator.userRepository.getUserProfileFresh(story.authorId)) {
                                             is com.libra.app.core.result.AppResult.Success -> result.data?.let {
                                                 selectedDirectUser = it
+                                                switchDmHubModeImmediately(DmHubMode.MESSAGES)
                                                 selectedTab = BottomNavTab.DM
                                                 val shared = SharedContent(
                                                     type = "story", id = story.id,
@@ -767,18 +834,34 @@ fun AppNavHost(
                                 onRetry = writeVm::loadMyBooks
                             )
                         }
-                        BottomNavTab.DM -> DirectMessagesScreen(
-                            onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
-                            onGlobalChatClick = { showGlobalChat = true },
-                            initialUser = selectedDirectUser,
-                            onInitialUserConsumed = { selectedDirectUser = null },
-                            initialConversationId = selectedDirectConversationId,
-                            onInitialConversationConsumed = { selectedDirectConversationId = null },
-                            onActiveConversationChanged = { activeDirectConversationId = it },
-                            onOpenProfile = ::openPublicProfile,
-                            canMessage = profile.moderation.canMessage,
-                            onServersClick = { showCommunityServers = true }
-                        )
+                        BottomNavTab.DM -> {
+                            when (dmHubMode) {
+                                DmHubMode.MESSAGES -> DirectMessagesScreen(
+                                    onFindFriends = { selectedTab = BottomNavTab.DISCOVER },
+                                    onGlobalChatClick = { showGlobalChat = true },
+                                    onServersClick = { launchPortalTransition(DmHubMode.SERVERS, Offset.Zero) },
+                                    onSwitchToServers = { origin -> launchPortalTransition(DmHubMode.SERVERS, origin) },
+                                    initialUser = selectedDirectUser,
+                                    onInitialUserConsumed = { selectedDirectUser = null },
+                                    initialConversationId = selectedDirectConversationId,
+                                    onInitialConversationConsumed = { selectedDirectConversationId = null },
+                                    onActiveConversationChanged = { activeDirectConversationId = it },
+                                    onOpenProfile = ::openPublicProfile,
+                                    inboxListState = dmInboxListState,
+                                    canMessage = profile.moderation.canMessage,
+                                    viewModel = directMessagesVm
+                                )
+                                DmHubMode.SERVERS -> CommunityServersScreen(
+                                    onBack = { launchPortalTransition(DmHubMode.MESSAGES, Offset.Zero) },
+                                    onSwitchToMessages = { origin -> launchPortalTransition(DmHubMode.MESSAGES, origin) },
+                                    unreadPrivateCount = unreadPrivateChatCount,
+                                    onOpenProfile = ::openPublicProfile,
+                                    hubListState = serverHubListState,
+                                    viewModel = serversVm,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
                         BottomNavTab.LIBRARY -> {
                             val state by libraryVm.uiState.collectAsState()
                             LibraryScreen(
@@ -853,21 +936,6 @@ fun AppNavHost(
         }
 
         AnimatedVisibility(
-            visible = showCommunityServers,
-            enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                CommunityServersScreen(
-                    onBack = { showCommunityServers = false },
-                    onOpenProfile = ::openPublicProfile,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-
-        AnimatedVisibility(
             visible = showGlobalChat,
             enter = slideInVertically(animationSpec = AppleSprings.gentle()) { it } + fadeIn(),
             exit = slideOutVertically(animationSpec = AppleSprings.snappy()) { it } + fadeOut(),
@@ -900,6 +968,7 @@ fun AppNavHost(
                         onMessage = {
                             selectedPublicProfile = null
                             selectedDirectUser = publicProfile
+                            switchDmHubModeImmediately(DmHubMode.MESSAGES)
                             selectedTab = BottomNavTab.DM
                         },
                         onOpenProfile = ::openPublicProfile,
@@ -1088,7 +1157,11 @@ fun AppNavHost(
                     onOpenAdminPanel = { showSettings = false; showAdminPanel = true },
                     onOpenWriteStudio = { showSettings = false; selectedTab = BottomNavTab.WRITE },
                     onOpenLibrary = { showSettings = false; selectedTab = BottomNavTab.LIBRARY },
-                    onOpenServers = { showSettings = false; showCommunityServers = true },
+                    onOpenServers = {
+                        showSettings = false
+                        switchDmHubModeImmediately(DmHubMode.SERVERS)
+                        selectedTab = BottomNavTab.DM
+                    },
                     onOpenNotifications = { showSettings = false; showNotifications = true },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -1155,6 +1228,16 @@ fun AppNavHost(
                 }
             )
         }
+
+        PortalTransitionOverlay(
+            request = portalTransition,
+            onMidpointSwap = { targetMode ->
+                switchDmHubModeImmediately(targetMode)
+            },
+            onCompleted = {
+                portalTransition = null
+            }
+        )
     }
 }
 

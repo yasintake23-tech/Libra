@@ -397,6 +397,7 @@ class RealtimeChatRepositoryImpl(
             groupName = child.child("groupName").getValue(String::class.java).orEmpty(),
             groupDescription = child.child("groupDescription").getValue(String::class.java).orEmpty(),
             groupPhotoUrl = child.child("groupPhotoUrl").getValue(String::class.java).orEmpty(),
+            groupBannerUrl = child.child("groupBannerUrl").getValue(String::class.java).orEmpty(),
             participantIds = participantIds,
             ownerId = child.child("ownerId").getValue(String::class.java).orEmpty(),
             adminIds = adminIds,
@@ -447,11 +448,26 @@ class RealtimeChatRepositoryImpl(
     override suspend fun createGroupConversation(
         name: String,
         participantIds: List<String>
+    ): AppResult<DirectConversation> = createGroupConversationRich(
+        name = name,
+        participantIds = participantIds
+    )
+
+    override suspend fun createGroupConversationRich(
+        name: String,
+        participantIds: List<String>,
+        description: String,
+        photoUrl: String,
+        bannerUrl: String,
+        permissions: GroupPermissions
     ): AppResult<DirectConversation> {
         val owner = auth.currentUser
             ?: return AppResult.Error(AppError.Auth("Grup oluşturmak için giriş yapmalısın."))
 
         val cleanName = name.trim().take(60)
+        val cleanDesc = description.trim().take(300)
+        val cleanPhoto = photoUrl.trim()
+        val cleanBanner = bannerUrl.trim()
         val members = (participantIds + owner.uid).filter { it.isNotBlank() }.distinct()
         if (cleanName.isBlank()) return AppResult.Error(AppError.Validation("Grup adı boş olamaz."))
         if (members.size < 2) return AppResult.Error(AppError.Validation("En az bir kişi daha seçmelisin."))
@@ -461,7 +477,6 @@ class RealtimeChatRepositoryImpl(
         val conversationId = root.child("directMessages").push().key
             ?: return error("Grup oluşturulamadı.")
         val now = System.currentTimeMillis()
-        val defaultPerms = GroupPermissions()
         val membersMap = participantMap(members)
         val adminsMap = participantMap(listOf(owner.uid))
 
@@ -470,11 +485,12 @@ class RealtimeChatRepositoryImpl(
             updates["directConversations/${memberUid}/${conversationId}"] = mapOf(
                 "isGroup" to true,
                 "groupName" to cleanName,
-                "groupDescription" to "",
-                "groupPhotoUrl" to "",
+                "groupDescription" to cleanDesc,
+                "groupPhotoUrl" to cleanPhoto,
+                "groupBannerUrl" to cleanBanner,
                 "ownerId" to owner.uid,
                 "adminIds" to adminsMap,
-                "groupPermissions" to permissionsMap(defaultPerms),
+                "groupPermissions" to permissionsMap(permissions),
                 "createdAt" to now,
                 "participantIds" to membersMap,
                 "lastMessage" to "",
@@ -491,11 +507,13 @@ class RealtimeChatRepositoryImpl(
                     participants = members,
                     isGroup = true,
                     groupName = cleanName,
-                    groupDescription = "",
+                    groupDescription = cleanDesc,
+                    groupPhotoUrl = cleanPhoto,
+                    groupBannerUrl = cleanBanner,
                     participantIds = members,
                     ownerId = owner.uid,
                     adminIds = listOf(owner.uid),
-                    groupPermissions = defaultPerms,
+                    groupPermissions = permissions,
                     createdAt = now
                 )
             )
@@ -1169,6 +1187,42 @@ class RealtimeChatRepositoryImpl(
         }
     }
 
+    override suspend fun updateGroupMedia(
+        conversationId: String,
+        photoUrl: String,
+        bannerUrl: String
+    ): AppResult<Unit> {
+        val uid = currentUid()
+            ?: return AppResult.Error(AppError.Auth("Oturum bulunamadı."))
+        val conv = when (val res = loadActiveGroupConversation(conversationId, uid)) {
+            is AppResult.Success -> res.data
+            is AppResult.Error -> return res
+        }
+        if (!canEditGroupInfo(conv, uid)) {
+            return AppResult.Error(AppError.Auth("Grup görsellerini düzenleme yetkin yok."))
+        }
+        val cleanPhoto = photoUrl.trim()
+        val cleanBanner = bannerUrl.trim()
+        val root = database()?.reference ?: return error("Realtime Database yapılandırması bulunamadı.")
+        val presidentUid = resolveGroupOwnerId(conv)
+        val membersMap = participantMap(conv.participantIds)
+        val updates = mutableMapOf<String, Any>()
+        conv.participantIds.forEach { memberUid ->
+            updates["directConversations/$memberUid/$conversationId/groupPhotoUrl"] = cleanPhoto
+            updates["directConversations/$memberUid/$conversationId/groupBannerUrl"] = cleanBanner
+            updates["directConversations/$memberUid/$conversationId/participantIds"] = membersMap
+            if (conv.ownerId.isBlank() && presidentUid.isNotBlank()) {
+                updates["directConversations/$memberUid/$conversationId/ownerId"] = presidentUid
+            }
+        }
+        return try {
+            root.updateChildren(updates).await()
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            error("Grup görselleri güncellenemedi.", e)
+        }
+    }
+
     override suspend fun updateGroupPermissions(
         conversationId: String,
         permissions: GroupPermissions
@@ -1246,6 +1300,7 @@ class RealtimeChatRepositoryImpl(
                 "groupName" to conv.groupName.ifBlank { "Grup sohbeti" },
                 "groupDescription" to conv.groupDescription,
                 "groupPhotoUrl" to conv.groupPhotoUrl,
+                "groupBannerUrl" to conv.groupBannerUrl,
                 "ownerId" to presidentUid,
                 "adminIds" to adminsMap,
                 "groupPermissions" to permPayload,
@@ -1435,6 +1490,88 @@ class RealtimeChatRepositoryImpl(
 
         query.addValueEventListener(listener)
         awaitClose { query.removeEventListener(listener) }
+    }
+
+    override fun observeServerChannelLatestMessage(
+        serverId: String,
+        channelId: String
+    ): Flow<ServerMessage?> = callbackFlow {
+        if (serverId.isBlank() || channelId.isBlank()) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+        val query = ref(serverMessagesPath(serverId, channelId))
+            ?.orderByChild("createdAt")
+            ?.limitToLast(1)
+        if (query == null) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+        val listener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val latest = snapshot.children.mapNotNull(::serverMessageFrom).maxByOrNull { it.createdAt }
+                trySend(latest)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                trySend(null)
+            }
+        }
+        query.addValueEventListener(listener)
+        awaitClose { query.removeEventListener(listener) }
+    }
+
+    override fun observeServerChannelReadTimestamps(
+        uid: String,
+        serverId: String
+    ): Flow<Map<String, Long>> = callbackFlow {
+        if (uid.isBlank() || serverId.isBlank()) {
+            trySend(emptyMap())
+            close()
+            return@callbackFlow
+        }
+        val nodeRef = ref("notifications/$uid/serverChannelReadAt/$serverId")
+        if (nodeRef == null) {
+            trySend(emptyMap())
+            close()
+            return@callbackFlow
+        }
+        val listener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val map = buildMap<String, Long> {
+                    snapshot.children.forEach { child ->
+                        val chId = child.key.orEmpty()
+                        val ts = child.getValue(Long::class.java) ?: 0L
+                        if (chId.isNotBlank() && ts > 0L) put(chId, ts)
+                    }
+                }
+                trySend(map)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                trySend(emptyMap())
+            }
+        }
+        nodeRef.addValueEventListener(listener)
+        awaitClose { nodeRef.removeEventListener(listener) }
+    }
+
+    override suspend fun markServerChannelRead(
+        serverId: String,
+        channelId: String,
+        readAtMs: Long
+    ): AppResult<Unit> {
+        val uid = currentUid() ?: return AppResult.Success(Unit)
+        if (serverId.isBlank() || channelId.isBlank()) return AppResult.Success(Unit)
+        val safeTs = readAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        return runCatching {
+            ref("notifications/$uid/serverChannelReadAt/$serverId/$channelId")
+                ?.setValue(safeTs)
+                ?.await()
+            AppResult.Success(Unit)
+        }.getOrElse { AppResult.Success(Unit) }
     }
 
     override suspend fun sendServerMessage(

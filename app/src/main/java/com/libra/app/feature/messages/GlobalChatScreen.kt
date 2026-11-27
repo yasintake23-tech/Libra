@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -56,6 +55,7 @@ import com.libra.app.ui.theme.LibraLavenderDarkSurface
 import com.libra.app.ui.theme.LibraLavenderDarkText
 import com.libra.app.ui.theme.LibraLavenderSurface
 import com.libra.app.ui.theme.LibraLavenderText
+import com.libra.app.ui.theme.LocalLibraDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,7 +143,7 @@ fun GlobalChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val error by viewModel.error.collectAsState()
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = LocalLibraDarkTheme.current
     var draft by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<GlobalChatMessage?>(null) }
     var actionMessage by remember { mutableStateOf<GlobalChatMessage?>(null) }

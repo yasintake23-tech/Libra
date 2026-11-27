@@ -9,7 +9,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +74,7 @@ import com.libra.app.ui.theme.LibraLavenderDarkSurface
 import com.libra.app.ui.theme.LibraLavenderDarkText
 import com.libra.app.ui.theme.LibraLavenderSurface
 import com.libra.app.ui.theme.LibraLavenderText
+import com.libra.app.ui.theme.LocalLibraDarkTheme
 
 val LibraReactionEmojis = listOf("❤️", "😂", "😮", "😢", "😡", "👍")
 
@@ -107,7 +107,7 @@ fun RichMessageActionSheet(
     onShare: (() -> Unit)? = null,
     onSelectMultiple: (() -> Unit)? = null
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = LocalLibraDarkTheme.current
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
@@ -434,7 +434,7 @@ fun RichConversationActionOverlay(
     onShare: () -> Unit,
     onDeleteConversation: () -> Unit
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = LocalLibraDarkTheme.current
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
@@ -712,7 +712,7 @@ fun RichReplyBanner(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = LocalLibraDarkTheme.current
     val bannerSurface = MaterialTheme.colorScheme.surface
     val accentColor = if (darkTheme) LibraLavenderDarkText else LibraLavenderText
     val barColor = LibraLavender

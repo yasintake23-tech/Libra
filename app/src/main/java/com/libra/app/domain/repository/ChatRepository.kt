@@ -50,15 +50,27 @@ interface ChatRepository {
     suspend fun markDirectConversationRead(conversationId: String): AppResult<Unit>
     suspend fun hideDirectConversation(conversationId: String): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun createGroupConversation(name: String, participantIds: List<String>): AppResult<DirectConversation>
+    suspend fun createGroupConversationRich(
+        name: String,
+        participantIds: List<String>,
+        description: String = "",
+        photoUrl: String = "",
+        bannerUrl: String = "",
+        permissions: GroupPermissions = GroupPermissions()
+    ): AppResult<DirectConversation> = createGroupConversation(name, participantIds)
     suspend fun sendGroupMessage(conversationId: String, text: String, replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
     suspend fun sendGroupMediaMessage(conversationId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: DirectMessage? = null, sharedContent: SharedContent? = null): AppResult<Unit>
     suspend fun updateGroupInfo(conversationId: String, name: String, description: String): AppResult<Unit> = AppResult.Success(Unit)
+    suspend fun updateGroupMedia(conversationId: String, photoUrl: String, bannerUrl: String): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun updateGroupPermissions(conversationId: String, permissions: GroupPermissions): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun addGroupMembers(conversationId: String, userIds: List<String>): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun removeGroupMember(conversationId: String, targetUid: String): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun setGroupMemberAdmin(conversationId: String, targetUid: String, isAdmin: Boolean): AppResult<Unit> = AppResult.Success(Unit)
 
     fun observeServerMessages(serverId: String, limit: Long = 100, channelId: String = ""): Flow<AppResult<List<ServerMessage>>>
+    fun observeServerChannelLatestMessage(serverId: String, channelId: String): Flow<ServerMessage?> = kotlinx.coroutines.flow.flowOf(null)
+    fun observeServerChannelReadTimestamps(uid: String, serverId: String): Flow<Map<String, Long>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+    suspend fun markServerChannelRead(serverId: String, channelId: String, readAtMs: Long = System.currentTimeMillis()): AppResult<Unit> = AppResult.Success(Unit)
     suspend fun sendServerMessage(serverId: String, text: String, replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>
     suspend fun sendServerMediaMessage(serverId: String, mediaUrl: String, mediaType: String, text: String = "", replyTo: ServerMessage? = null, sharedContent: SharedContent? = null, channelId: String = ""): AppResult<Unit>
     suspend fun editServerMessage(serverId: String, messageId: String, text: String, channelId: String = ""): AppResult<Unit>
