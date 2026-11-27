@@ -258,10 +258,8 @@ class CommunityServersViewModel : ViewModel() {
             }
             if (uid.isNotBlank()) {
                 launch {
-                    chatRepository.observeServerChannelReadTimestamps(uid, serverId).collect { res ->
-                        if (res is AppResult.Success) {
-                            mergeReadMap(res.data)
-                        }
+                    chatRepository.observeServerChannelReadTimestamps(uid, serverId).collect { map ->
+                        mergeReadMap(map)
                     }
                 }
             }
@@ -344,11 +342,11 @@ class CommunityServersViewModel : ViewModel() {
         channels.forEach { channel ->
             if (channel.id !in channelLatestJobs) {
                 channelLatestJobs[channel.id] = viewModelScope.launch {
-                    chatRepository.observeServerChannelLatestMessage(serverId, channel.id).collect { res ->
-                        if (res is AppResult.Success && _selectedServerId.value == serverId) {
-                            _latestMessageByChannel.value = _latestMessageByChannel.value + (channel.id to res.data)
-                            if (_selectedChannelId.value == channel.id && res.data != null) {
-                                markChannelRead(serverId, channel.id, max(System.currentTimeMillis(), res.data.createdAt))
+                    chatRepository.observeServerChannelLatestMessage(serverId, channel.id).collect { latest ->
+                        if (_selectedServerId.value == serverId) {
+                            _latestMessageByChannel.value = _latestMessageByChannel.value + (channel.id to latest)
+                            if (_selectedChannelId.value == channel.id && latest != null) {
+                                markChannelRead(serverId, channel.id, max(System.currentTimeMillis(), latest.createdAt))
                             }
                         }
                     }
